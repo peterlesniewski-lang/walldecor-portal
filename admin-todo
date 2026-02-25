@@ -1,0 +1,8 @@
+Admin Todo List
+- Align admin KPIs with spec by centralizing metric calculations (`turnover12m`, `upcomingPayouts`, `walletTotals`, `tierCounts`) inside `src/lib/services.ts` and surface them through `src/app/admin/dashboard/page.tsx` (enables consistent reuse and testing).
+- Introduce a dedicated admin dashboard API (`src/app/api/admin/dashboard/route.ts`) that returns the above metrics plus expanded pipeline+alerts data so UI stays decoupled from inline server logic.
+- Build an activity feed component plus backing endpoint (`src/admin/components/AdminActivityFeed.tsx`, `src/app/api/admin/activity/route.ts`) covering audit events (payouts, project status changes, partner tier moves).
+- Implement a filterable/paginated project pipeline view (`src/app/admin/dashboard/page.tsx`, `src/admin/components/AdminProjectItem.tsx`, `src/app/api/admin/pipeline/route.ts`) that goes beyond the current top‑10 list and exposes status/owner/staleness filters.
+- Add batch payout processing UI/workflow (`src/app/admin/dashboard/page.tsx`, `src/admin/components/AdminHeaderActions.tsx`, `src/app/api/admin/payouts/batch/route.ts`) to let admins operate on multiple payout-eligible partners at once with validation/audit hooks.
+- Replace the “paid forecast” KPI with a stacked “EARNED + PENDING_APPROVAL” widget, computing both segments (`src/lib/services.ts`) and rendering them with distinct colors/legend on the dashboard (`src/app/admin/dashboard/page.tsx`).
+- Harden timezone handling for wallet-expiring and payout date logic by standardizing on UTC/local time conversions inside `src/lib/db.ts` and any date-heavy queries in `src/lib/services.ts`.

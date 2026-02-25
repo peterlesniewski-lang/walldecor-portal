@@ -1,0 +1,1 @@
+ALTER TABLE commissions ADD COLUMN note TEXT NULL;

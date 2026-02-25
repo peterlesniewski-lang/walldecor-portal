@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-primary: #D4AF37;
+  /* Metallic Gold */
+  --color-brand-secondary: #FFD700;
+  /* Gold */
+  --color-brand-accent: #C5A028;
+
+  --color-background: #FAF8F5;
+  /* Warm cream */
+  --color-foreground: #1C1814;
+
+  --color-card: #FFFFFF;
+  /* White card */
+  --color-card-foreground: #2C2416;
+
+  --color-border: rgba(0, 0, 0, 0.08);
+  /* Subtle border */
+  --color-border-hover: rgba(0, 0, 0, 0.15);
+
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+}
+
+:root {
+  --background: var(--color-background);
+  --foreground: var(--color-foreground);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Premium Utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 2rem;
+}
+
+.gold-gradient {
+  background: linear-gradient(135deg, #FFD700 0%, #D4AF37 50%, #C5A028 100%);
+}
+
+.gold-text {
+  background: linear-gradient(135deg, #FFD700 0%, #D4AF37 50%, #B8860B 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.sidebar-link {
+  @apply flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 text-stone-500 hover:bg-black/5 hover:text-stone-900;
+}
+
+.sidebar-link-active {
+  @apply flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 bg-brand-primary text-black font-semibold shadow-[0_8px_32px_rgba(212,175,55,0.3)];
+}
+
+.stat-card {
+  @apply p-8 rounded-[2.5rem] bg-card border border-border hover:border-border-hover transition-all duration-300;
+}
