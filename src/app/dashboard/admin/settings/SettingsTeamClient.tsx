@@ -3,8 +3,10 @@
 import React, { useState } from 'react';
 import {
     ShieldCheck, KeyRound, UserPlus, Loader2,
-    CheckCircle2, AlertCircle, RefreshCw, Eye, EyeOff, Copy, Check
+    CheckCircle2, AlertCircle, RefreshCw, Eye, EyeOff, Copy, Check,
+    Users, ExternalLink
 } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createUser, resetUserPassword, updateUserRole } from '@/app/actions/settings';
 
@@ -17,8 +19,17 @@ interface TeamMember {
     created_at: string;
 }
 
+interface Architect {
+    id: string;
+    name: string;
+    email: string;
+    last_login_at: string | null;
+    created_at: string;
+}
+
 interface Props {
     teamMembers: TeamMember[];
+    architects: Architect[];
     currentUserId: string;
 }
 
@@ -156,10 +167,27 @@ function ResetPasswordRow({ member }: { member: TeamMember }) {
     );
 }
 
+// ─── Shared last-login formatter ──────────────────────────────────────────
+
+function LastLogin({ value }: { value: string | null }) {
+    if (!value) return <p className="text-[10px] text-stone-300 font-bold italic">Brak danych</p>;
+    return (
+        <p className="text-[10px] text-stone-500 font-bold">
+            {new Date(value).toLocaleString('pl-PL', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            })}
+        </p>
+    );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────
 
-export default function SettingsTeamClient({ teamMembers, currentUserId }: Props) {
+type Tab = 'team' | 'architects';
+
+export default function SettingsTeamClient({ teamMembers, architects, currentUserId }: Props) {
     const router = useRouter();
+    const [activeTab, setActiveTab] = useState<Tab>('team');
 
     // Add user form state
     const [showAddForm, setShowAddForm] = useState(false);
@@ -199,172 +227,236 @@ export default function SettingsTeamClient({ teamMembers, currentUserId }: Props
         }
     };
 
+    const tabs: { id: Tab; label: string; icon: React.ReactNode; count: number }[] = [
+        { id: 'team', label: 'Zespół', icon: <ShieldCheck size={14} />, count: teamMembers.length },
+        { id: 'architects', label: 'Architekci', icon: <Users size={14} />, count: architects.length },
+    ];
+
     return (
-        <div className="space-y-6">
-            {/* Header row */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-brand-primary/10 flex items-center justify-center text-brand-primary border border-black/5">
-                        <ShieldCheck size={20} />
-                    </div>
-                    <div>
-                        <p className="text-sm font-black text-stone-900">Zespół WallDecor</p>
-                        <p className="text-[10px] text-stone-500 mt-0.5">
-                            {teamMembers.length} {teamMembers.length === 1 ? 'użytkownik' : 'użytkowników'} z dostępem administracyjnym
-                        </p>
-                    </div>
-                </div>
-                <button
-                    onClick={() => setShowAddForm(!showAddForm)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-primary hover:bg-brand-secondary text-black text-[10px] font-black uppercase tracking-widest transition-all shadow-[0_4px_16px_rgba(212,175,55,0.2)]"
-                >
-                    <UserPlus size={14} />
-                    Dodaj użytkownika
-                </button>
+        <div className="stat-card bg-card border border-black/5 p-0 overflow-hidden">
+            {/* Tab bar */}
+            <div className="flex items-center border-b border-black/5 px-6">
+                {tabs.map((tab) => (
+                    <button
+                        key={tab.id}
+                        onClick={() => { setActiveTab(tab.id); setShowAddForm(false); }}
+                        className={`flex items-center gap-2 px-4 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 -mb-px ${
+                            activeTab === tab.id
+                                ? 'border-brand-primary text-stone-900'
+                                : 'border-transparent text-stone-400 hover:text-stone-700'
+                        }`}
+                    >
+                        {tab.icon}
+                        {tab.label}
+                        <span className={`ml-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${
+                            activeTab === tab.id
+                                ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
+                                : 'bg-black/5 text-stone-400 border-black/5'
+                        }`}>
+                            {tab.count}
+                        </span>
+                    </button>
+                ))}
             </div>
 
-            {/* Add user form */}
-            {showAddForm && (
-                <div className="stat-card bg-card border border-brand-primary/20 p-6 space-y-4">
-                    <p className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Nowy użytkownik systemu</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Imię i nazwisko</label>
-                            <input
-                                type="text"
-                                value={newName}
-                                onChange={(e) => setNewName(e.target.value)}
-                                placeholder="Jan Kowalski"
-                                className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-none focus:border-brand-primary/50"
-                            />
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Email</label>
-                            <input
-                                type="email"
-                                value={newEmail}
-                                onChange={(e) => setNewEmail(e.target.value)}
-                                placeholder="jan@walldecor.pl"
-                                className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-none focus:border-brand-primary/50"
-                            />
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Hasło</label>
-                            <div className="flex items-center gap-2">
-                                <div className="flex-1">
-                                    <PasswordInput value={newPassword} onChange={setNewPassword} />
+            {/* ── Tab: Zespół ── */}
+            {activeTab === 'team' && (
+                <div className="p-6 space-y-6">
+                    {/* Header row */}
+                    <div className="flex items-center justify-between">
+                        <p className="text-[10px] text-stone-500 font-bold">
+                            {teamMembers.length} {teamMembers.length === 1 ? 'użytkownik' : 'użytkowników'} z dostępem administracyjnym
+                        </p>
+                        <button
+                            onClick={() => setShowAddForm(!showAddForm)}
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-primary hover:bg-brand-secondary text-black text-[10px] font-black uppercase tracking-widest transition-all shadow-[0_4px_16px_rgba(212,175,55,0.2)]"
+                        >
+                            <UserPlus size={14} />
+                            Dodaj użytkownika
+                        </button>
+                    </div>
+
+                    {/* Add user form */}
+                    {showAddForm && (
+                        <div className="bg-black/[0.02] border border-brand-primary/20 rounded-2xl p-6 space-y-4">
+                            <p className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Nowy użytkownik systemu</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Imię i nazwisko</label>
+                                    <input
+                                        type="text"
+                                        value={newName}
+                                        onChange={(e) => setNewName(e.target.value)}
+                                        placeholder="Jan Kowalski"
+                                        className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-none focus:border-brand-primary/50"
+                                    />
                                 </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Email</label>
+                                    <input
+                                        type="email"
+                                        value={newEmail}
+                                        onChange={(e) => setNewEmail(e.target.value)}
+                                        placeholder="jan@walldecor.pl"
+                                        className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-none focus:border-brand-primary/50"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Hasło</label>
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex-1">
+                                            <PasswordInput value={newPassword} onChange={setNewPassword} />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={generateForNew}
+                                            className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-black/5 hover:bg-black/10 text-stone-500 hover:text-stone-900 text-[10px] font-black uppercase tracking-widest transition-all shrink-0"
+                                        >
+                                            <RefreshCw size={12} />
+                                            Auto
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Rola</label>
+                                    <div className="flex gap-2">
+                                        {(['STAFF', 'ADMIN'] as const).map((r) => (
+                                            <button
+                                                key={r}
+                                                type="button"
+                                                onClick={() => setNewRole(r)}
+                                                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${newRole === r
+                                                    ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary'
+                                                    : 'bg-black/5 border-black/5 text-stone-500 hover:border-black/10'
+                                                    }`}
+                                            >
+                                                {r}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {addFeedback && <Feedback type={addFeedback.type} msg={addFeedback.msg} />}
+
+                            <div className="flex items-center gap-3 pt-2">
                                 <button
-                                    type="button"
-                                    onClick={generateForNew}
-                                    className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-black/5 hover:bg-black/10 text-stone-500 hover:text-stone-900 text-[10px] font-black uppercase tracking-widest transition-all shrink-0"
+                                    onClick={submitCreate}
+                                    disabled={addSaving || !newName || !newEmail || newPassword.length < 8}
+                                    className="px-6 py-2.5 bg-brand-primary hover:bg-brand-secondary text-black rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-50 transition-all"
                                 >
-                                    <RefreshCw size={12} />
-                                    Auto
+                                    {addSaving ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                                    Utwórz konto
+                                </button>
+                                <button
+                                    onClick={() => { setShowAddForm(false); setAddFeedback(null); }}
+                                    className="px-5 py-2.5 bg-black/5 hover:bg-black/10 text-stone-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                                >
+                                    Anuluj
                                 </button>
                             </div>
                         </div>
-                        <div className="space-y-1.5">
-                            <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Rola</label>
-                            <div className="flex gap-2">
-                                {(['STAFF', 'ADMIN'] as const).map((r) => (
-                                    <button
-                                        key={r}
-                                        type="button"
-                                        onClick={() => setNewRole(r)}
-                                        className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${newRole === r
-                                            ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary'
-                                            : 'bg-black/5 border-black/5 text-stone-500 hover:border-black/10'
-                                            }`}
-                                    >
-                                        {r}
-                                    </button>
+                    )}
+
+                    {/* Team members table */}
+                    <div className="border border-black/5 rounded-2xl overflow-hidden">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="bg-black/[0.02] border-b border-black/5">
+                                    <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Użytkownik</th>
+                                    <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Rola</th>
+                                    <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Ostatnie logowanie</th>
+                                    <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-black/5">
+                                {teamMembers.map((m) => (
+                                    <tr key={m.id} className="hover:bg-black/[0.01] transition-colors">
+                                        <td className="px-6 py-4">
+                                            <p className="text-sm font-black text-stone-900">{m.name}</p>
+                                            <p className="text-[10px] text-stone-400 font-bold mt-0.5">{m.email}</p>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {m.id === currentUserId ? (
+                                                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${m.role === 'ADMIN'
+                                                    ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
+                                                    : 'bg-black/5 text-stone-500 border-black/5'
+                                                    }`}>
+                                                    {m.role}
+                                                </span>
+                                            ) : (
+                                                <select
+                                                    value={m.role}
+                                                    onChange={(e) => changeRole(m.id, e.target.value as 'STAFF' | 'ADMIN')}
+                                                    className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border cursor-pointer focus:outline-none transition-all ${m.role === 'ADMIN'
+                                                        ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
+                                                        : 'bg-black/5 text-stone-500 border-black/5'
+                                                        }`}
+                                                >
+                                                    <option value="STAFF">STAFF</option>
+                                                    <option value="ADMIN">ADMIN</option>
+                                                </select>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <LastLogin value={m.last_login_at} />
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <ResetPasswordRow member={m} />
+                                        </td>
+                                    </tr>
                                 ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {addFeedback && <Feedback type={addFeedback.type} msg={addFeedback.msg} />}
-
-                    <div className="flex items-center gap-3 pt-2">
-                        <button
-                            onClick={submitCreate}
-                            disabled={addSaving || !newName || !newEmail || newPassword.length < 8}
-                            className="px-6 py-2.5 bg-brand-primary hover:bg-brand-secondary text-black rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-50 transition-all"
-                        >
-                            {addSaving ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
-                            Utwórz konto
-                        </button>
-                        <button
-                            onClick={() => { setShowAddForm(false); setAddFeedback(null); }}
-                            className="px-5 py-2.5 bg-black/5 hover:bg-black/10 text-stone-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-                        >
-                            Anuluj
-                        </button>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}
 
-            {/* Team members list */}
-            <div className="stat-card bg-card border border-black/5 p-0 overflow-hidden">
-                <table className="w-full">
-                    <thead>
-                        <tr className="bg-black/[0.02] border-b border-black/5">
-                            <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Użytkownik</th>
-                            <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Rola</th>
-                            <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Ostatnie logowanie</th>
-                            <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Akcje</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5">
-                        {teamMembers.map((m) => (
-                            <tr key={m.id} className="hover:bg-black/[0.01] transition-colors">
-                                <td className="px-6 py-4">
-                                    <p className="text-sm font-black text-stone-900">{m.name}</p>
-                                    <p className="text-[10px] text-stone-400 font-bold mt-0.5">{m.email}</p>
-                                </td>
-                                <td className="px-6 py-4">
-                                    {m.id === currentUserId ? (
-                                        <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${m.role === 'ADMIN'
-                                            ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
-                                            : 'bg-black/5 text-stone-500 border-black/5'
-                                            }`}>
-                                            {m.role}
-                                        </span>
-                                    ) : (
-                                        <select
-                                            value={m.role}
-                                            onChange={(e) => changeRole(m.id, e.target.value as 'STAFF' | 'ADMIN')}
-                                            className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border cursor-pointer focus:outline-none transition-all ${m.role === 'ADMIN'
-                                                ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
-                                                : 'bg-black/5 text-stone-500 border-black/5'
-                                                }`}
-                                        >
-                                            <option value="STAFF">STAFF</option>
-                                            <option value="ADMIN">ADMIN</option>
-                                        </select>
-                                    )}
-                                </td>
-                                <td className="px-6 py-4">
-                                    {m.last_login_at ? (
-                                        <p className="text-[10px] text-stone-500 font-bold">
-                                            {new Date(m.last_login_at).toLocaleString('pl-PL', {
-                                                day: '2-digit', month: '2-digit', year: 'numeric',
-                                                hour: '2-digit', minute: '2-digit'
-                                            })}
-                                        </p>
-                                    ) : (
-                                        <p className="text-[10px] text-stone-300 font-bold italic">Brak danych</p>
-                                    )}
-                                </td>
-                                <td className="px-6 py-4">
-                                    <ResetPasswordRow member={m} />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+            {/* ── Tab: Architekci ── */}
+            {activeTab === 'architects' && (
+                <div className="p-6">
+                    {architects.length === 0 ? (
+                        <div className="py-12 flex flex-col items-center justify-center gap-3">
+                            <Users size={32} className="text-stone-300" />
+                            <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Brak zarejestrowanych architektów</p>
+                        </div>
+                    ) : (
+                        <div className="border border-black/5 rounded-2xl overflow-hidden">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="bg-black/[0.02] border-b border-black/5">
+                                        <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Użytkownik</th>
+                                        <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Ostatnie logowanie</th>
+                                        <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Akcje</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-black/5">
+                                    {architects.map((a) => (
+                                        <tr key={a.id} className="hover:bg-black/[0.01] transition-colors">
+                                            <td className="px-6 py-4">
+                                                <p className="text-sm font-black text-stone-900">{a.name}</p>
+                                                <p className="text-[10px] text-stone-400 font-bold mt-0.5">{a.email}</p>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <LastLogin value={a.last_login_at} />
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <Link
+                                                    href={`/dashboard/admin/architects/${a.id}`}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/5 text-stone-500 hover:text-stone-900 hover:bg-black/10 text-[10px] font-black uppercase tracking-widest transition-all w-fit"
+                                                >
+                                                    <ExternalLink size={12} />
+                                                    Profil
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
