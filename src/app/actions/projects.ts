@@ -11,6 +11,12 @@ import { spendCashback } from "@/lib/cashback";
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import path from 'path';
 import { join } from 'path';
+import crypto from 'crypto';
+
+function generateTempPassword(): string {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    return Array.from(crypto.randomBytes(12)).map(b => chars[b % chars.length]).join('');
+}
 
 const VALID_PROJECT_STATUSES = ['ZGŁOSZONY', 'PRZYJĘTY', 'W_REALIZACJI', 'ZAKOŃCZONY', 'NIEZREALIZOWANY'];
 
@@ -113,7 +119,7 @@ export async function updateProjectStatus(projectId: string, status: string) {
 
     // ZAKOŃCZONY: finalize commissions using progressive bracket system, credit wallet cashback
     if (status === 'ZAKOŃCZONY') {
-        // Guard against double-processing
+        // Guard against double-processing (read outside transaction)
         const existingTrans = await query<any>(
             "SELECT id FROM wallet_transactions WHERE related_item_id IN (SELECT id FROM project_items WHERE project_id = ?) LIMIT 1",
             [projectId]
@@ -122,16 +128,15 @@ export async function updateProjectStatus(projectId: string, status: string) {
         if (existingTrans.length > 0) {
             console.log(`Project ${projectId} already processed for cashback. Skipping.`);
         } else {
-            const projectData = await query<any>(`
-                SELECT p.owner_id
-                FROM projects p
-                WHERE p.id = ?
-            `, [projectId]);
+            const projectData = await query<any>(
+                "SELECT p.owner_id FROM projects p WHERE p.id = ?",
+                [projectId]
+            );
 
             if (projectData.length > 0) {
                 const { owner_id } = projectData[0];
 
-                // Cumulative PRODUCT turnover BEFORE this project (non-rejected)
+                // --- Read phase (outside transaction) ---
                 const prevTurnoverRes = await query<any>(`
                     SELECT COALESCE(SUM(i.amount_net), 0) as total
                     FROM project_items i
@@ -148,20 +153,28 @@ export async function updateProjectStatus(projectId: string, status: string) {
                     [projectId]
                 );
 
-                // Progressive bracket rates
+                const pendingCommMap: Record<string, string | null> = {};
+                for (const item of items) {
+                    const pendingComm = await query<any>(
+                        "SELECT id FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
+                        [item.id]
+                    );
+                    pendingCommMap[item.id] = pendingComm.length > 0 ? pendingComm[0].id : null;
+                }
+
+                // --- Compute phase (pure JS, no DB) ---
                 const brackets = [
-                    { threshold: 10000, rate: 0.07 }, // BEGINNER: 0–9 999 PLN
-                    { threshold: 50000, rate: 0.07 }, // SILVER:   10 000–49 999 PLN
-                    { threshold: 120000, rate: 0.10 }, // GOLD:     50 000–119 999 PLN
-                    { threshold: Infinity, rate: 0.14 }, // PLATINUM: ≥ 120 000 PLN
+                    { threshold: 10000, rate: 0.07 },
+                    { threshold: 50000, rate: 0.07 },
+                    { threshold: 120000, rate: 0.10 },
+                    { threshold: Infinity, rate: 0.14 },
                 ];
 
+                const itemOps: Array<{ item: any; commAmount: number; cashbackAmount: number }> = [];
                 for (const item of items) {
                     const itemAmount = Number(item.amount_net);
                     let remaining = itemAmount;
                     let commAmount = 0;
-
-                    // Split item amount across brackets based on running turnover
                     for (const bracket of brackets) {
                         if (remaining <= 0) break;
                         const bracketStart = bracket === brackets[0] ? 0 : brackets[brackets.indexOf(bracket) - 1].threshold;
@@ -172,36 +185,34 @@ export async function updateProjectStatus(projectId: string, status: string) {
                         remaining -= portion;
                     }
                     runningTurnover += itemAmount;
-
-                    const cashbackAmount = itemAmount * 0.02;
-
-                    // Promote PENDING → EARNED or insert EARNED
-                    const pendingComm = await query<any>(
-                        "SELECT id FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
-                        [item.id]
-                    );
-                    if (pendingComm.length > 0) {
-                        await query(
-                            "UPDATE commissions SET status = 'EARNED', amount_net = ? WHERE project_item_id = ? AND status = 'PENDING'",
-                            [commAmount, item.id]
-                        );
-                    } else if (commAmount > 0) {
-                        await query(
-                            "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status) VALUES (?, ?, ?, ?, ?, 'EARNED')",
-                            [`c_${uuidv4().substring(0, 8)}`, projectId, item.id, owner_id, commAmount]
-                        );
-                    }
-
-                    // Credit wallet cashback (EARN, 12-month expiry)
-                    if (cashbackAmount > 0) {
-                        const expiresAt = new Date();
-                        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-                        await query(
-                            "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-                            [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, item.id, expiresAt.toISOString()]
-                        );
-                    }
+                    itemOps.push({ item, commAmount, cashbackAmount: itemAmount * 0.02 });
                 }
+
+                // --- Write phase (all in one transaction) ---
+                await withTransaction(async (queryFn) => {
+                    for (const { item, commAmount, cashbackAmount } of itemOps) {
+                        if (pendingCommMap[item.id]) {
+                            await queryFn(
+                                "UPDATE commissions SET status = 'EARNED', amount_net = ? WHERE project_item_id = ? AND status = 'PENDING'",
+                                [commAmount, item.id]
+                            );
+                        } else if (commAmount > 0) {
+                            await queryFn(
+                                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status) VALUES (?, ?, ?, ?, ?, 'EARNED')",
+                                [`c_${uuidv4().substring(0, 8)}`, projectId, item.id, owner_id, commAmount]
+                            );
+                        }
+
+                        if (cashbackAmount > 0) {
+                            const expiresAt = new Date();
+                            expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+                            await queryFn(
+                                "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+                                [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, item.id, expiresAt.toISOString()]
+                            );
+                        }
+                    }
+                });
             }
         }
     }
@@ -255,8 +266,9 @@ export async function registerArchitect(data: {
     const userId = uuidv4();
     const fullName = `${data.first_name} ${data.last_name}`;
 
-    // Hash password (provided or default)
-    const passwordToHash = data.password || 'WallDecor2024!';
+    // Hash password (provided or auto-generated)
+    const generatedPassword = data.password ? undefined : generateTempPassword();
+    const passwordToHash = data.password || generatedPassword!;
     const hashedPassword = await bcrypt.hash(passwordToHash, 10);
 
     await query(
@@ -281,7 +293,7 @@ export async function registerArchitect(data: {
     );
 
     revalidatePath('/dashboard/admin');
-    return { success: true, userId };
+    return { success: true, userId, generatedPassword };
 }
 
 export async function getArchitectById(id: string) {

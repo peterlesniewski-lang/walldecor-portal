@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { X, UserPlus, AlertCircle, CheckCircle2, Copy, Check } from 'lucide-react';
 import { registerArchitect } from '@/app/actions/projects';
 
 interface AdminArchitectRegistrationModalProps {
@@ -12,6 +12,8 @@ interface AdminArchitectRegistrationModalProps {
 export default function AdminArchitectRegistrationModal({ isOpen, onClose }: AdminArchitectRegistrationModalProps) {
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
@@ -33,22 +35,9 @@ export default function AdminArchitectRegistrationModal({ isOpen, onClose }: Adm
         setError(null);
 
         try {
-            await registerArchitect(formData);
+            const res = await registerArchitect(formData);
+            setGeneratedPassword(res.generatedPassword ?? null);
             setSuccess(true);
-            setTimeout(() => {
-                setSuccess(false);
-                setFormData({
-                    first_name: '',
-                    last_name: '',
-                    email: '',
-                    studio_name: '',
-                    nip: '',
-                    address: '',
-                    bank_account: '',
-                    is_vat_payer: false
-                });
-                onClose();
-            }, 2000);
         } catch (err: any) {
             setError(err.message || 'Wystąpił błąd podczas rejestracji architekta.');
         } finally {
@@ -74,12 +63,39 @@ export default function AdminArchitectRegistrationModal({ isOpen, onClose }: Adm
 
                 <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto flex-1">
                     {success ? (
-                        <div className="py-12 text-center space-y-4">
+                        <div className="py-12 text-center space-y-6">
                             <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto border border-emerald-100 shadow-xl shadow-emerald-100/50">
                                 <CheckCircle2 size={40} />
                             </div>
                             <h4 className="text-xl font-bold text-stone-900">Architekt zarejestrowany!</h4>
-                            <p className="text-stone-500">Konto zostało utworzone i jest gotowe do pracy.</p>
+                            {generatedPassword && (
+                                <div className="text-left mx-auto max-w-sm space-y-2">
+                                    <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Tymczasowe hasło — przekaż architektowi:</p>
+                                    <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+                                        <code className="flex-1 text-sm font-black text-amber-900 tracking-wider">{generatedPassword}</code>
+                                        <button
+                                            type="button"
+                                            onClick={() => { navigator.clipboard.writeText(generatedPassword); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                                            className="text-amber-600 hover:text-amber-800 transition-colors"
+                                        >
+                                            {copied ? <Check size={16} /> : <Copy size={16} />}
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-stone-400">Hasło nie będzie już dostępne po zamknięciu tego okna.</p>
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSuccess(false);
+                                    setGeneratedPassword(null);
+                                    setFormData({ first_name: '', last_name: '', email: '', studio_name: '', nip: '', address: '', bank_account: '', is_vat_payer: false });
+                                    onClose();
+                                }}
+                                className="px-8 py-3 bg-stone-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all"
+                            >
+                                Zamknij
+                            </button>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

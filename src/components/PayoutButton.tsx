@@ -17,12 +17,8 @@ export default function PayoutButton({ isEligible }: PayoutButtonProps) {
 
         setLoading(true);
         try {
-            const res = await requestPayout();
-            if (res.success) {
-                setSuccess(true);
-                // Refresh logic would ideally happen via revalidatePath, 
-                // but client side we just show success state.
-            }
+            await requestPayout();
+            setSuccess(true);
         } catch (error: any) {
             alert(error.message || "Błąd podczas zgłaszania wypłaty.");
         } finally {

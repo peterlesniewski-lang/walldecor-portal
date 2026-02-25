@@ -50,3 +50,7 @@ next-env.d.ts
 
 # Temp directory
 .tmp/
+
+# Uploaded files (invoice PDFs — local filesystem, never commit)
+private_uploads/
+public/uploads/
