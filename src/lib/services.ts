@@ -334,6 +334,31 @@ export async function getAdminMetrics() {
             .reduce((acc: number, r: any) => acc + Number(r.wallet_balance), 0)
     };
 
+    // 7. Project pipeline stats
+    const projectStatsRes = await query<any>(`
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'ZAKOŃCZONY'      THEN 1 ELSE 0 END) as completed,
+            SUM(CASE WHEN status = 'NIEZREALIZOWANY'  THEN 1 ELSE 0 END) as rejected,
+            SUM(CASE WHEN status = 'W_REALIZACJI'    THEN 1 ELSE 0 END) as in_progress,
+            SUM(CASE WHEN status = 'PRZYJĘTY'        THEN 1 ELSE 0 END) as accepted,
+            SUM(CASE WHEN status = 'ZGŁOSZONY'       THEN 1 ELSE 0 END) as submitted
+        FROM projects
+    `);
+    const ps = projectStatsRes[0];
+    const activeProjects = Number(ps.total) - Number(ps.rejected);
+    const projectStats = {
+        total: Number(ps.total),
+        completed: Number(ps.completed),
+        rejected: Number(ps.rejected),
+        inProgress: Number(ps.in_progress),
+        accepted: Number(ps.accepted),
+        submitted: Number(ps.submitted),
+        conversionRate: activeProjects > 0
+            ? Math.round(Number(ps.completed) / activeProjects * 100)
+            : 0
+    };
+
     return {
         turnover12m,
         commissions: {
@@ -351,7 +376,8 @@ export async function getAdminMetrics() {
             withoutCaretaker: alertsRes[0].without_caretaker,
             staleProjects: alertsRes[0].stale_projects
         },
-        payoutForecast
+        payoutForecast,
+        projects: projectStats
     };
 }
 

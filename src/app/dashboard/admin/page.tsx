@@ -12,6 +12,8 @@ import {
     CreditCard,
     Activity,
     Timer,
+    FolderOpen,
+    CheckCircle2,
 } from 'lucide-react';
 import Link from 'next/link';
 import AddArchitectButton from "@/components/AddArchitectButton";
@@ -212,6 +214,76 @@ export default async function AdminDashboard() {
                     </Link>
                 ))}
             </div>
+
+            {/* ── Pipeline Health ── */}
+            {(() => {
+                const p = metrics.projects;
+                const active = p.total - p.rejected;
+                const pct = (n: number) => active > 0 ? Math.round(n / p.total * 100) : 0;
+                const cr = p.conversionRate;
+                const crColor = cr >= 70
+                    ? { bg: 'bg-emerald-500/5', border: 'border-emerald-500/20', text: 'text-emerald-600', bar: 'bg-emerald-500' }
+                    : cr >= 50
+                        ? { bg: 'bg-amber-500/5', border: 'border-amber-500/20', text: 'text-amber-600', bar: 'bg-amber-500' }
+                        : { bg: 'bg-red-500/5', border: 'border-red-500/20', text: 'text-red-600', bar: 'bg-red-500' };
+                return (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Tile 1: Zgłoszone */}
+                        <div className="stat-card bg-card py-6 border border-black/5">
+                            <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center text-sky-600 border border-black/5 mb-4">
+                                <FolderOpen size={20} />
+                            </div>
+                            <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">Projekty zgłoszone</p>
+                            <p className="text-3xl font-black text-stone-900 leading-tight">{active}</p>
+                            <p className="text-[9px] text-stone-600 mt-1">Łącznie aktywne (bez odrzuconych)</p>
+                        </div>
+
+                        {/* Tile 2: Zrealizowane */}
+                        <div className="stat-card bg-card py-6 border border-black/5">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 border border-black/5 mb-4">
+                                <CheckCircle2 size={20} />
+                            </div>
+                            <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">Projekty zrealizowane</p>
+                            <p className="text-3xl font-black text-stone-900 leading-tight">{p.completed}</p>
+                            <p className="text-[9px] text-stone-600 mt-1">Status ZAKOŃCZONY</p>
+                        </div>
+
+                        {/* Tile 3: Konwersja + stacked bar */}
+                        <div className={`stat-card py-6 border ${crColor.bg} ${crColor.border}`}>
+                            <div className="flex items-start justify-between mb-3">
+                                <div>
+                                    <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">Wskaźnik konwersji</p>
+                                    <p className={`text-3xl font-black leading-tight ${crColor.text}`}>{cr}%</p>
+                                    <p className="text-[9px] text-stone-600 mt-1">Zakończone / aktywne</p>
+                                </div>
+                            </div>
+                            {/* Stacked bar */}
+                            <div className="w-full h-2 rounded-full overflow-hidden flex mt-4 mb-3">
+                                <div className="bg-blue-400"   style={{ width: `${pct(p.submitted)}%` }} title={`Zgłoszone: ${p.submitted}`} />
+                                <div className="bg-emerald-400" style={{ width: `${pct(p.accepted)}%` }} title={`Przyjęte: ${p.accepted}`} />
+                                <div className="bg-amber-400"  style={{ width: `${pct(p.inProgress)}%` }} title={`W realizacji: ${p.inProgress}`} />
+                                <div className="bg-stone-400"  style={{ width: `${pct(p.completed)}%` }} title={`Zakończone: ${p.completed}`} />
+                                <div className="bg-red-400"    style={{ width: `${pct(p.rejected)}%` }} title={`Odrzucone: ${p.rejected}`} />
+                            </div>
+                            {/* Legend */}
+                            <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                {[
+                                    { label: 'Zgłoszone', count: p.submitted, color: 'bg-blue-400' },
+                                    { label: 'Przyjęte', count: p.accepted, color: 'bg-emerald-400' },
+                                    { label: 'Realizacja', count: p.inProgress, color: 'bg-amber-400' },
+                                    { label: 'Zakończone', count: p.completed, color: 'bg-stone-400' },
+                                    { label: 'Odrzucone', count: p.rejected, color: 'bg-red-400' },
+                                ].map(s => (
+                                    <div key={s.label} className="flex items-center gap-1">
+                                        <div className={`w-2 h-2 rounded-full ${s.color}`} />
+                                        <span className="text-[9px] text-stone-500 font-bold">{s.label}: {s.count}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* ── Charts ── */}
             <AdminCharts
