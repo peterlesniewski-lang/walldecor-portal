@@ -145,7 +145,7 @@ export default async function AdminDashboard() {
                         icon: TrendingUp,
                         iconColor: 'text-brand-primary',
                         bg: 'bg-brand-primary/10',
-                        sub: 'Produkty, niezrealizowane wykluczone'
+                        sub: 'Tylko projekty ZAKOŃCZONY'
                     },
                     {
                         label: 'Prowizje zarobione',

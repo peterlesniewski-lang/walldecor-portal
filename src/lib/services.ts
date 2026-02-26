@@ -222,8 +222,8 @@ export async function getAdminMetrics() {
         SELECT COALESCE(SUM(amount_net), 0) as total
         FROM project_items i
         JOIN projects p ON i.project_id = p.id
-        WHERE i.type = 'PRODUCT' 
-        AND p.status != 'NIEZREALIZOWANY'
+        WHERE i.type = 'PRODUCT'
+        AND p.status = 'ZAKOŃCZONY'
         AND p.created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
     `);
     const turnover12m = turnoverRes[0].total;
@@ -270,7 +270,7 @@ export async function getAdminMetrics() {
                 SELECT SUM(i.amount_net)
                 FROM project_items i
                 JOIN projects p ON i.project_id = p.id
-                WHERE p.owner_id = u.id AND i.type = 'PRODUCT' AND p.status != 'NIEZREALIZOWANY'
+                WHERE p.owner_id = u.id AND i.type = 'PRODUCT' AND p.status = 'ZAKOŃCZONY'
             ), 0) as turnover
         FROM users u
         WHERE u.role = 'ARCHI'
