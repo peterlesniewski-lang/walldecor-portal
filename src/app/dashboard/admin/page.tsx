@@ -139,7 +139,7 @@ export default async function AdminDashboard() {
         <div className="space-y-10 pb-20">
 
             {/* ── Row 1: Global Financial KPIs ── */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
                 {[
                     {
                         label: 'Obrót (12m)',
@@ -148,6 +148,22 @@ export default async function AdminDashboard() {
                         iconColor: 'text-brand-primary',
                         bg: 'bg-brand-primary/10',
                         sub: 'Tylko projekty ZAKOŃCZONY'
+                    },
+                    {
+                        label: 'W realizacji',
+                        value: `${formatPLN(metrics.pipeline.inProgressValue)} PLN`,
+                        icon: Wrench,
+                        iconColor: 'text-amber-600',
+                        bg: 'bg-amber-50',
+                        sub: 'Wartość projektów W_REALIZACJI'
+                    },
+                    {
+                        label: 'Zgłoszone',
+                        value: `${formatPLN(metrics.pipeline.submittedValue)} PLN`,
+                        icon: Send,
+                        iconColor: 'text-blue-600',
+                        bg: 'bg-blue-50',
+                        sub: 'Wartość projektów ZGŁOSZONY'
                     },
                     {
                         label: 'Prowizje zarobione',
@@ -163,7 +179,7 @@ export default async function AdminDashboard() {
                         icon: Clock,
                         iconColor: 'text-amber-600',
                         bg: 'bg-amber-50',
-                        sub: 'Szacunkowo (flat rate) · finalizacja przy ZAKOŃCZONY'
+                        sub: 'Finalizacja przy ZAKOŃCZONY'
                     },
                     {
                         label: 'Portfel łącznie',

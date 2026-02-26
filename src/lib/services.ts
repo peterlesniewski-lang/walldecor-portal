@@ -228,6 +228,18 @@ export async function getAdminMetrics() {
     `);
     const turnover12m = turnoverRes[0].total;
 
+    // 1b. Pipeline value — sum of PRODUCT items by active status
+    const pipelineValueRes = await query<any>(`
+        SELECT
+            COALESCE(SUM(CASE WHEN p.status = 'W_REALIZACJI' THEN i.amount_net ELSE 0 END), 0) as in_progress_value,
+            COALESCE(SUM(CASE WHEN p.status = 'ZGŁOSZONY'    THEN i.amount_net ELSE 0 END), 0) as submitted_value
+        FROM project_items i
+        JOIN projects p ON i.project_id = p.id
+        WHERE i.type = 'PRODUCT'
+    `);
+    const inProgressValue = pipelineValueRes[0].in_progress_value;
+    const submittedValue  = pipelineValueRes[0].submitted_value;
+
     // 2. Commissions: EARNED = available for payout; PENDING = not yet finalized; IN_PAYMENT = processing; PAID = done
     const commissionsEARNED = await query<any>(`
         SELECT COALESCE(SUM(amount_net), 0) as total
@@ -377,7 +389,11 @@ export async function getAdminMetrics() {
             staleProjects: alertsRes[0].stale_projects
         },
         payoutForecast,
-        projects: projectStats
+        projects: projectStats,
+        pipeline: {
+            inProgressValue,
+            submittedValue,
+        }
     };
 }
 
