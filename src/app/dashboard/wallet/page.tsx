@@ -15,7 +15,6 @@ import {
     Loader2,
     Clock
 } from 'lucide-react';
-import Link from 'next/link';
 import CommissionPayoutButton from "@/components/CommissionPayoutButton";
 import RedeemCashbackButton from "@/components/RedeemCashbackButton";
 import MyDiscountCards from "@/components/MyDiscountCards";
@@ -112,7 +111,7 @@ export default async function WalletPage() {
                     <div className="relative z-10">
                         <div className="flex justify-between items-start mb-6">
                             <div>
-                                <p className="text-[10px] font-black text-stone-500 uppercase tracking-[0.3em] mb-1">Portfel Cashback (Zakupy)</p>
+                                <p className="text-[10px] font-black text-stone-500 uppercase tracking-[0.3em] mb-1">Portfel Cashback</p>
                                 <h3 className="text-5xl font-black text-stone-900 gold-text">{formatPLN(stats.cashbackBalance)} <span className="text-xl font-bold ml-1">PLN</span></h3>
                             </div>
                             <div className="p-4 rounded-2xl bg-brand-primary/10 text-brand-primary border border-brand-primary/20">
@@ -123,7 +122,7 @@ export default async function WalletPage() {
                         <div className="flex items-center gap-3 p-4 rounded-2xl bg-black/5 border border-black/10 mb-8">
                             <Info size={16} className="text-stone-500" />
                             <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest leading-relaxed">
-                                Środki do wymiany na karty podarunkowe w panelu poniżej
+                                Wymień na karty rabatowe do sklepu WallDecor w panelu poniżej
                             </p>
                         </div>
                     </div>
@@ -281,9 +280,6 @@ export default async function WalletPage() {
                             </div>
                         </div>
 
-                        <button disabled className="w-full py-4 bg-black/5 text-stone-600 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] mt-12 border border-black/5 cursor-not-allowed" title="Regulamin w przygotowaniu">
-                            Pobierz Regulamin (wkrótce)
-                        </button>
                     </div>
 
                     <div className="stat-card bg-card p-8 border border-black/5">

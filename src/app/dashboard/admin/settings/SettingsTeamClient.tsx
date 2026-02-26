@@ -111,7 +111,9 @@ function ResetPasswordRow({ member }: { member: TeamMember }) {
 
     const generate = () => {
         const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
-        setPassword(Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join(''));
+        const arr = new Uint32Array(12);
+        crypto.getRandomValues(arr);
+        setPassword(Array.from(arr, (n) => chars[n % chars.length]).join(''));
     };
 
     const save = async () => {
@@ -213,7 +215,9 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
 
     const generateForNew = () => {
         const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
-        setNewPassword(Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join(''));
+        const arr = new Uint32Array(12);
+        crypto.getRandomValues(arr);
+        setNewPassword(Array.from(arr, (n) => chars[n % chars.length]).join(''));
     };
 
     const submitCreate = async () => {
