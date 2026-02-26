@@ -206,7 +206,6 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
                             architectId={id}
                             currentTierOverride={architect.tier_override || null}
                             autoTier={autoTier}
-                            currentCommissionRate={architect.commission_rate ?? 0}
                         />
                     )}
 

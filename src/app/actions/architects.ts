@@ -8,7 +8,7 @@ import bcrypt from 'bcrypt';
 
 export async function updateArchitectAdminFields(
     architectId: string,
-    data: { tier_override: string | null; commission_rate: number }
+    data: { tier_override: string | null }
 ) {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') {
@@ -20,13 +20,9 @@ export async function updateArchitectAdminFields(
         throw new Error("Nieprawidłowa wartość tier. Dozwolone: SILVER, GOLD, PLATINUM lub brak (Auto).");
     }
 
-    if (typeof data.commission_rate !== 'number' || data.commission_rate < 0 || data.commission_rate > 100) {
-        throw new Error("Stawka prowizji musi być liczbą z zakresu 0–100.");
-    }
-
     await query(
-        "UPDATE users SET tier_override = ?, commission_rate = ? WHERE id = ?",
-        [data.tier_override, data.commission_rate, architectId]
+        "UPDATE users SET tier_override = ? WHERE id = ?",
+        [data.tier_override, architectId]
     );
 
     revalidatePath(`/dashboard/admin/architects/${architectId}`);

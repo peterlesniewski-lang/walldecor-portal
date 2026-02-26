@@ -9,13 +9,11 @@ interface Props {
     architectId: string;
     currentTierOverride: string | null;
     autoTier: string;
-    currentCommissionRate: number;
 }
 
-export default function ArchitectProfileClient({ architectId, currentTierOverride, autoTier, currentCommissionRate }: Props) {
+export default function ArchitectProfileClient({ architectId, currentTierOverride, autoTier }: Props) {
     const router = useRouter();
     const [tierOverride, setTierOverride] = useState<string>(currentTierOverride || 'AUTO');
-    const [commissionRate, setCommissionRate] = useState<number>(currentCommissionRate);
     const [loading, setLoading] = useState(false);
     const [resetLoading, setResetLoading] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -27,7 +25,6 @@ export default function ArchitectProfileClient({ architectId, currentTierOverrid
         try {
             await updateArchitectAdminFields(architectId, {
                 tier_override: tierOverride === 'AUTO' ? null : tierOverride,
-                commission_rate: commissionRate,
             });
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
@@ -80,23 +77,6 @@ export default function ArchitectProfileClient({ architectId, currentTierOverrid
                     <option value="GOLD">GOLD</option>
                     <option value="PLATINUM">PLATINUM</option>
                 </select>
-            </div>
-
-            {/* Commission rate */}
-            <div className="space-y-2">
-                <label className="text-[9px] font-black text-stone-500 uppercase tracking-widest">
-                    Stawka Prowizji BEGINNER (%)
-                </label>
-                <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.5}
-                    value={commissionRate}
-                    onChange={(e) => setCommissionRate(Number(e.target.value))}
-                    className="w-full bg-black/5 border border-black/10 rounded-2xl px-4 py-3 text-sm font-black text-stone-900 focus:outline-none focus:border-brand-primary/50 transition-all"
-                />
-                <p className="text-[9px] text-stone-600">Używana dla obrotu w przedziale BEGINNER (0–9 999 PLN)</p>
             </div>
 
             <button

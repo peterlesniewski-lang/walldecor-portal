@@ -116,14 +116,14 @@ export async function updateProjectStatus(projectId: string, status: string) {
         );
         if (existingComm.length === 0) {
             const projectData = await query<any>(`
-                SELECT p.owner_id, u.commission_rate, u.email, u.name, p.name as project_name
+                SELECT p.owner_id, u.email, u.name, p.name as project_name
                 FROM projects p
                 JOIN users u ON p.owner_id = u.id
                 WHERE p.id = ?
             `, [projectId]);
 
             if (projectData.length > 0) {
-                const { owner_id, commission_rate, email, name, project_name } = projectData[0];
+                const { owner_id, email, name, project_name } = projectData[0];
 
                 // Email notification for acceptance
                 if (status === 'PRZYJĘTY') {
@@ -139,7 +139,7 @@ export async function updateProjectStatus(projectId: string, status: string) {
                 );
 
                 for (const item of items) {
-                    const rate = (commission_rate && commission_rate > 0) ? commission_rate : 7;
+                    const rate = 7;
                     const commAmount = (item.amount_net * rate) / 100;
                     if (commAmount > 0) {
                         await query(
@@ -606,8 +606,7 @@ export async function updateProjectItem(itemId: string, amount_net: number, note
 
     // 2. Handle commissions/cashback based on status
     if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
-        const projectData = await query<any>("SELECT u.commission_rate FROM users u WHERE u.id = ?", [ownerId]);
-        const rate = (projectData[0]?.commission_rate && projectData[0].commission_rate > 0) ? projectData[0].commission_rate : 7;
+        const rate = 7;
         const newCommAmount = (amount_net * rate) / 100;
 
         await query(
@@ -731,8 +730,7 @@ export async function addProjectItem(projectId: string, data: {
         const { status, owner_id } = projRes[0];
 
         if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
-            const userData = await query<any>("SELECT commission_rate FROM users WHERE id = ?", [owner_id]);
-            const rate = (userData[0]?.commission_rate && userData[0].commission_rate > 0) ? userData[0].commission_rate : 7;
+            const rate = 7;
             const commAmount = (data.amount_net * rate) / 100;
             if (commAmount > 0) {
                 await query(
