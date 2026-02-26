@@ -26,7 +26,7 @@ function getMySQLPool() {
 
 function getSQLiteDb() {
     if (!sqliteDb) {
-        sqliteDb = new Database(process.env.DB_PATH || 'database.sqlite');
+        sqliteDb = new Database(process.env.DB_PATH || 'walldecor.sqlite');
         // Enable foreign keys
         sqliteDb.pragma('foreign_keys = ON');
     }

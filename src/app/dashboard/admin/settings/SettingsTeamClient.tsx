@@ -4,11 +4,12 @@ import React, { useState } from 'react';
 import {
     ShieldCheck, KeyRound, UserPlus, Loader2,
     CheckCircle2, AlertCircle, RefreshCw, Eye, EyeOff, Copy, Check,
-    Users, ExternalLink
+    Users, ExternalLink, Upload, Database, Download
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createUser, resetUserPassword, updateUserRole } from '@/app/actions/settings';
+import AdminCSVImportModal from '@/admin/components/AdminCSVImportModal';
 
 interface TeamMember {
     id: string;
@@ -27,10 +28,21 @@ interface Architect {
     created_at: string;
 }
 
+interface DbStats {
+    architectsCount: number;
+    projectsCount: number;
+    itemsCount: number;
+    commissionsCount: number;
+    transactionsCount: number;
+    payoutsCount: number;
+    logsCount: number;
+}
+
 interface Props {
     teamMembers: TeamMember[];
     architects: Architect[];
     currentUserId: string;
+    dbStats: DbStats;
 }
 
 // ─── Password input with show/hide + copy ─────────────────────────────────
@@ -183,11 +195,12 @@ function LastLogin({ value }: { value: string | null }) {
 
 // ─── Main component ───────────────────────────────────────────────────────
 
-type Tab = 'team' | 'architects';
+type Tab = 'team' | 'architects' | 'database';
 
-export default function SettingsTeamClient({ teamMembers, architects, currentUserId }: Props) {
+export default function SettingsTeamClient({ teamMembers, architects, currentUserId, dbStats }: Props) {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>('team');
+    const [showImport, setShowImport] = useState(false);
 
     // Add user form state
     const [showAddForm, setShowAddForm] = useState(false);
@@ -227,12 +240,18 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
         }
     };
 
-    const tabs: { id: Tab; label: string; icon: React.ReactNode; count: number }[] = [
+    const tabs: { id: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
         { id: 'team', label: 'Zespół', icon: <ShieldCheck size={14} />, count: teamMembers.length },
         { id: 'architects', label: 'Architekci', icon: <Users size={14} />, count: architects.length },
+        { id: 'database', label: 'Baza danych', icon: <Database size={14} /> },
     ];
 
     return (
+        <>
+        <AdminCSVImportModal
+            isOpen={showImport}
+            onClose={(didImport) => { setShowImport(false); if (didImport) router.refresh(); }}
+        />
         <div className="stat-card bg-card border border-black/5 p-0 overflow-hidden">
             {/* Tab bar */}
             <div className="flex items-center border-b border-black/5 px-6">
@@ -248,13 +267,15 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
                     >
                         {tab.icon}
                         {tab.label}
-                        <span className={`ml-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${
-                            activeTab === tab.id
-                                ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
-                                : 'bg-black/5 text-stone-400 border-black/5'
-                        }`}>
-                            {tab.count}
-                        </span>
+                        {tab.count !== undefined && (
+                            <span className={`ml-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${
+                                activeTab === tab.id
+                                    ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
+                                    : 'bg-black/5 text-stone-400 border-black/5'
+                            }`}>
+                                {tab.count}
+                            </span>
+                        )}
                     </button>
                 ))}
             </div>
@@ -414,7 +435,21 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
 
             {/* ── Tab: Architekci ── */}
             {activeTab === 'architects' && (
-                <div className="p-6">
+                <div className="p-6 space-y-4">
+                    {/* Header row */}
+                    <div className="flex items-center justify-between">
+                        <p className="text-[10px] text-stone-500 font-bold">
+                            {architects.length} {architects.length === 1 ? 'architekt' : architects.length < 5 ? 'architektów' : 'architektów'} w systemie
+                        </p>
+                        <button
+                            onClick={() => setShowImport(true)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-stone-600 hover:text-stone-900 text-[10px] font-black uppercase tracking-widest transition-all border border-black/5"
+                        >
+                            <Upload size={12} />
+                            Importuj CSV
+                        </button>
+                    </div>
+
                     {architects.length === 0 ? (
                         <div className="py-12 flex flex-col items-center justify-center gap-3">
                             <Users size={32} className="text-stone-300" />
@@ -457,6 +492,54 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
                     )}
                 </div>
             )}
+
+            {/* ── Tab: Baza danych ── */}
+            {activeTab === 'database' && (
+                <div className="p-6 space-y-6">
+                    {/* Stats grid */}
+                    <div>
+                        <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-4">Liczba rekordów</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {[
+                                { label: 'Architekci', value: dbStats.architectsCount },
+                                { label: 'Projekty', value: dbStats.projectsCount },
+                                { label: 'Pozycje proj.', value: dbStats.itemsCount },
+                                { label: 'Prowizje', value: dbStats.commissionsCount },
+                                { label: 'Trans. portfela', value: dbStats.transactionsCount },
+                                { label: 'Wypłaty', value: dbStats.payoutsCount },
+                                { label: 'Logi aktywności', value: dbStats.logsCount },
+                            ].map(({ label, value }) => (
+                                <div key={label} className="bg-black/[0.02] border border-black/5 rounded-2xl p-4 text-center">
+                                    <p className="text-2xl font-black text-stone-900">{(value ?? 0).toLocaleString('pl-PL')}</p>
+                                    <p className="text-[9px] font-black text-stone-400 uppercase tracking-widest mt-1">{label}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Backup */}
+                    <div className="border border-black/5 rounded-2xl p-6 space-y-4">
+                        <div>
+                            <p className="text-[10px] font-black text-stone-900 uppercase tracking-widest">Kopia zapasowa</p>
+                            <p className="text-[10px] text-stone-400 font-bold mt-1">
+                                Pobierz pełną kopię bazy danych (SQLite: plik .sqlite / MySQL: eksport JSON).
+                            </p>
+                        </div>
+                        <a
+                            href="/api/admin/backup"
+                            download
+                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-stone-900 hover:bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                        >
+                            <Download size={13} />
+                            Pobierz backup
+                        </a>
+                        <p className="text-[10px] text-stone-400 font-bold border-t border-black/5 pt-4">
+                            Produkcyjna kopia zapasowa powinna być konfigurowana na poziomie hostingu (cron job + cloud storage). Ręczny backup jest uzupełnieniem, nie zastępstwem automatycznych kopii.
+                        </p>
+                    </div>
+                </div>
+            )}
         </div>
+        </>
     );
 }

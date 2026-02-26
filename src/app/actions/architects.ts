@@ -61,6 +61,67 @@ export async function updateProfile(data: {
     return { success: true };
 }
 
+export async function updateArchitectData(
+    architectId: string,
+    data: {
+        name: string;
+        email: string;
+        studio_name: string;
+        nip: string;
+        address: string;
+        bank_account: string;
+        is_vat_payer: boolean;
+    }
+) {
+    const session = await getServerSession(authOptions);
+    if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
+
+    if (!data.name.trim()) throw new Error("Imię i nazwisko jest wymagane");
+    if (!data.email.trim()) throw new Error("Email jest wymagany");
+
+    const existing = await query<any>(
+        "SELECT id FROM users WHERE email = ? AND id != ?",
+        [data.email.trim().toLowerCase(), architectId]
+    );
+    if (existing.length > 0) throw new Error("Użytkownik z tym adresem email już istnieje");
+
+    await query(
+        `UPDATE users SET name = ?, email = ?, studio_name = ?, nip = ?, address = ?, bank_account = ?, is_vat_payer = ? WHERE id = ?`,
+        [
+            data.name.trim(),
+            data.email.trim().toLowerCase(),
+            data.studio_name || null,
+            data.nip || null,
+            data.address || null,
+            data.bank_account || null,
+            data.is_vat_payer ? 1 : 0,
+            architectId,
+        ]
+    );
+
+    revalidatePath(`/dashboard/admin/architects/${architectId}`);
+    revalidatePath('/dashboard/admin');
+    revalidatePath('/dashboard/admin/settings');
+    return { success: true };
+}
+
+export async function deleteArchitect(architectId: string) {
+    const session = await getServerSession(authOptions);
+    if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
+
+    await query("DELETE FROM users WHERE id = ? AND role = 'ARCHI'", [architectId]);
+
+    revalidatePath('/dashboard/admin');
+    revalidatePath('/dashboard/admin/settings');
+    return { success: true };
+}
+
+export async function getAllArchitectNames(): Promise<{ id: string; name: string }[]> {
+    const session = await getServerSession(authOptions);
+    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) throw new Error("Unauthorized");
+    return query<any>("SELECT id, name FROM users WHERE role = 'ARCHI' ORDER BY name ASC");
+}
+
 export async function resetArchitectPassword(architectId: string, newPassword: string) {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') {

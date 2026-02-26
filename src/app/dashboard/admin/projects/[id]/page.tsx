@@ -85,21 +85,21 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
                         <Building2 size={32} />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-black text-stone-900 mb-1">{project.name}</h1>
+                        <h1 className="text-2xl font-black text-stone-100 mb-1">{project.name}</h1>
                         <div className="flex items-center gap-3 flex-wrap">
                             <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${STATUS_COLORS[project.status] || 'bg-black/5 text-stone-500 border-black/10'}`}>
                                 {project.status}
                             </span>
-                            <span className="text-[10px] text-stone-500 font-bold">{project.client_label}</span>
-                            <span className="text-stone-700">·</span>
+                            <span className="text-[10px] text-stone-400 font-bold">{project.client_label}</span>
+                            <span className="text-stone-500">·</span>
                             <Link
                                 href={`/dashboard/admin/architects/${project.architect_id}`}
                                 className="text-[10px] text-stone-400 font-bold hover:text-brand-primary transition-all"
                             >
                                 {project.architect_name}
                             </Link>
-                            <span className="text-stone-700">·</span>
-                            <span className="text-[10px] text-stone-600 font-bold">
+                            <span className="text-stone-500">·</span>
+                            <span className="text-[10px] text-stone-400 font-bold">
                                 {new Date(project.created_at).toLocaleDateString('pl-PL')}
                             </span>
                         </div>

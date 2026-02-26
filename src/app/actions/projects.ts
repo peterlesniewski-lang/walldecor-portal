@@ -9,9 +9,10 @@ import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcrypt';
 import { spendCashback } from "@/lib/cashback";
 import { writeFile, mkdir, unlink } from 'fs/promises';
-import path from 'path';
 import { join } from 'path';
 import crypto from 'crypto';
+import { sendEmail } from "@/lib/email";
+
 
 function generateTempPassword(): string {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -62,6 +63,30 @@ export async function createProject(data: {
     revalidatePath('/dashboard/projects');
     revalidatePath('/dashboard');
 
+    // --- Email Notifications ---
+    try {
+        const userRes = await query<any>("SELECT name, email FROM users WHERE id = ?", [ownerId]);
+        const adminRes = await query<any>("SELECT email FROM users WHERE role = 'ADMIN' LIMIT 1");
+
+        if (userRes.length > 0) {
+            await sendEmail('PROJECT_ADDED_USER', userRes[0].email, {
+                user_name: userRes[0].name,
+                project_name: data.name,
+                client_label: data.client_label
+            });
+        }
+
+        if (adminRes.length > 0) {
+            await sendEmail('PROJECT_ADDED_ADMIN', adminRes[0].email, {
+                user_name: userRes[0]?.name || 'Architekt',
+                project_name: data.name
+            });
+        }
+    } catch (err) {
+        console.error("Email notification failed:", err);
+    }
+
+
     return { success: true, projectId };
 }
 
@@ -91,18 +116,28 @@ export async function updateProjectStatus(projectId: string, status: string) {
         );
         if (existingComm.length === 0) {
             const projectData = await query<any>(`
-                SELECT p.owner_id, u.commission_rate
+                SELECT p.owner_id, u.commission_rate, u.email, u.name, p.name as project_name
                 FROM projects p
                 JOIN users u ON p.owner_id = u.id
                 WHERE p.id = ?
             `, [projectId]);
 
             if (projectData.length > 0) {
-                const { owner_id, commission_rate } = projectData[0];
+                const { owner_id, commission_rate, email, name, project_name } = projectData[0];
+
+                // Email notification for acceptance
+                if (status === 'PRZYJĘTY') {
+                    await sendEmail('PROJECT_ACCEPTED', email, {
+                        user_name: name,
+                        project_name: project_name
+                    }).catch(err => console.error("Email notification failed:", err));
+                }
+
                 const items = await query<any>(
                     "SELECT id, amount_net FROM project_items WHERE project_id = ? AND type = 'PRODUCT'",
                     [projectId]
                 );
+
                 for (const item of items) {
                     const rate = (commission_rate && commission_rate > 0) ? commission_rate : 7;
                     const commAmount = (item.amount_net * rate) / 100;
@@ -292,9 +327,22 @@ export async function registerArchitect(data: {
         ]
     );
 
+    // --- Email Notification ---
+    try {
+        await sendEmail('ARCHITECT_REGISTERED', data.email, {
+            user_name: fullName,
+            password: passwordToHash,
+            site_url: process.env.NEXTAUTH_URL || 'http://localhost:3000'
+        });
+
+    } catch (err) {
+        console.error("Email notification failed:", err);
+    }
+
     revalidatePath('/dashboard/admin');
     return { success: true, userId, generatedPassword };
 }
+
 
 export async function getArchitectById(id: string) {
     const session = await getServerSession(authOptions);
@@ -402,7 +450,26 @@ export async function requestCommissionPayout(formData: FormData) {
 
     const invoiceUrl = `/api/invoices/${fileName}`;
 
-    // 3+4. Create payout request and lock commissions atomically.
+    // 3. FIFO: select only the commissions needed to cover the requested amount
+    const earnedComms = await query<any>(
+        "SELECT id, amount_net FROM commissions WHERE architect_id = ? AND status = 'EARNED' ORDER BY created_at ASC",
+        [session.user.id]
+    );
+
+    const toLock: string[] = [];
+    let accumulated = 0;
+    for (const comm of earnedComms) {
+        if (accumulated >= amount) break;
+        toLock.push(comm.id);
+        accumulated += Number(comm.amount_net);
+    }
+
+    if (toLock.length === 0 || accumulated < amount) {
+        await unlink(filePath).catch(() => { });
+        throw new Error("Niewystarczająca ilość zarobionej prowizji.");
+    }
+
+    // 4. Create payout request and lock selected commissions atomically.
     // If either DB write fails, roll back and clean up the uploaded file.
     const requestId = `pr_${uuidv4().substring(0, 12)}`;
     try {
@@ -411,13 +478,15 @@ export async function requestCommissionPayout(formData: FormData) {
                 "INSERT INTO payout_requests (id, architect_id, amount, status, type, invoice_url) VALUES (?, ?, ?, 'PENDING', 'COMMISSION', ?)",
                 [requestId, session.user.id, amount, invoiceUrl]
             );
-            await queryFn(
-                "UPDATE commissions SET status = 'IN_PAYMENT', payout_id = ? WHERE architect_id = ? AND status = 'EARNED'",
-                [requestId, session.user.id]
-            );
+            for (const id of toLock) {
+                await queryFn(
+                    "UPDATE commissions SET status = 'IN_PAYMENT', payout_id = ? WHERE id = ?",
+                    [requestId, id]
+                );
+            }
         });
     } catch (error) {
-        await unlink(filePath).catch(() => {}); // best-effort cleanup on DB failure
+        await unlink(filePath).catch(() => { }); // best-effort cleanup on DB failure
         throw error;
     }
 
@@ -484,6 +553,22 @@ export async function updatePayoutStatus(payoutId: string, newStatus: string) {
 
     revalidatePath('/dashboard/wallet');
     revalidatePath('/dashboard/admin');
+
+    // --- Email Notifications ---
+    if (newStatus === 'PAID') {
+        try {
+            const architectRes = await query<any>("SELECT name, email FROM users WHERE id = ?", [payoutReq.architect_id]);
+            if (architectRes.length > 0) {
+                await sendEmail('PAYOUT_PROCESSED', architectRes[0].email, {
+                    user_name: architectRes[0].name,
+                    amount: payoutReq.amount.toString()
+                });
+            }
+        } catch (err) {
+            console.error("Email notification failed:", err);
+        }
+    }
+
 
     // Revalidate specific projects linked to this payout
     const projectsRes = await query<any>("SELECT DISTINCT project_id FROM commissions WHERE payout_id = ?", [payoutId]);

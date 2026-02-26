@@ -1,6 +1,6 @@
 # Implementation Summary
 
-This document summarizes the current state of implementation for the Antigravity project, based on the codebase analysis conducted on February 24, 2026.
+This document summarizes the current state of implementation for the WallDecor project, based on the codebase analysis conducted on February 24, 2026.
 
 ## 1) High-level overview
 

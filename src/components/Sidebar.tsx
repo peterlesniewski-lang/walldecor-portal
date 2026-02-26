@@ -36,10 +36,10 @@ export default function Sidebar({ user }: { user: any }) {
                     </div>
                     <div>
                         <span className="text-xl font-black tracking-tight text-stone-900 block leading-none">
-                            ANTY<span className="gold-text">GRAVITY</span>
+                            Wall<span className="gold-text">Decor</span>
                         </span>
                         <div className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-1">
-                            A r c h i t e c t   P o r t a l
+                            P o r t a l   A r c h i t e k t a
                         </div>
                     </div>
                 </div>

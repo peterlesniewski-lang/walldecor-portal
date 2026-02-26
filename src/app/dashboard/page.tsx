@@ -87,8 +87,8 @@ export default async function DashboardPage() {
                         <TrendingUp size={160} />
                     </div>
                     <div className="relative z-10 p-4">
-                        <p className="text-sm font-bold text-stone-500 mb-4">{stats_ui[0].label}</p>
-                        <h3 className="text-6xl font-black text-stone-900 mb-8 tracking-tight gold-text">
+                        <p className="text-sm font-bold text-stone-400 mb-4">{stats_ui[0].label}</p>
+                        <h3 className="text-6xl font-black mb-8 tracking-tight gold-text">
                             {stats_ui[0].value}
                         </h3>
                         <div className="inline-flex items-center px-5 py-2.5 rounded-2xl bg-black/5 border border-black/10 text-[10px] font-black text-brand-primary uppercase tracking-widest">

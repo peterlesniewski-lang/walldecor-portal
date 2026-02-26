@@ -4,7 +4,6 @@ import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { notFound } from "next/navigation";
 import {
-    User,
     Building2,
     CreditCard,
     Wallet,
@@ -17,6 +16,7 @@ import {
 import Link from 'next/link';
 import { formatPLN } from '@/lib/utils';
 import ArchitectProfileClient from './ArchitectProfileClient';
+import ArchitectDataCard from './ArchitectDataCard';
 import AdminRedemptionQueue from '@/admin/components/AdminRedemptionQueue';
 import AdminPayoutsQueue from '@/admin/components/AdminPayoutsQueue';
 import { getArchitectRedemptions } from "@/app/actions/cashback";
@@ -151,13 +151,13 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
             {/* Header */}
             <div className="stat-card bg-gradient-to-br from-[#151518] to-[#0A0A0B] border border-black/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                 <div className="flex items-center gap-6">
-                    <div className="w-20 h-20 rounded-3xl bg-black/5 border border-black/10 flex items-center justify-center text-3xl font-black text-stone-900">
+                    <div className="w-20 h-20 rounded-3xl bg-black/5 border border-black/10 flex items-center justify-center text-3xl font-black text-stone-100">
                         {architect.name.substring(0, 2).toUpperCase()}
                     </div>
                     <div>
-                        <h1 className="text-2xl font-black text-stone-900 mb-1">{architect.name}</h1>
+                        <h1 className="text-2xl font-black text-stone-100 mb-1">{architect.name}</h1>
                         {architect.studio_name && (
-                            <p className="text-sm text-stone-400 font-bold mb-2">{architect.studio_name}</p>
+                            <p className="text-sm text-stone-300 font-bold mb-2">{architect.studio_name}</p>
                         )}
                         <div className="flex items-center gap-3">
                             <span className={`text-xs font-black uppercase tracking-widest ${tierColors[displayTier]}`}>
@@ -166,8 +166,8 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
                                     <span className="ml-1 text-[9px] text-stone-600 font-bold">(ręcznie)</span>
                                 )}
                             </span>
-                            <span className="text-stone-700">·</span>
-                            <span className="text-[10px] text-stone-500 font-bold">{architect.email}</span>
+                            <span className="text-stone-500">·</span>
+                            <span className="text-[10px] text-stone-400 font-bold">{architect.email}</span>
                         </div>
                     </div>
                 </div>
@@ -198,26 +198,7 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
                 <div className="space-y-8">
 
                     {/* Personal data */}
-                    <div className="stat-card bg-card border border-black/5 space-y-5">
-                        <div className="flex items-center gap-3 mb-2">
-                            <User size={16} className="text-brand-primary" />
-                            <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Dane osobowe</h3>
-                        </div>
-                        {[
-                            { label: 'Imię i nazwisko', value: architect.name },
-                            { label: 'Email', value: architect.email },
-                            { label: 'Studio / Biuro', value: architect.studio_name || '—' },
-                            { label: 'NIP', value: architect.nip || '—' },
-                            { label: 'Adres', value: architect.address || '—' },
-                            { label: 'Nr konta', value: architect.bank_account || '—' },
-                            { label: 'VAT', value: architect.is_vat_payer ? 'Płatnik VAT' : 'Nie jest płatnikiem VAT' },
-                        ].map((row) => (
-                            <div key={row.label} className="flex flex-col gap-0.5">
-                                <span className="text-[9px] font-black text-stone-600 uppercase tracking-widest">{row.label}</span>
-                                <span className="text-sm font-bold text-stone-900">{row.value}</span>
-                            </div>
-                        ))}
-                    </div>
+                    <ArchitectDataCard architect={architect} isAdmin={isAdmin} />
 
                     {/* Tier management — ADMIN only */}
                     {isAdmin && (

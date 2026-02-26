@@ -7,6 +7,8 @@ import { revalidatePath } from "next/cache";
 import { spendCashback } from "@/lib/cashback";
 import { v4 as uuidv4 } from 'uuid';
 import { logActivity } from "@/lib/services";
+import { sendEmail } from "@/lib/email";
+
 
 /**
  * Architect requests a cashback redemption (exchange for a discount card).
@@ -68,7 +70,28 @@ export async function issueDiscountCode(redemptionId: string, code: string) {
     // 2. Log activity
     await logActivity(session.user.id, 'CASHBACK_REDEMPTION_COMPLETED', `Przyznano kartę rabatową dla wniosku ${redemptionId}`, { redemptionId, code });
 
+    // 3. Email Notification
+    try {
+        const userRes = await query<any>(`
+            SELECT u.name, u.email 
+            FROM cashback_redemptions r 
+            JOIN users u ON r.user_id = u.id 
+            WHERE r.id = ?
+        `, [redemptionId]);
+
+        if (userRes.length > 0) {
+            await sendEmail('PAYOUT_REDEEMED_CARD', userRes[0].email, {
+                user_name: userRes[0].name,
+                card_code: code,
+                project_name: 'Cashback Portfel' // or fetch related project if possible
+            });
+        }
+    } catch (err) {
+        console.error("Email notification failed:", err);
+    }
+
     revalidatePath('/dashboard/admin');
+
     revalidatePath('/dashboard/admin/architects');
 
     return { success: true };

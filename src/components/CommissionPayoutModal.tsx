@@ -132,18 +132,18 @@ export default function CommissionPayoutModal({ isOpen, onClose, amount, project
                                     </div>
                                     <div className="space-y-1.5">
                                         <span className="text-[10px] text-stone-500 uppercase font-black block">Tytuł faktury:</span>
-                                        <div className="p-3 rounded-xl bg-black/40 border border-black/5 text-[11px] font-medium text-stone-400 leading-relaxed italic">
+                                        <div className="p-4 rounded-xl bg-brand-primary/[0.03] border border-brand-primary/20 text-[13px] font-bold text-stone-900 leading-relaxed italic">
                                             konsultacja projektowa + {projectListText}
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4 pt-2">
                                         <div className="space-y-1">
                                             <span className="text-[9px] text-stone-600 uppercase font-black block">Termin płatności:</span>
-                                            <span className="text-[10px] text-stone-400 font-bold">14 dni</span>
+                                            <span className="text-[11px] text-stone-900 font-bold">14 dni</span>
                                         </div>
                                         <div className="space-y-1 text-right">
                                             <span className="text-[9px] text-stone-600 uppercase font-black block">Sposób płatności:</span>
-                                            <span className="text-[10px] text-stone-400 font-bold">Przelew bankowy</span>
+                                            <span className="text-[11px] text-stone-900 font-bold">Przelew bankowy</span>
                                         </div>
                                     </div>
                                 </div>

@@ -175,7 +175,7 @@ export default function ProjectDetailClient({ project, availableCashback }: Proj
                             </div>
                         </div>
 
-                        <button className="w-full mt-8 py-4 bg-black text-stone-900 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black/90 transition-all flex items-center justify-center gap-2">
+                        <button className="w-full mt-8 py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black/90 transition-all flex items-center justify-center gap-2">
                             <CreditCard size={14} className="text-brand-primary" />
                             Wypłać Środki
                         </button>

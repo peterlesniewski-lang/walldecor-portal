@@ -295,8 +295,20 @@ migrations/
 | - | ------- | ------ |
 | 1 | Stawka prowizji BEGINNER (0–9 999 PLN) | TBD — wymagana decyzja biznesowa |
 | 2 | Drilldown Prognoza Wypłat — klikalne liczniki "Gotowi do wypłaty" / "Prawie gotowi" | Do implementacji |
-| 3 | Resetowanie/edycja wniosków payout przez admina (Reject/Hold pojedynczych wierszy) | Do implementacji |
-| 4 | Funkcjonalność modalu "Ustawienia Profilu" w panelu partnera | Do implementacji |
+| 3 | Funkcjonalność modalu "Ustawienia Profilu" w panelu partnera | Do implementacji |
+
+---
+
+### Faza 8 — Poprawki krytyczne i CSV import (sesja 4)
+
+- **CSV import** (`src/app/actions/import.ts`, `src/admin/components/AdminCSVImportModal.tsx`): import projektów z CSV Google Sheets; mapowanie 15 kolumn; auto-rejestracja architekta (bcrypt, sendEmail); guard duplikatów po `order_number`; modal 3-krokowy (upload → preview → wyniki)
+- **Import Google Apps Script** (`import.txt`): skrypt do scalania arkuszy per-architekt z Drive do jednego pliku CSV
+- **Prowizja per pozycja** (`src/components/ProjectListClient.tsx`): każda pozycja projektu pokazuje `+XX PLN prowizji` lub `bez prowizji` z matched commission via `project_item_id`
+- **Wniosek wypłaty w historii** (`src/app/dashboard/wallet/page.tsx`): payout requests widoczne u góry historii operacji z kolorowanymi statusami (PENDING/IN_PAYMENT/HOLD/REJECTED/PAID)
+- **Middleware RBAC** — `src/proxy.ts` przemianowany na `src/middleware.ts`; Next.js teraz faktycznie ładuje middleware i chroni `/dashboard/admin/*`
+- **FIFO blokowanie prowizji** (`requestCommissionPayout` w `projects.ts`): zamiast blokowania WSZYSTKICH EARNED, teraz FIFO po `created_at ASC` — blokowane tylko tyle prowizji ile potrzeba do pokrycia kwoty wniosku
+- **Faktura PDF** — pliki zapisywane do `private_uploads/invoices/` (nie `public/`); endpoint `/api/invoices/[filename]/route.ts` z weryfikacją sesji i właściciela; magic bytes `%PDF` sprawdzane server-side
+- **Minimalna kwota** — ujednolicona na 100 PLN (kod i UI zgodne)
 
 ---
 

@@ -8,7 +8,7 @@ interface ProjectSubmissionModalProps {
     userRole?: string;
 }
 
-const categories = ['Tapety', 'Sztukateria', 'Meble', 'Oświetlenie', 'Tekstylia', 'Inne'];
+const categories = ['Tapety', 'Sztukateria', 'Farby', 'Tynki', 'Tkaniny', 'Podłogi', 'Inne'];
 
 export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: ProjectSubmissionModalProps) {
     const [loading, setLoading] = useState(false);

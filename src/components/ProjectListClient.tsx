@@ -185,15 +185,25 @@ export default function ProjectListClient({ initialProjects, userId, userRole }:
                                         <div className="space-y-4">
                                             <p className="text-[10px] font-black text-stone-600 uppercase tracking-widest">Pozycje Projektu</p>
                                             <div className="space-y-3">
-                                                {project.items?.map((item: any) => (
-                                                    <div key={item.id} className="flex justify-between items-center p-3 bg-black/[0.02] border border-black/5 rounded-xl">
-                                                        <div>
+                                                {project.items?.map((item: any) => {
+                                                    const comm = project.commissions?.find((c: any) => c.project_item_id === item.id);
+                                                    return (
+                                                    <div key={item.id} className="flex justify-between items-start p-3 bg-black/[0.02] border border-black/5 rounded-xl gap-3">
+                                                        <div className="flex-1 min-w-0">
                                                             <p className="text-xs font-black text-stone-900">{item.category}</p>
                                                             {item.description && <p className="text-[9px] text-stone-500 font-bold">{item.description}</p>}
                                                         </div>
-                                                        <p className="text-xs font-black text-stone-400">{formatPLN(item.amount_net)} PLN</p>
+                                                        <div className="text-right shrink-0">
+                                                            <p className="text-xs font-black text-stone-400">{formatPLN(item.amount_net)} PLN</p>
+                                                            {comm ? (
+                                                                <p className="text-[9px] font-black text-emerald-500 mt-0.5">+{formatPLN(comm.amount_net)} prowizji</p>
+                                                            ) : (
+                                                                <p className="text-[9px] font-bold text-stone-300 mt-0.5" title="Ta pozycja nie podlega naliczeniu prowizji">bez prowizji</p>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                ))}
+                                                    );
+                                                })}
                                                 {(!project.items || project.items.length === 0) && (
                                                     <p className="text-[10px] text-stone-600 font-bold italic">Brak wyszczególnionych pozycji.</p>
                                                 )}
