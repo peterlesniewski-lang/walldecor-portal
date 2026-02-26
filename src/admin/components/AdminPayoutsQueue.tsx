@@ -35,6 +35,7 @@ interface PayoutRequest {
     created_at: string;
     status: string;
     project_names?: string;
+    project_ids?: string;
     invoice_url?: string;
     invoice_number?: string | null;
     bank_account?: string | null;
@@ -361,9 +362,25 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
                                 </div>
                                 <div className="flex flex-col gap-1">
                                     {p.project_names && (
-                                        <p className="text-[10px] text-brand-primary font-bold uppercase tracking-widest line-clamp-1">
-                                            {p.project_names.split(',').join(' • ')}
-                                        </p>
+                                        <div className="flex flex-wrap gap-x-2 gap-y-0.5 line-clamp-1">
+                                            {p.project_names.split(',').map((name, i) => {
+                                                const id = p.project_ids?.split(',')[i];
+                                                return id ? (
+                                                    <Link
+                                                        key={id}
+                                                        href={`/dashboard/admin/projects/${id}`}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="text-[10px] text-brand-primary font-bold uppercase tracking-widest hover:underline underline-offset-2"
+                                                    >
+                                                        {name.trim()}{i < p.project_names!.split(',').length - 1 ? ' •' : ''}
+                                                    </Link>
+                                                ) : (
+                                                    <span key={i} className="text-[10px] text-brand-primary font-bold uppercase tracking-widest">
+                                                        {name.trim()}{i < p.project_names!.split(',').length - 1 ? ' •' : ''}
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
                                     )}
                                     <InvoiceNumberField payoutId={p.id} initialValue={p.invoice_number} />
                                     <div className="flex items-center gap-3">

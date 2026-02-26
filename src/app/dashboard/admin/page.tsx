@@ -86,7 +86,11 @@ export default async function AdminDashboard() {
                (SELECT GROUP_CONCAT(DISTINCT p.name)
                 FROM commissions c
                 JOIN projects p ON c.project_id = p.id
-                WHERE c.payout_id = pr.id) as project_names
+                WHERE c.payout_id = pr.id) as project_names,
+               (SELECT GROUP_CONCAT(DISTINCT p.id)
+                FROM commissions c
+                JOIN projects p ON c.project_id = p.id
+                WHERE c.payout_id = pr.id) as project_ids
         FROM payout_requests pr
         JOIN users u ON pr.architect_id = u.id
         WHERE pr.status IN ('PENDING', 'IN_PAYMENT', 'HOLD')
