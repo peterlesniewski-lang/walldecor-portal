@@ -25,6 +25,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { handlePayoutRequest } from "@/app/actions/admin";
 import { updatePayoutInvoiceNumber } from "@/app/actions/projects";
+import { notifyArchitectProfileIncomplete } from "@/app/actions/architects";
 import { formatPLN } from "@/lib/utils";
 
 interface PayoutRequest {
@@ -139,6 +140,8 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
     const [processedTotal, setProcessedTotal] = useState<number | null>(null);
     const [confirmingRejectId, setConfirmingRejectId] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [notifyingId, setNotifyingId] = useState<string | null>(null);
+    const [notifiedIds, setNotifiedIds] = useState<string[]>([]);
     const router = useRouter();
 
     const toggleExpand = (id: string) => {
@@ -511,20 +514,45 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
                                         )}
                                     </div>
                                 ) : (
-                                    <div className="flex items-center justify-between gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 mb-5">
+                                    <div className="flex items-start justify-between gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 mb-5">
                                         <div className="flex items-center gap-3">
-                                            <AlertCircle size={14} className="text-amber-500 shrink-0" />
+                                            <AlertCircle size={14} className="text-amber-500 shrink-0 mt-0.5" />
                                             <p className="text-[11px] font-bold text-amber-700">
                                                 Brak danych bankowych w profilu architekta.
                                             </p>
                                         </div>
-                                        <Link
-                                            href={`/dashboard/admin/architects/${p.architect_id}`}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="text-[9px] font-black uppercase tracking-widest text-amber-600 hover:text-amber-800 underline shrink-0"
-                                        >
-                                            Uzupełnij →
-                                        </Link>
+                                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                            <Link
+                                                href={`/dashboard/admin/architects/${p.architect_id}`}
+                                                className="text-[9px] font-black uppercase tracking-widest text-amber-600 hover:text-amber-800 underline"
+                                            >
+                                                Profil →
+                                            </Link>
+                                            <span className="text-amber-300">|</span>
+                                            <button
+                                                disabled={notifyingId === p.id || notifiedIds.includes(p.id)}
+                                                onClick={async () => {
+                                                    setNotifyingId(p.id);
+                                                    try {
+                                                        await notifyArchitectProfileIncomplete(p.architect_id);
+                                                        setNotifiedIds(prev => [...prev, p.id]);
+                                                    } catch {
+                                                        // silent
+                                                    } finally {
+                                                        setNotifyingId(null);
+                                                    }
+                                                }}
+                                                className={`text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1 ${notifiedIds.includes(p.id) ? 'text-emerald-600' : 'text-amber-600 hover:text-amber-800'} disabled:opacity-50`}
+                                            >
+                                                {notifyingId === p.id ? (
+                                                    <Loader2 size={10} className="animate-spin" />
+                                                ) : notifiedIds.includes(p.id) ? (
+                                                    <><CheckCircle size={10} /> Wysłano</>
+                                                ) : (
+                                                    '📧 Wyślij email'
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
 

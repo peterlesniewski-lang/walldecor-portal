@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import bcrypt from 'bcrypt';
+import { sendEmail } from "@/lib/email";
 
 export async function updateArchitectAdminFields(
     architectId: string,
@@ -116,6 +117,23 @@ export async function getAllArchitectNames(): Promise<{ id: string; name: string
     const session = await getServerSession(authOptions);
     if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) throw new Error("Unauthorized");
     return query<any>("SELECT id, name FROM users WHERE role = 'ARCHI' ORDER BY name ASC");
+}
+
+export async function notifyArchitectProfileIncomplete(architectId: string) {
+    const session = await getServerSession(authOptions);
+    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
+        throw new Error("Unauthorized");
+    }
+
+    const userRes = await query<any>("SELECT name, email FROM users WHERE id = ?", [architectId]);
+    if (userRes.length === 0) throw new Error("Architekt nie znaleziony");
+
+    const architect = userRes[0];
+    await sendEmail('PROFILE_INCOMPLETE', architect.email, {
+        user_name: architect.name,
+    });
+
+    return { success: true };
 }
 
 export async function resetArchitectPassword(architectId: string, newPassword: string) {
