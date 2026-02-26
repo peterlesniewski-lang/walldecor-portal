@@ -14,8 +14,12 @@ import {
     PauseCircle,
     CheckCircle,
     Receipt,
-    ExternalLink,
-    FileText
+    FileText,
+    Copy,
+    ChevronDown,
+    ChevronUp,
+    Landmark,
+    AlertCircle
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { handlePayoutRequest } from "@/app/actions/admin";
@@ -24,6 +28,7 @@ import { formatPLN } from "@/lib/utils";
 
 interface PayoutRequest {
     id: string;
+    architect_id: string;
     architect_name: string;
     amount: number;
     created_at: string;
@@ -31,6 +36,33 @@ interface PayoutRequest {
     project_names?: string;
     invoice_url?: string;
     invoice_number?: string | null;
+    bank_account?: string | null;
+    nip?: string | null;
+    address?: string | null;
+    studio_name?: string | null;
+    is_vat_payer?: number | null;
+}
+
+function CopyField({ label, value }: { label: string; value: string }) {
+    const [copied, setCopied] = useState(false);
+    const copy = () => {
+        navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+    };
+    return (
+        <div className="flex items-center justify-between gap-4 py-2.5 border-b border-black/5 last:border-0">
+            <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest w-20 shrink-0">{label}</span>
+            <span className="text-[12px] font-bold text-stone-800 flex-1 font-mono">{value}</span>
+            <button
+                onClick={copy}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all shrink-0 ${copied ? 'bg-emerald-500/10 text-emerald-600' : 'bg-black/5 text-stone-400 hover:bg-black/10 hover:text-stone-700'}`}
+            >
+                {copied ? <CheckCircle size={11} /> : <Copy size={11} />}
+                {copied ? 'OK' : 'Kopiuj'}
+            </button>
+        </div>
+    );
 }
 
 function InvoiceNumberField({ payoutId, initialValue }: { payoutId: string; initialValue?: string | null }) {
@@ -104,7 +136,13 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
     const [errorMsg, setErrorMsg] = useState('');
     const [processedTotal, setProcessedTotal] = useState<number | null>(null);
     const [confirmingRejectId, setConfirmingRejectId] = useState<string | null>(null);
+    const [expandedId, setExpandedId] = useState<string | null>(null);
     const router = useRouter();
+
+    const toggleExpand = (id: string) => {
+        if (phase !== 'idle') return;
+        setExpandedId(prev => prev === id ? null : id);
+    };
 
     const isSelectable = (status: string) => !['APPROVED', 'PAID', 'REJECTED'].includes(status);
 
@@ -276,12 +314,17 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
                 {initialPayouts.map((p) => (
                     <div
                         key={p.id}
-                        onClick={() => phase === 'idle' && toggleSelect(p.id, p.status)}
-                        className={`stat-card border transition-all flex items-center justify-between group ${phase !== 'idle' ? 'opacity-50 pointer-events-none' : isSelectable(p.status) ? 'cursor-pointer' : 'opacity-70'
+                        className={`stat-card border transition-all ${phase !== 'idle' ? 'opacity-50 pointer-events-none' : ''
                             } ${selectedIds.includes(p.id)
                                 ? 'bg-brand-primary/5 border-brand-primary/30'
-                                : 'bg-black/[0.02] border-black/5 hover:border-black/10'
+                                : expandedId === p.id
+                                    ? 'bg-stone-50 border-black/10'
+                                    : 'bg-black/[0.02] border-black/5 hover:border-black/10'
                             }`}
+                    >
+                    <div
+                        onClick={() => toggleExpand(p.id)}
+                        className={`flex items-center justify-between group ${phase !== 'idle' ? '' : 'cursor-pointer'}`}
                     >
                         <div className="flex items-center gap-6">
                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${selectedIds.includes(p.id)
@@ -407,6 +450,62 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
                                 )}
                             </div>
                         </div>
+                        {/* Expand/collapse indicator */}
+                        <div className="ml-3 text-stone-300">
+                            {expandedId === p.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </div>
+                    </div>
+
+                        {/* Expandable transfer panel */}
+                        {expandedId === p.id && (
+                            <div className="border-t border-black/5 px-6 py-5 bg-white/60">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <Landmark size={13} className="text-brand-primary" />
+                                    <span className="text-[10px] font-black text-brand-primary uppercase tracking-widest">Dane do przelewu</span>
+                                </div>
+
+                                {p.bank_account ? (
+                                    <div className="space-y-0 mb-5">
+                                        <CopyField
+                                            label="Odbiorca"
+                                            value={p.studio_name || p.architect_name}
+                                        />
+                                        <CopyField
+                                            label="Nr konta"
+                                            value={p.bank_account}
+                                        />
+                                        <CopyField
+                                            label="Kwota"
+                                            value={`${Number(p.amount).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} PLN`}
+                                        />
+                                        <CopyField
+                                            label="Tytuł"
+                                            value={`Konsultacja projektowa${p.project_names ? ` – ${p.project_names}` : ''}`}
+                                        />
+                                        {p.nip && (
+                                            <CopyField label="NIP" value={p.nip} />
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 mb-5">
+                                        <AlertCircle size={14} className="text-amber-500 shrink-0" />
+                                        <p className="text-[11px] font-bold text-amber-700">
+                                            Brak danych bankowych — architekt nie uzupełnił numeru konta w profilu.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {!(p.status === 'APPROVED' || p.status === 'PAID' || p.status === 'REJECTED') && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onIndividualAction(p.id, 'PAID'); setExpandedId(null); }}
+                                        className="w-full py-3 rounded-xl bg-emerald-500 text-black font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-400 transition-all shadow-[0_4px_16px_rgba(16,185,129,0.2)]"
+                                    >
+                                        <CheckCircle size={14} />
+                                        Oznacz jako ZAPŁACONE
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

@@ -82,9 +82,10 @@ export default async function AdminDashboard() {
     // 5. Payout requests queue
     const payoutRequests = await query<any>(`
         SELECT pr.*, u.name as architect_name,
-               (SELECT GROUP_CONCAT(DISTINCT p.name) 
-                FROM commissions c 
-                JOIN projects p ON c.project_id = p.id 
+               u.bank_account, u.nip, u.address, u.studio_name, u.is_vat_payer,
+               (SELECT GROUP_CONCAT(DISTINCT p.name)
+                FROM commissions c
+                JOIN projects p ON c.project_id = p.id
                 WHERE c.payout_id = pr.id) as project_names
         FROM payout_requests pr
         JOIN users u ON pr.architect_id = u.id
