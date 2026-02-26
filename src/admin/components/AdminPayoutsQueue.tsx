@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import {
     CreditCard,
     CheckCircle2,
@@ -337,7 +338,13 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
                             </div>
                             <div>
                                 <div className="flex items-center gap-3 mb-1">
-                                    <p className="text-sm font-black text-stone-900">{p.architect_name}</p>
+                                    <Link
+                                        href={`/dashboard/admin/architects/${p.architect_id}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-sm font-black text-stone-900 hover:text-brand-primary transition-colors underline-offset-2 hover:underline"
+                                    >
+                                        {p.architect_name}
+                                    </Link>
                                     {p.invoice_url && (
                                         <a
                                             href={p.invoice_url}
@@ -487,11 +494,20 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
                                         )}
                                     </div>
                                 ) : (
-                                    <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 mb-5">
-                                        <AlertCircle size={14} className="text-amber-500 shrink-0" />
-                                        <p className="text-[11px] font-bold text-amber-700">
-                                            Brak danych bankowych — architekt nie uzupełnił numeru konta w profilu.
-                                        </p>
+                                    <div className="flex items-center justify-between gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 mb-5">
+                                        <div className="flex items-center gap-3">
+                                            <AlertCircle size={14} className="text-amber-500 shrink-0" />
+                                            <p className="text-[11px] font-bold text-amber-700">
+                                                Brak danych bankowych w profilu architekta.
+                                            </p>
+                                        </div>
+                                        <Link
+                                            href={`/dashboard/admin/architects/${p.architect_id}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="text-[9px] font-black uppercase tracking-widest text-amber-600 hover:text-amber-800 underline shrink-0"
+                                        >
+                                            Uzupełnij →
+                                        </Link>
                                     </div>
                                 )}
 
