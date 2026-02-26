@@ -14,6 +14,8 @@ import {
     Timer,
     FolderOpen,
     CheckCircle2,
+    Send,
+    Wrench,
 } from 'lucide-react';
 import Link from 'next/link';
 import AddArchitectButton from "@/components/AddArchitectButton";
@@ -192,12 +194,14 @@ export default async function AdminDashboard() {
             </div>
 
             {/* ── Row 2: Tier + Alert Counts ── */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 gap-4">
                 {[
                     { label: 'Partnerzy Silver', value: silverCount, icon: ShieldCheck, iconColor: 'text-stone-400', bg: 'bg-black/5', href: '/dashboard/admin/architects?tier=silver' },
                     { label: 'Partnerzy Gold', value: goldCount, icon: ShieldCheck, iconColor: 'text-brand-primary', bg: 'bg-brand-primary/10', href: '/dashboard/admin/architects?tier=gold' },
                     { label: 'Partnerzy Platinum', value: platinumCount, icon: ShieldCheck, iconColor: 'text-indigo-600', bg: 'bg-indigo-50', href: '/dashboard/admin/architects?tier=platinum' },
                     { label: 'Do Akceptacji', value: pendingProjects.length, icon: Clock, iconColor: 'text-red-600', bg: 'bg-red-50', href: '#pending-projects' },
+                    { label: 'Zgłoszone', value: metrics.projects.submitted, icon: Send, iconColor: 'text-blue-600', bg: 'bg-blue-50', href: '#project-pipeline' },
+                    { label: 'W realizacji', value: metrics.projects.inProgress, icon: Wrench, iconColor: 'text-amber-600', bg: 'bg-amber-50', href: '#project-pipeline' },
                     { label: 'Brak Opiekuna', value: metrics.alerts.withoutCaretaker, icon: AlertTriangle, iconColor: 'text-orange-600', bg: 'bg-orange-50', href: '#project-pipeline' },
                     { label: 'Nieaktywne (14d)', value: metrics.alerts.staleProjects, icon: Activity, iconColor: 'text-rose-600', bg: 'bg-rose-50', href: '#project-pipeline' },
                 ].map((stat, i) => (
