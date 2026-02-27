@@ -30,17 +30,10 @@ export default function Sidebar({ user }: { user: any }) {
     return (
         <aside className="w-72 bg-white border-r border-border flex flex-col p-8 sticky top-0 h-screen z-50">
             <div className="mb-12 px-4">
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg gold-gradient flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.2)]">
-                        <div className="w-4 h-4 bg-black rounded-sm transform rotate-45"></div>
-                    </div>
-                    <div>
-                        <span className="text-xl font-black tracking-tight text-stone-900 block leading-none">
-                            Wall<span className="gold-text">Decor</span>
-                        </span>
-                        <div className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-1">
-                            P o r t a l   A r c h i t e k t a
-                        </div>
+                <div className="flex flex-col gap-2">
+                    <img src="/walldecor-logo.jpg" alt="WallDecor" className="h-10 w-auto object-contain" />
+                    <div className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
+                        P o r t a l   A r c h i t e k t a
                     </div>
                 </div>
             </div>

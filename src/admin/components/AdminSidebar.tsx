@@ -26,17 +26,10 @@ export default function AdminSidebar({ user }: { user: any }) {
     return (
         <aside className="w-72 bg-background border-r border-black/5 flex flex-col p-8 sticky top-0 h-screen z-50">
             <div className="mb-12 px-4">
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg gold-gradient flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.2)]">
-                        <div className="w-4 h-4 bg-black rounded-sm transform rotate-45"></div>
-                    </div>
-                    <div>
-                        <span className="text-xl font-black tracking-tight text-stone-900 block leading-none">
-                            ANTY<span className="gold-text">GRAVITY</span>
-                        </span>
-                        <div className="text-[10px] font-bold text-stone-500 uppercase tracking-widest mt-1">
-                            A r c h i t e c t   P o r t a l
-                        </div>
+                <div className="flex flex-col gap-2">
+                    <img src="/walldecor-logo.jpg" alt="WallDecor" className="h-10 w-auto object-contain" />
+                    <div className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">
+                        P o r t a l   A r c h i t e k t a
                     </div>
                 </div>
             </div>
