@@ -3,7 +3,7 @@
 import React, { useRef, useState } from 'react';
 import {
     FileText, Image as ImageIcon, Upload, Trash2, Download,
-    Loader2, AlertCircle, Paperclip, X, CheckCircle2
+    Loader2, AlertCircle, Paperclip, X, CheckCircle2, ZoomIn
 } from 'lucide-react';
 
 export interface ProjectFile {
@@ -26,6 +26,8 @@ interface ProjectFilesSectionProps {
     isAdmin: boolean;
 }
 
+type FilterMode = 'ALL' | 'DOC' | 'PHOTO';
+
 function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -39,6 +41,50 @@ function FileIcon({ mimeType }: { mimeType: string }) {
     return <FileText size={14} className="text-amber-500" />;
 }
 
+// ─── Lightbox ────────────────────────────────────────────────────────────────
+
+function Lightbox({ file, projectId, onClose }: { file: ProjectFile; projectId: string; onClose: () => void }) {
+    const src = `/api/projects/${projectId}/files/${file.id}`;
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+            onClick={onClose}
+        >
+            <button
+                onClick={onClose}
+                className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all"
+            >
+                <X size={20} />
+            </button>
+            <div
+                className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-3"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                    src={src}
+                    alt={file.original_name}
+                    className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl"
+                />
+                <div className="flex items-center gap-4">
+                    <p className="text-white/70 text-xs font-bold">{file.original_name}</p>
+                    <a
+                        href={src}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
+                    >
+                        <Download size={11} />
+                        Pobierz
+                    </a>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function ProjectFilesSection({
     projectId,
     currentUserId,
@@ -46,12 +92,27 @@ export default function ProjectFilesSection({
     isAdmin,
 }: ProjectFilesSectionProps) {
     const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
-    const [category, setCategory] = useState<'DOC' | 'PHOTO'>('DOC');
+    const [filter, setFilter] = useState<FilterMode>('ALL');
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+    const [lightboxFile, setLightboxFile] = useState<ProjectFile | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Upload category follows the filter (defaults to DOC when ALL)
+    const uploadCategory: 'DOC' | 'PHOTO' = filter === 'PHOTO' ? 'PHOTO' : 'DOC';
+
+    // Accept attribute follows the filter
+    const acceptAttr =
+        filter === 'PHOTO'
+            ? '.jpg,.jpeg,.png,.webp'
+            : filter === 'DOC'
+            ? '.pdf'
+            : '.pdf,.jpg,.jpeg,.png,.webp';
+
+    const visibleFiles =
+        filter === 'ALL' ? files : files.filter((f) => f.category === filter);
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const selected = e.target.files;
@@ -64,7 +125,7 @@ export default function ProjectFilesSection({
             for (const file of Array.from(selected)) {
                 const formData = new FormData();
                 formData.append('file', file);
-                formData.append('category', category);
+                formData.append('category', uploadCategory);
 
                 const res = await fetch(`/api/projects/${projectId}/files`, {
                     method: 'POST',
@@ -108,168 +169,207 @@ export default function ProjectFilesSection({
         return file.uploaded_by === currentUserId;
     };
 
-    return (
-        <div className="stat-card bg-card border border-black/5 p-6 space-y-4">
-            {/* Header */}
-            <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                    <Paperclip size={14} className="text-brand-primary" />
-                    <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-[0.3em]">
-                        Pliki projektu
-                    </h3>
-                    {files.length > 0 && (
-                        <span className="text-[10px] font-black text-stone-400">({files.length})</span>
-                    )}
-                </div>
+    const FILTERS: { key: FilterMode; label: string }[] = [
+        { key: 'ALL', label: 'Wszystkie' },
+        { key: 'DOC', label: 'Dok.' },
+        { key: 'PHOTO', label: 'Foto' },
+    ];
 
-                <div className="flex items-center gap-3">
-                    {/* Category toggle */}
-                    <div className="flex items-center gap-1 bg-black/5 rounded-xl p-1">
-                        {(['DOC', 'PHOTO'] as const).map((cat) => (
-                            <button
-                                key={cat}
-                                onClick={() => setCategory(cat)}
-                                className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                                    category === cat
-                                        ? 'bg-white shadow-sm text-stone-900'
-                                        : 'text-stone-500 hover:text-stone-700'
-                                }`}
-                            >
-                                {cat === 'DOC' ? 'Dokument' : 'Zdjęcie'}
-                            </button>
-                        ))}
+    return (
+        <>
+            {lightboxFile && (
+                <Lightbox
+                    file={lightboxFile}
+                    projectId={projectId}
+                    onClose={() => setLightboxFile(null)}
+                />
+            )}
+
+            <div className="stat-card bg-card border border-black/5 p-6 space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                        <Paperclip size={14} className="text-brand-primary" />
+                        <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-[0.3em]">
+                            Pliki projektu
+                        </h3>
+                        {files.length > 0 && (
+                            <span className="text-[10px] font-black text-stone-400">({files.length})</span>
+                        )}
                     </div>
 
-                    {/* Upload button */}
-                    <button
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploading}
-                        className="flex items-center gap-2 px-3 py-2 bg-black/5 hover:bg-black/10 border border-black/10 rounded-xl text-[9px] font-black text-stone-700 uppercase tracking-widest transition-all disabled:opacity-50"
-                    >
-                        {uploading ? (
-                            <Loader2 size={12} className="animate-spin" />
-                        ) : (
-                            <Upload size={12} />
-                        )}
-                        {uploading ? 'Przesyłanie...' : 'Dodaj plik'}
-                    </button>
-
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png,.webp"
-                        multiple
-                        className="hidden"
-                        onChange={handleFileChange}
-                    />
-                </div>
-            </div>
-
-            {/* Upload error */}
-            {uploadError && (
-                <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                    <AlertCircle size={14} />
-                    <span className="text-[11px] font-bold">{uploadError}</span>
-                    <button onClick={() => setUploadError(null)} className="ml-auto">
-                        <X size={12} />
-                    </button>
-                </div>
-            )}
-
-            {/* File list */}
-            {files.length === 0 ? (
-                <div className="py-8 text-center border border-dashed border-black/10 rounded-2xl">
-                    <Paperclip size={20} className="mx-auto text-stone-300 mb-2" />
-                    <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
-                        Brak załączników
-                    </p>
-                </div>
-            ) : (
-                <div className="space-y-1">
-                    {files.map((file) => (
-                        <div
-                            key={file.id}
-                            className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-black/5 transition-all group"
-                        >
-                            {/* Category badge */}
-                            <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg border shrink-0 ${
-                                file.category === 'PHOTO'
-                                    ? 'bg-blue-50 text-blue-500 border-blue-200'
-                                    : 'bg-amber-50 text-amber-600 border-amber-200'
-                            }`}>
-                                {file.category === 'PHOTO' ? 'Foto' : 'Doc'}
-                            </span>
-
-                            {/* Icon + name */}
-                            <FileIcon mimeType={file.mime_type} />
-                            <span className="flex-1 text-[11px] font-bold text-stone-700 truncate" title={file.original_name}>
-                                {file.original_name}
-                            </span>
-
-                            {/* Meta */}
-                            <span className="text-[10px] text-stone-400 font-medium shrink-0 hidden sm:block">
-                                {formatBytes(file.file_size)}
-                            </span>
-                            <span className="text-[10px] text-stone-400 font-medium shrink-0 hidden md:block">
-                                {new Date(file.created_at).toLocaleDateString('pl-PL')}
-                            </span>
-                            {isAdmin && (
-                                <span className="text-[10px] text-stone-400 font-medium shrink-0 hidden lg:block max-w-[120px] truncate" title={file.uploaded_by_name}>
-                                    {file.uploaded_by_name}
-                                </span>
-                            )}
-
-                            {/* Actions */}
-                            <div className="flex items-center gap-1 shrink-0">
-                                <a
-                                    href={`/api/projects/${projectId}/files/${file.id}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="p-1.5 rounded-lg hover:bg-black/5 text-stone-400 hover:text-stone-700 transition-all"
-                                    title="Pobierz"
+                    <div className="flex items-center gap-3">
+                        {/* Filter toggle */}
+                        <div className="flex items-center gap-1 bg-black/5 rounded-xl p-1">
+                            {FILTERS.map(({ key, label }) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setFilter(key)}
+                                    className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                                        filter === key
+                                            ? 'bg-white shadow-sm text-stone-900'
+                                            : 'text-stone-500 hover:text-stone-700'
+                                    }`}
                                 >
-                                    <Download size={13} />
-                                </a>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
 
-                                {canDeleteFile(file) && (
-                                    <>
-                                        {confirmDeleteId === file.id ? (
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">Usuń?</span>
-                                                <button
-                                                    onClick={() => handleDelete(file.id)}
-                                                    disabled={deletingId === file.id}
-                                                    className="p-1 rounded-lg text-[9px] font-black text-red-500 hover:bg-red-50 transition-all"
-                                                >
-                                                    {deletingId === file.id ? (
-                                                        <Loader2 size={11} className="animate-spin" />
-                                                    ) : (
-                                                        <CheckCircle2 size={13} />
-                                                    )}
-                                                </button>
-                                                <button
-                                                    onClick={() => setConfirmDeleteId(null)}
-                                                    className="p-1 rounded-lg text-stone-400 hover:bg-black/5 transition-all"
-                                                >
-                                                    <X size={13} />
-                                                </button>
-                                            </div>
-                                        ) : (
+                        {/* Upload button */}
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploading}
+                            className="flex items-center gap-2 px-3 py-2 bg-black/5 hover:bg-black/10 border border-black/10 rounded-xl text-[9px] font-black text-stone-700 uppercase tracking-widest transition-all disabled:opacity-50"
+                        >
+                            {uploading ? (
+                                <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                                <Upload size={12} />
+                            )}
+                            {uploading
+                                ? 'Przesyłanie...'
+                                : filter === 'PHOTO'
+                                ? 'Dodaj zdjęcie'
+                                : filter === 'DOC'
+                                ? 'Dodaj dokument'
+                                : 'Dodaj plik'}
+                        </button>
+
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept={acceptAttr}
+                            multiple
+                            className="hidden"
+                            onChange={handleFileChange}
+                        />
+                    </div>
+                </div>
+
+                {/* Upload error */}
+                {uploadError && (
+                    <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                        <AlertCircle size={14} />
+                        <span className="text-[11px] font-bold">{uploadError}</span>
+                        <button onClick={() => setUploadError(null)} className="ml-auto">
+                            <X size={12} />
+                        </button>
+                    </div>
+                )}
+
+                {/* File list */}
+                {visibleFiles.length === 0 ? (
+                    <div className="py-8 text-center border border-dashed border-black/10 rounded-2xl">
+                        <Paperclip size={20} className="mx-auto text-stone-300 mb-2" />
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
+                            {files.length === 0 ? 'Brak załączników' : 'Brak plików w tej kategorii'}
+                        </p>
+                    </div>
+                ) : (
+                    <div className="space-y-1">
+                        {visibleFiles.map((file) => {
+                            const isImage = file.mime_type.startsWith('image/');
+                            return (
+                                <div
+                                    key={file.id}
+                                    className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-black/5 transition-all group"
+                                >
+                                    {/* Category badge */}
+                                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg border shrink-0 ${
+                                        file.category === 'PHOTO'
+                                            ? 'bg-blue-50 text-blue-500 border-blue-200'
+                                            : 'bg-amber-50 text-amber-600 border-amber-200'
+                                    }`}>
+                                        {file.category === 'PHOTO' ? 'Foto' : 'Doc'}
+                                    </span>
+
+                                    {/* Icon + name */}
+                                    <FileIcon mimeType={file.mime_type} />
+                                    <span
+                                        className="flex-1 text-[11px] font-bold text-stone-700 truncate"
+                                        title={file.original_name}
+                                    >
+                                        {file.original_name}
+                                    </span>
+
+                                    {/* Meta */}
+                                    <span className="text-[10px] text-stone-400 font-medium shrink-0 hidden sm:block">
+                                        {formatBytes(file.file_size)}
+                                    </span>
+                                    <span className="text-[10px] text-stone-400 font-medium shrink-0 hidden md:block">
+                                        {new Date(file.created_at).toLocaleDateString('pl-PL')}
+                                    </span>
+                                    {isAdmin && (
+                                        <span className="text-[10px] text-stone-400 font-medium shrink-0 hidden lg:block max-w-[120px] truncate" title={file.uploaded_by_name}>
+                                            {file.uploaded_by_name}
+                                        </span>
+                                    )}
+
+                                    {/* Actions */}
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        {/* Lightbox for images */}
+                                        {isImage && (
                                             <button
-                                                onClick={() => setConfirmDeleteId(file.id)}
-                                                className="p-1.5 rounded-lg hover:bg-red-50 text-stone-400 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
-                                                title="Usuń"
+                                                onClick={() => setLightboxFile(file)}
+                                                className="p-1.5 rounded-lg hover:bg-black/5 text-stone-400 hover:text-blue-500 transition-all"
+                                                title="Podgląd"
                                             >
-                                                <Trash2 size={13} />
+                                                <ZoomIn size={13} />
                                             </button>
                                         )}
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
+
+                                        <a
+                                            href={`/api/projects/${projectId}/files/${file.id}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="p-1.5 rounded-lg hover:bg-black/5 text-stone-400 hover:text-stone-700 transition-all"
+                                            title="Pobierz / Otwórz"
+                                        >
+                                            <Download size={13} />
+                                        </a>
+
+                                        {canDeleteFile(file) && (
+                                            <>
+                                                {confirmDeleteId === file.id ? (
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">Usuń?</span>
+                                                        <button
+                                                            onClick={() => handleDelete(file.id)}
+                                                            disabled={deletingId === file.id}
+                                                            className="p-1 rounded-lg text-[9px] font-black text-red-500 hover:bg-red-50 transition-all"
+                                                        >
+                                                            {deletingId === file.id ? (
+                                                                <Loader2 size={11} className="animate-spin" />
+                                                            ) : (
+                                                                <CheckCircle2 size={13} />
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setConfirmDeleteId(null)}
+                                                            className="p-1 rounded-lg text-stone-400 hover:bg-black/5 transition-all"
+                                                        >
+                                                            <X size={13} />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setConfirmDeleteId(file.id)}
+                                                        className="p-1.5 rounded-lg hover:bg-red-50 text-stone-400 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
+                                                        title="Usuń"
+                                                    >
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </>
     );
 }

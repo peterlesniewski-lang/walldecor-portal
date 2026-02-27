@@ -9,6 +9,7 @@ import {
     FolderKanban,
     FileText
 } from 'lucide-react';
+import Link from 'next/link';
 import ProjectSubmissionModal from './ProjectSubmissionModal';
 import { formatPLN } from '@/lib/utils';
 
@@ -122,9 +123,13 @@ export default function ProjectListClient({ initialProjects, userId, userRole }:
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                                 <div className="space-y-1">
                                     <div className="flex items-center gap-3 mb-1">
-                                        <h3 className="text-xl font-black text-stone-900 group-hover:gold-text transition-colors">
+                                        <Link
+                                            href={`/dashboard/projects/${project.id}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="text-xl font-black text-stone-900 hover:gold-text transition-colors"
+                                        >
                                             {project.name}
-                                        </h3>
+                                        </Link>
                                         <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${statusColors[project.status]}`}>
                                             {project.status.replace('_', ' ')}
                                         </span>
