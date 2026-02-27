@@ -31,7 +31,7 @@ export default function Sidebar({ user }: { user: any }) {
         <aside className="w-72 bg-white border-r border-border flex flex-col p-8 sticky top-0 h-screen z-50">
             <div className="mb-12 px-4">
                 <div className="flex flex-col gap-2">
-                    <img src="/walldecor-logo.jpg" alt="WallDecor" className="h-10 w-auto object-contain" />
+                    <img src="/walldecor-logo.jpg" alt="WallDecor" className="h-20 w-auto object-contain" />
                     <div className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
                         P o r t a l   A r c h i t e k t a
                     </div>
