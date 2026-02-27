@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getProjectDetails, getArchitectStats } from "@/lib/services";
+import { getProjectDetails } from "@/lib/services";
 import ProjectDetailClient from "@/components/ProjectDetailClient";
 import { notFound } from "next/navigation";
 import { query } from "@/lib/db";
@@ -13,8 +13,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     const project = await getProjectDetails(id);
     if (!project) notFound();
 
-    const stats = await getArchitectStats(session.user.id);
-
     const files = await query<any>(`
         SELECT pf.*, u.name as uploaded_by_name
         FROM project_files pf
@@ -26,7 +24,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     return (
         <ProjectDetailClient
             project={project}
-            availableCashback={stats.cashbackBalance}
             initialFiles={files}
             currentUserId={session.user.id}
         />

@@ -1,11 +1,9 @@
 'use client';
 
-import React from 'react';
 import Link from 'next/link';
 import {
     ArrowLeft,
     Calendar,
-    User,
     CreditCard,
     Package,
     Image as ImageIcon,
@@ -13,19 +11,14 @@ import {
     Lightbulb,
     Wind,
     Layout,
-    Zap,
-    CheckCircle2,
-    AlertCircle,
     Clock,
     BadgeCheck
 } from 'lucide-react';
-import { applyCashbackToProject } from "@/app/actions/projects";
 import { formatPLN } from "@/lib/utils";
 import ProjectFilesSection, { ProjectFile } from "@/components/ProjectFilesSection";
 
 interface ProjectDetailClientProps {
     project: any;
-    availableCashback: number;
     initialFiles: ProjectFile[];
     currentUserId: string;
 }
@@ -39,31 +32,67 @@ const categoryIcons: any = {
     'Inne': Package
 };
 
-export default function ProjectDetailClient({ project, availableCashback, initialFiles, currentUserId }: ProjectDetailClientProps) {
-    const [amount, setAmount] = React.useState('');
-    const [isPending, startTransition] = React.useTransition();
-    const [status, setStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
-    const [errorMsg, setErrorMsg] = React.useState('');
+// Status-driven timeline entry
+interface TimelineEvent {
+    label: string;
+    desc: string;
+    date: string | null;
+    dotClass: string;
+    dotInnerClass: string;
+}
 
-    const handleApply = async () => {
-        const val = parseFloat(amount);
-        if (isNaN(val) || val <= 0) return;
+function buildTimeline(project: any): TimelineEvent[] {
+    const events: TimelineEvent[] = [];
+    const submissionDate = new Date(project.created_at).toLocaleDateString('pl-PL');
 
-        setStatus('idle');
-        startTransition(async () => {
-            try {
-                const res = await applyCashbackToProject(project.id, val);
-                if (res.success) {
-                    setStatus('success');
-                    setAmount('');
-                }
-            } catch (err: any) {
-                setStatus('error');
-                setErrorMsg(err.message || 'Wystąpił błąd');
-            }
+    // Most recent event first
+    if (project.status === 'NIEZREALIZOWANY') {
+        events.push({
+            label: 'NIEZREALIZOWANY',
+            desc: 'Projekt odrzucony lub anulowany',
+            date: null,
+            dotClass: 'bg-red-500/20',
+            dotInnerClass: 'bg-red-500'
         });
-    };
+    } else if (project.status === 'ZAKOŃCZONY') {
+        events.push({
+            label: 'ZAKOŃCZONO',
+            desc: 'Projekt zrealizowany pomyślnie',
+            date: null,
+            dotClass: 'bg-emerald-500/20',
+            dotInnerClass: 'bg-emerald-500'
+        });
+    } else if (project.status === 'W_REALIZACJI') {
+        events.push({
+            label: 'W REALIZACJI',
+            desc: 'Projekt przekazany do realizacji',
+            date: null,
+            dotClass: 'bg-amber-500/20',
+            dotInnerClass: 'bg-amber-500'
+        });
+    } else if (project.status === 'PRZYJĘTY') {
+        events.push({
+            label: 'PRZYJĘTO',
+            desc: 'Projekt przyjęty przez WallDecor',
+            date: null,
+            dotClass: 'bg-blue-500/20',
+            dotInnerClass: 'bg-blue-500'
+        });
+    }
 
+    // Submission always last
+    events.push({
+        label: 'ZGŁOSZONO',
+        desc: 'Przesłano formularz projektu',
+        date: submissionDate,
+        dotClass: 'bg-brand-primary/20',
+        dotInnerClass: 'bg-brand-primary'
+    });
+
+    return events;
+}
+
+export default function ProjectDetailClient({ project, initialFiles, currentUserId }: ProjectDetailClientProps) {
     const statusColors: any = {
         'ZGŁOSZONY': 'bg-stone-100 text-stone-400 border border-slate-700',
         'PRZYJĘTY': 'bg-blue-900/30 text-blue-600 border border-blue-800/50',
@@ -74,6 +103,8 @@ export default function ProjectDetailClient({ project, availableCashback, initia
 
     const totalNet = project.items?.reduce((acc: number, item: any) => acc + (Number(item.amount_net) || 0), 0) || 0;
     const totalCommission = project.items?.reduce((acc: number, item: any) => acc + ((Number(item.amount_net) || 0) * (item.commission_rate || 0.15)), 0) || 0;
+
+    const timeline = buildTimeline(project);
 
     return (
         <div className="space-y-10 pb-20">
@@ -170,7 +201,8 @@ export default function ProjectDetailClient({ project, availableCashback, initia
                         const hasNoRequest = !payoutStatus;
 
                         let subtitle = 'Netto do wypłaty';
-                        if (isPaid) subtitle = 'Wypłacono';
+                        if (project.status === 'NIEZREALIZOWANY') subtitle = 'Projekt niezrealizowany';
+                        else if (isPaid) subtitle = 'Wypłacono';
                         else if (isInPayment) subtitle = 'W trakcie wypłaty';
                         else if (isPending) subtitle = 'Wniosek złożony – oczekuje';
 
@@ -191,10 +223,6 @@ export default function ProjectDetailClient({ project, availableCashback, initia
                                         <span className="text-[10px] font-black uppercase tracking-widest">Obrót Netto</span>
                                         <span className="font-black">{formatPLN(totalNet)} PLN</span>
                                     </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-black uppercase tracking-widest">Bonus (Tier)</span>
-                                        <span className="font-black">+ 0 PLN</span>
-                                    </div>
                                 </div>
 
                                 {hasNoRequest && project.status === 'ZAKOŃCZONY' && (
@@ -210,77 +238,22 @@ export default function ProjectDetailClient({ project, availableCashback, initia
                         );
                     })()}
 
-                    {/* Pay with Cashback Section */}
-                    {project.status !== 'ZAKOŃCZONY' && project.status !== 'NIEZREALIZOWANY' && (
-                        <div className="stat-card bg-card p-8 border border-black/5 space-y-6">
-                            <div className="flex items-center gap-3">
-                                <Zap size={16} className="text-brand-primary" />
-                                <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Zapłać Cashbackiem</h3>
-                            </div>
-
-                            <div className="p-4 rounded-2xl bg-black/5 border border-black/5">
-                                <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">Dostępne środki</p>
-                                <p className="text-xl font-black text-stone-900">{formatPLN(availableCashback)} PLN</p>
-                            </div>
-
-                            {status === 'success' ? (
-                                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3 text-emerald-600">
-                                    <CheckCircle2 size={18} />
-                                    <p className="text-xs font-bold">Zastosowano pomyślnie!</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    <div className="relative">
-                                        <input
-                                            type="number"
-                                            value={amount}
-                                            onChange={(e) => setAmount(e.target.value)}
-                                            placeholder="Kwota do użycia"
-                                            className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-sm text-stone-900 placeholder:text-stone-600 focus:outline-none focus:border-brand-primary/50 transition-colors"
-                                            disabled={isPending}
-                                        />
-                                        <span className="absolute right-4 top-3.5 text-[10px] font-black text-stone-700 uppercase">PLN</span>
-                                    </div>
-
-                                    {status === 'error' && (
-                                        <div className="flex items-center gap-2 text-red-600 text-[10px] font-bold">
-                                            <AlertCircle size={14} />
-                                            {errorMsg}
-                                        </div>
-                                    )}
-
-                                    <button
-                                        onClick={handleApply}
-                                        disabled={isPending || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > availableCashback}
-                                        className="w-full py-4 bg-black/5 hover:bg-black/10 disabled:opacity-30 disabled:hover:bg-black/5 border border-black/10 rounded-2xl text-[10px] font-black text-stone-900 uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                                    >
-                                        {isPending ? 'Przetwarzanie...' : 'Zastosuj Cashback'}
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
                     {/* Timeline / History */}
                     <div className="stat-card bg-card p-8">
                         <h3 className="text-xs font-black text-brand-primary uppercase tracking-[0.2em] mb-8">Historia Zdarzeń</h3>
                         <div className="space-y-8 relative before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-px before:bg-black/5">
-                            <div className="relative pl-10">
-                                <div className="absolute left-0 top-1 w-5 h-5 rounded-full bg-emerald-500/20 border-4 border-[#151518] flex items-center justify-center z-10">
-                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
+                            {timeline.map((event, i) => (
+                                <div key={i} className="relative pl-10">
+                                    <div className={`absolute left-0 top-1 w-5 h-5 rounded-full ${event.dotClass} border-4 border-[#151518] flex items-center justify-center z-10`}>
+                                        <div className={`w-1.5 h-1.5 ${event.dotInnerClass} rounded-full`}></div>
+                                    </div>
+                                    <p className="text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">{event.label}</p>
+                                    <p className="text-sm font-bold text-stone-900">{event.desc}</p>
+                                    {event.date && (
+                                        <p className="text-[10px] text-stone-600 font-medium mt-1">{event.date}</p>
+                                    )}
                                 </div>
-                                <p className="text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">ZATWIERDZONO</p>
-                                <p className="text-sm font-bold text-stone-900">Projekt zaakceptowany do realizacji</p>
-                                <p className="text-[10px] text-stone-600 font-medium mt-1">Dziś, 12:45</p>
-                            </div>
-                            <div className="relative pl-10">
-                                <div className="absolute left-0 top-1 w-5 h-5 rounded-full bg-brand-primary/20 border-4 border-[#151518] flex items-center justify-center z-10">
-                                    <div className="w-1.5 h-1.5 bg-brand-primary rounded-full"></div>
-                                </div>
-                                <p className="text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">ZGŁOSZONO</p>
-                                <p className="text-sm font-bold text-stone-900 font-medium opacity-60">Przesłano formularz projektu</p>
-                                <p className="text-[10px] text-stone-600 font-medium mt-1">2 dni temu</p>
-                            </div>
+                            ))}
                         </div>
                     </div>
                 </div>
