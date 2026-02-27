@@ -15,7 +15,9 @@ import {
     Layout,
     Zap,
     CheckCircle2,
-    AlertCircle
+    AlertCircle,
+    Clock,
+    BadgeCheck
 } from 'lucide-react';
 import { applyCashbackToProject } from "@/app/actions/projects";
 import { formatPLN } from "@/lib/utils";
@@ -160,29 +162,53 @@ export default function ProjectDetailClient({ project, availableCashback, initia
 
                 {/* Summary Sidebar */}
                 <div className="space-y-8">
-                    <div className="stat-card bg-gradient-to-br from-brand-primary to-brand-accent p-8 text-black shadow-[0_20px_50px_rgba(212,175,55,0.2)]">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-4 opacity-70 italic">Łączne Wynagrodzenie</p>
-                        <h3 className="text-5xl font-black mb-2 tracking-tighter">
-                            {formatPLN(totalCommission)} <span className="text-2xl">PLN</span>
-                        </h3>
-                        <p className="text-xs font-bold opacity-60 uppercase tracking-widest">Netto do wypłaty</p>
+                    {(() => {
+                        const payoutStatus = project.payout?.status ?? null;
+                        const isPaid = payoutStatus === 'PAID';
+                        const isInPayment = payoutStatus === 'IN_PAYMENT';
+                        const isPending = payoutStatus === 'PENDING';
+                        const hasNoRequest = !payoutStatus;
 
-                        <div className="mt-8 pt-6 border-t border-black/10 flex flex-col gap-4">
-                            <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-black uppercase tracking-widest">Obrót Netto</span>
-                                <span className="font-black">{formatPLN(totalNet)} PLN</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-black uppercase tracking-widest">Bonus (Tier)</span>
-                                <span className="font-black">+ 0 PLN</span>
-                            </div>
-                        </div>
+                        let subtitle = 'Netto do wypłaty';
+                        if (isPaid) subtitle = 'Wypłacono';
+                        else if (isInPayment) subtitle = 'W trakcie wypłaty';
+                        else if (isPending) subtitle = 'Wniosek złożony – oczekuje';
 
-                        <button className="w-full mt-8 py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black/90 transition-all flex items-center justify-center gap-2">
-                            <CreditCard size={14} className="text-brand-primary" />
-                            Wypłać Środki
-                        </button>
-                    </div>
+                        return (
+                            <div className="stat-card bg-gradient-to-br from-brand-primary to-brand-accent p-8 text-black shadow-[0_20px_50px_rgba(212,175,55,0.2)]">
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-4 opacity-70 italic">Łączne Wynagrodzenie</p>
+                                <h3 className="text-5xl font-black mb-2 tracking-tighter">
+                                    {formatPLN(totalCommission)} <span className="text-2xl">PLN</span>
+                                </h3>
+                                <div className="flex items-center gap-2">
+                                    {isPaid && <BadgeCheck size={14} className="opacity-70" />}
+                                    {isInPayment && <Clock size={14} className="opacity-70" />}
+                                    <p className="text-xs font-bold opacity-60 uppercase tracking-widest">{subtitle}</p>
+                                </div>
+
+                                <div className="mt-8 pt-6 border-t border-black/10 flex flex-col gap-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Obrót Netto</span>
+                                        <span className="font-black">{formatPLN(totalNet)} PLN</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Bonus (Tier)</span>
+                                        <span className="font-black">+ 0 PLN</span>
+                                    </div>
+                                </div>
+
+                                {hasNoRequest && project.status === 'ZAKOŃCZONY' && (
+                                    <Link
+                                        href="/dashboard/payouts"
+                                        className="w-full mt-8 py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black/90 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <CreditCard size={14} className="text-brand-primary" />
+                                        Wypłać Środki
+                                    </Link>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* Pay with Cashback Section */}
                     {project.status !== 'ZAKOŃCZONY' && project.status !== 'NIEZREALIZOWANY' && (
