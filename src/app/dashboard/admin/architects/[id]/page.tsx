@@ -57,7 +57,7 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
     // 4. Wallet balance (excluding expired EARN)
     const walletRes = await query<any>(`
         SELECT COALESCE(SUM(CASE
-            WHEN type = 'EARN' AND (expires_at IS NULL OR expires_at > datetime('now')) THEN amount
+            WHEN type = 'EARN' AND (expires_at IS NULL OR expires_at > NOW()) THEN amount
             WHEN type = 'ADJUST' THEN amount
             WHEN type NOT IN ('EARN', 'ADJUST') THEN -amount
             ELSE 0

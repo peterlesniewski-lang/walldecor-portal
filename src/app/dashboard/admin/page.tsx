@@ -43,7 +43,7 @@ export default async function AdminDashboard() {
             u.id, u.name, u.email,
             COUNT(DISTINCT CASE WHEN p.status != 'NIEZREALIZOWANY' THEN p.id END) as projects_count,
             COALESCE(SUM(CASE
-                WHEN t.type = 'EARN' AND (t.expires_at IS NULL OR t.expires_at > datetime('now')) THEN t.amount
+                WHEN t.type = 'EARN' AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN t.amount
                 WHEN t.type = 'ADJUST' THEN t.amount
                 WHEN t.type NOT IN ('EARN', 'ADJUST') THEN -t.amount
                 ELSE 0

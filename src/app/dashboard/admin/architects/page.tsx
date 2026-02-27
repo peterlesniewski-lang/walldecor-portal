@@ -44,7 +44,7 @@ export default async function AdminArchitectsPage({
             ), 0) as turnover,
             COALESCE((
                 SELECT SUM(CASE 
-                    WHEN t.type = 'EARN' AND (t.expires_at IS NULL OR t.expires_at > datetime('now')) THEN t.amount
+                    WHEN t.type = 'EARN' AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN t.amount
                     WHEN t.type = 'ADJUST' THEN t.amount
                     WHEN t.type NOT IN ('EARN', 'ADJUST') THEN -t.amount
                     ELSE 0 
