@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { notFound } from "next/navigation";
+import { ProjectFile } from "@/components/ProjectFilesSection";
 import {
     ArrowLeft,
     Building2,
@@ -46,7 +47,16 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
         [id]
     );
 
-    // 3. Commissions for this project
+    // 3. Project files
+    const files = await query<ProjectFile>(`
+        SELECT pf.*, u.name as uploaded_by_name
+        FROM project_files pf
+        JOIN users u ON pf.uploaded_by = u.id
+        WHERE pf.project_id = ?
+        ORDER BY pf.created_at DESC
+    `, [id]);
+
+    // 4. Commissions for this project
     const commissionsRes = await query<any>(`
         SELECT c.*, pi.category, pi.amount_net as item_amount
         FROM commissions c
@@ -141,6 +151,7 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
                 commissions={commissionsRes}
                 isAdmin={isAdmin}
                 canChangeStatus={canChangeStatus}
+                initialFiles={files}
             />
         </div>
     );

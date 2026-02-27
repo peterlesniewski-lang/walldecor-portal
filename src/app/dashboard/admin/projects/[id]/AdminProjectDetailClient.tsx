@@ -16,6 +16,7 @@ import {
     updatePayoutStatus,
 } from '@/app/actions/projects';
 import { formatPLN } from '@/lib/utils';
+import ProjectFilesSection, { ProjectFile } from '@/components/ProjectFilesSection';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,7 @@ interface Props {
     commissions: Commission[];
     isAdmin: boolean;
     canChangeStatus: boolean;
+    initialFiles: ProjectFile[];
 }
 
 // ─── Status transitions ──────────────────────────────────────────────────────
@@ -644,7 +646,7 @@ function AddItemForm({ projectId }: { projectId: string }) {
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
-export default function AdminProjectDetailClient({ project, items, commissions, isAdmin, canChangeStatus }: Props) {
+export default function AdminProjectDetailClient({ project, items, commissions, isAdmin, canChangeStatus, initialFiles }: Props) {
     const isFinalized = project.status === 'ZAKOŃCZONY';
     const productItems = items.filter((i) => i.type === 'PRODUCT');
     const installationItems = items.filter((i) => i.type === 'INSTALLATION');
@@ -864,6 +866,13 @@ export default function AdminProjectDetailClient({ project, items, commissions, 
                     </table>
                 </div>
             )}
+
+            <ProjectFilesSection
+                projectId={project.id}
+                currentUserId={project.owner_id}
+                initialFiles={initialFiles}
+                isAdmin={isAdmin}
+            />
         </div>
     );
 }

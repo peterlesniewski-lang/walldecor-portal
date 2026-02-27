@@ -19,10 +19,13 @@ import {
 } from 'lucide-react';
 import { applyCashbackToProject } from "@/app/actions/projects";
 import { formatPLN } from "@/lib/utils";
+import ProjectFilesSection, { ProjectFile } from "@/components/ProjectFilesSection";
 
 interface ProjectDetailClientProps {
     project: any;
     availableCashback: number;
+    initialFiles: ProjectFile[];
+    currentUserId: string;
 }
 
 const categoryIcons: any = {
@@ -34,7 +37,7 @@ const categoryIcons: any = {
     'Inne': Package
 };
 
-export default function ProjectDetailClient({ project, availableCashback }: ProjectDetailClientProps) {
+export default function ProjectDetailClient({ project, availableCashback, initialFiles, currentUserId }: ProjectDetailClientProps) {
     const [amount, setAmount] = React.useState('');
     const [isPending, startTransition] = React.useTransition();
     const [status, setStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
@@ -256,6 +259,13 @@ export default function ProjectDetailClient({ project, availableCashback }: Proj
                     </div>
                 </div>
             </div>
+
+            <ProjectFilesSection
+                projectId={project.id}
+                currentUserId={currentUserId}
+                initialFiles={initialFiles}
+                isAdmin={false}
+            />
         </div>
     );
 }
