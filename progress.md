@@ -289,6 +289,26 @@ migrations/
 
 ---
 
+---
+
+### Faza 9 — OAuth + Reset hasła (sesja 5, 2026-03-17)
+
+- **Google OAuth**: dodano `GoogleProvider` do NextAuth; `signIn` callback obsługuje auto-create ARCHI lub match po emailu dla istniejących kont
+- **Schema**: `users.password` nullable; nowe kolumny `provider VARCHAR(20) DEFAULT 'credentials'`, `provider_account_id VARCHAR(255)` z uniq index
+- **Migracje**: 012 (OAuth kolumny users), 013 (tabela `password_reset_tokens`), 014 (email template PASSWORD_RESET)
+- **Reset hasła**: nowe strony `/auth/forgot-password` + `/auth/reset-password`; API routes `POST /api/auth/forgot-password` + `POST /api/auth/reset-password`; tokeny UUID ważne 1h, jednorazowe
+- **Signin page**: przycisk "Zaloguj przez Google" + link "Zapomniałeś?" zamiast "skontaktuj się z administratorem"
+- **Env**: dodano `GOOGLE_CLIENT_ID` i `GOOGLE_CLIENT_SECRET` do `.env.example`; redirect URI: `{NEXTAUTH_URL}/api/auth/callback/google`
+
+#### Konwencje (Faza 9)
+
+- Tylko `provider='credentials'` może resetować hasło; Google userzy nie mają hasła (NULL)
+- Reset hasła nie ujawnia czy email istnieje w systemie (anti-enumeration)
+- Auto-create: nowy user przez Google → `role='ARCHI'`, `name` z Google profile
+- Istniejący user loguje się przez Google: `provider_account_id` uzupełniany przy pierwszym OAuth logowaniu
+
+---
+
 ## Otwarte kwestie
 
 | # | Kwestia | Status |

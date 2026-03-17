@@ -1,5 +1,5 @@
 -- WallDecor Portal — MySQL Production Schema
--- Generated from SQLite schema (all migrations applied through 011)
+-- Generated from SQLite schema (all migrations applied through 014)
 -- Run ONCE on a fresh MySQL database: mysql -u walldecor -p walldecor_prod < schema.mysql.sql
 
 SET NAMES utf8mb4;
@@ -11,7 +11,9 @@ CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(255) PRIMARY KEY,
     name VARCHAR(255),
     email VARCHAR(255) UNIQUE,
-    password VARCHAR(255),
+    password VARCHAR(255) NULL,
+    provider VARCHAR(20) NOT NULL DEFAULT 'credentials',
+    provider_account_id VARCHAR(255) NULL,
     role VARCHAR(50) DEFAULT 'ARCHI',
     commission_rate DECIMAL(15,4) DEFAULT 0.00,
     cashback_rate DECIMAL(15,4) DEFAULT 2.00,
@@ -24,7 +26,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_vat_payer TINYINT(1) DEFAULT 0,
     bank_account VARCHAR(50),
     tier_override TEXT NULL,
-    last_login_at DATETIME NULL
+    last_login_at DATETIME NULL,
+    UNIQUE INDEX idx_provider_account (provider, provider_account_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -171,6 +174,23 @@ INSERT IGNORE INTO email_templates (id, slug, name, subject, content, descriptio
 ('et_6', 'ARCHITECT_REGISTERED', 'Rejestracja konta architekta',
  'Twoje konto w Portalu WallDecor jest gotowe',
  '<p>Cześć <strong>{{user_name}}</strong>,</p><p>Zostało dla Ciebie założone konto w <strong>Portalu Architekta WallDecor</strong>.</p><p style="background:#f8f7f5;border-radius:12px;padding:20px;margin:24px 0;"><strong>Twoje dane logowania:</strong><br><br>Login (email): <strong>{{email}}</strong><br>Hasło tymczasowe: <strong style="font-family:monospace;font-size:16px;letter-spacing:2px;">{{password}}</strong></p><p>Zaloguj się tutaj: <a href="{{portal_url}}">{{portal_url}}</a></p><p style="color:#999;font-size:12px;">Zalecamy zmianę hasła po pierwszym logowaniu.</p><p>Pozdrawiamy,<br><strong>Zespół WallDecor</strong></p>',
- 'Wysyłane do nowego architekta po założeniu konta');
+ 'Wysyłane do nowego architekta po założeniu konta'),
+
+('et_7', 'PASSWORD_RESET', 'Reset hasła',
+ 'Reset hasła — Portal Architekta WallDecor',
+ '<p>Cześć,</p><p>Otrzymaliśmy prośbę o reset hasła do Twojego konta w <strong>Portalu Architekta WallDecor</strong>.</p><p style="background:#f8f7f5;border-radius:12px;padding:20px;margin:24px 0;text-align:center;"><a href="{{reset_link}}" style="display:inline-block;background:linear-gradient(135deg,#D4AF37,#FFD700);color:#000;font-weight:900;padding:14px 32px;border-radius:999px;text-decoration:none;font-size:14px;letter-spacing:0.1em;text-transform:uppercase;">Resetuj hasło</a></p><p style="font-size:13px;color:#666;">Link jest ważny przez <strong>1 godzinę</strong>. Jeśli nie prosiłeś o reset hasła, zignoruj tę wiadomość.</p><p>Pozdrawiamy,<br><strong>Zespół WallDecor</strong></p>',
+ 'Wysyłane po kliknięciu "Zapomniałem hasła" na stronie logowania');
+
+-- ─── OAuth / password reset tables ───────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    token VARCHAR(255) NOT NULL UNIQUE,
+    expires_at DATETIME NOT NULL,
+    used TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
