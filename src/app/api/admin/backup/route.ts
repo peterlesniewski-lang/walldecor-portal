@@ -26,12 +26,27 @@ export async function GET() {
 
     // Export all business tables as JSON for both MySQL production and SQLite development.
     const exportedTables: Record<string, any[]> = {};
+    const failedTables: Array<{ table: string; error: string }> = [];
+
     for (const table of TABLES) {
         try {
             exportedTables[table] = await query<any>(`SELECT * FROM ${table}`);
-        } catch {
-            exportedTables[table] = []; // table might not exist yet
+        } catch (error) {
+            failedTables.push({
+                table,
+                error: error instanceof Error ? error.message : 'Unknown export error',
+            });
         }
+    }
+
+    if (failedTables.length > 0) {
+        return NextResponse.json(
+            {
+                error: 'Backup incomplete',
+                failedTables,
+            },
+            { status: 500 }
+        );
     }
 
     const payload = JSON.stringify({ exportedAt: new Date().toISOString(), tables: exportedTables }, null, 2);

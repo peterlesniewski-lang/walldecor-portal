@@ -18,6 +18,29 @@ test('cashback redemption request is atomic', async () => {
     assert.match(source, /await spendCashback\(userId, amount, "Wymiana na kartę podarunkową", redemptionId, queryFn\)/);
 });
 
+test('project cashback application spends wallet balance inside a transaction', async () => {
+    const source = await readFile(new URL('../src/app/actions/projects.ts', import.meta.url), 'utf8');
+    const actionStart = source.indexOf('export async function applyCashbackToProject');
+    const actionSource = source.slice(actionStart);
+
+    assert.ok(actionStart > -1);
+    assert.match(actionSource, /await withTransaction\(async \(queryFn\) =>/);
+    assert.match(actionSource, /await spendCashback\(session\.user\.id, amount,[\s\S]*queryFn\)/);
+});
+
+test('cashback discount code issuance completes only pending redemptions atomically', async () => {
+    const source = await readFile(new URL('../src/app/actions/cashback.ts', import.meta.url), 'utf8');
+    const actionStart = source.indexOf('export async function issueDiscountCode');
+    const actionEnd = source.indexOf('export async function getMyRedemptions', actionStart);
+    const actionSource = source.slice(actionStart, actionEnd);
+
+    assert.ok(actionStart > -1);
+    assert.match(actionSource, /await withTransaction\(async \(queryFn\) =>/);
+    assert.match(actionSource, /UPDATE cashback_redemptions SET code = \?, status = 'COMPLETED', processed_at = CURRENT_TIMESTAMP WHERE id = \? AND status = 'PENDING'/);
+    assert.match(actionSource, /UPDATE wallet_transactions SET description = \? WHERE reference_id = \?/);
+    assert.match(actionSource, /affectedRows/);
+});
+
 test('batch payout does not reject requests after a processing error', async () => {
     const source = await readFile(new URL('../src/app/api/admin/payouts/batch/route.ts', import.meta.url), 'utf8');
 

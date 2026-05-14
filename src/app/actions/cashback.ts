@@ -55,20 +55,26 @@ export async function issueDiscountCode(redemptionId: string, code: string) {
         throw new Error("Kod rabatowy nie może być pusty.");
     }
 
-    // 1. Update the redemption record
-    await query(
-        "UPDATE cashback_redemptions SET code = ?, status = 'COMPLETED', processed_at = CURRENT_TIMESTAMP WHERE id = ?",
-        [code, redemptionId]
-    );
+    const trimmedCode = code.trim();
 
-    // 1.5 Update wallet transactions description
-    await query(
-        "UPDATE wallet_transactions SET description = ? WHERE reference_id = ?",
-        [`Karta podarunkowa: ${code}`, redemptionId]
-    );
+    await withTransaction(async (queryFn) => {
+        const updateResult = await queryFn<any>(
+            "UPDATE cashback_redemptions SET code = ?, status = 'COMPLETED', processed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'PENDING'",
+            [trimmedCode, redemptionId]
+        );
+        const affectedRows = Number((updateResult as any).affectedRows ?? updateResult?.[0]?.affectedRows ?? 0);
+        if (affectedRows !== 1) {
+            throw new Error("Wniosek cashback nie istnieje albo został już przetworzony.");
+        }
+
+        await queryFn(
+            "UPDATE wallet_transactions SET description = ? WHERE reference_id = ?",
+            [`Karta podarunkowa: ${trimmedCode}`, redemptionId]
+        );
+    });
 
     // 2. Log activity
-    await logActivity(session.user.id, 'CASHBACK_REDEMPTION_COMPLETED', `Przyznano kartę rabatową dla wniosku ${redemptionId}`, { redemptionId, code });
+    await logActivity(session.user.id, 'CASHBACK_REDEMPTION_COMPLETED', `Przyznano kartę rabatową dla wniosku ${redemptionId}`, { redemptionId, code: trimmedCode });
 
     // 3. Email Notification
     try {
@@ -82,7 +88,7 @@ export async function issueDiscountCode(redemptionId: string, code: string) {
         if (userRes.length > 0) {
             await sendEmail('PAYOUT_REDEEMED_CARD', userRes[0].email, {
                 user_name: userRes[0].name,
-                card_code: code,
+                card_code: trimmedCode,
                 project_name: 'Cashback Portfel' // or fetch related project if possible
             });
         }

@@ -109,6 +109,124 @@ export async function updateProjectStatus(projectId: string, status: string) {
         throw new Error("Nieprawidłowy status projektu.");
     }
 
+    // ZAKOŃCZONY: finalize commissions using progressive bracket system, credit wallet cashback
+    if (status === 'ZAKOŃCZONY') {
+        const projectData = await query<any>(
+            "SELECT p.owner_id FROM projects p WHERE p.id = ?",
+            [projectId]
+        );
+
+        if (projectData.length === 0) {
+            throw new Error("Projekt nie istnieje.");
+        }
+
+        if (projectData.length > 0) {
+            const { owner_id } = projectData[0];
+
+            // --- Read phase (outside transaction) ---
+            const prevTurnoverRes = await query<any>(`
+                SELECT COALESCE(SUM(i.amount_net), 0) as total
+                FROM project_items i
+                JOIN projects p ON i.project_id = p.id
+                WHERE p.owner_id = ?
+                  AND i.type = 'PRODUCT'
+                  AND p.status = 'ZAKOŃCZONY'
+                  AND p.id != ?
+            `, [owner_id, projectId]);
+            let runningTurnover = Number(prevTurnoverRes[0]?.total || 0);
+
+            const items = await query<any>(
+                "SELECT id, amount_net FROM project_items WHERE project_id = ? AND type = 'PRODUCT'",
+                [projectId]
+            );
+
+            const pendingCommMap: Record<string, string | null> = {};
+            for (const item of items) {
+                const pendingComm = await query<any>(
+                    "SELECT id FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
+                    [item.id]
+                );
+                pendingCommMap[item.id] = pendingComm.length > 0 ? pendingComm[0].id : null;
+            }
+
+            // --- Compute phase (pure JS, no DB) ---
+            const brackets = [
+                { threshold: 10000, rate: 0.07 },
+                { threshold: 50000, rate: 0.07 },
+                { threshold: 120000, rate: 0.10 },
+                { threshold: Infinity, rate: 0.14 },
+            ];
+
+            const itemOps: Array<{ item: any; commAmount: number; cashbackAmount: number }> = [];
+            for (const item of items) {
+                const itemAmount = Number(item.amount_net);
+                let remaining = itemAmount;
+                let commAmount = 0;
+                for (const bracket of brackets) {
+                    if (remaining <= 0) break;
+                    const bracketStart = bracket === brackets[0] ? 0 : brackets[brackets.indexOf(bracket) - 1].threshold;
+                    const capacityInBracket = bracket.threshold - Math.max(runningTurnover, bracketStart);
+                    if (capacityInBracket <= 0) continue;
+                    const portion = Math.min(remaining, capacityInBracket);
+                    commAmount += portion * bracket.rate;
+                    remaining -= portion;
+                }
+                runningTurnover += itemAmount;
+                itemOps.push({ item, commAmount, cashbackAmount: itemAmount * 0.02 });
+            }
+
+            // --- Write phase (all in one transaction) ---
+            await withTransaction(async (queryFn) => {
+                await queryFn(
+                    "UPDATE projects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    [status, projectId]
+                );
+
+                const existingTrans = await queryFn<any>(
+                    "SELECT id FROM wallet_transactions WHERE related_item_id IN (SELECT id FROM project_items WHERE project_id = ?) LIMIT 1",
+                    [projectId]
+                );
+
+                if (existingTrans.length > 0) {
+                    console.log(`Project ${projectId} already processed for cashback. Skipping.`);
+                    return;
+                }
+
+                for (const { item, commAmount, cashbackAmount } of itemOps) {
+                    if (pendingCommMap[item.id]) {
+                        await queryFn(
+                            "UPDATE commissions SET status = 'EARNED', amount_net = ? WHERE project_item_id = ? AND status = 'PENDING'",
+                            [commAmount, item.id]
+                        );
+                    } else if (commAmount > 0) {
+                        await queryFn(
+                            "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status) VALUES (?, ?, ?, ?, ?, 'EARNED')",
+                            [`c_${item.id}_earned`, projectId, item.id, owner_id, commAmount]
+                        );
+                    }
+
+                    if (cashbackAmount > 0) {
+                        const expiresAt = new Date();
+                        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+                        await queryFn(
+                            "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+                            [`t_${item.id}_cashback`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
+                        );
+                    }
+                }
+            });
+        }
+
+        await logActivity(session.user.id, 'PROJECT_STATUS_CHANGE', `Zmieniono status projektu ${projectId} na ${status}`, { projectId, status });
+
+        revalidatePath('/dashboard/admin');
+        revalidatePath('/dashboard/projects');
+        revalidatePath('/dashboard/wallet');
+        revalidatePath('/dashboard');
+
+        return { success: true };
+    }
+
     await query(
         "UPDATE projects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         [status, projectId]
@@ -157,106 +275,6 @@ export async function updateProjectStatus(projectId: string, status: string) {
                         );
                     }
                 }
-            }
-        }
-    }
-
-    // ZAKOŃCZONY: finalize commissions using progressive bracket system, credit wallet cashback
-    if (status === 'ZAKOŃCZONY') {
-        // Guard against double-processing (read outside transaction)
-        const existingTrans = await query<any>(
-            "SELECT id FROM wallet_transactions WHERE related_item_id IN (SELECT id FROM project_items WHERE project_id = ?) LIMIT 1",
-            [projectId]
-        );
-
-        if (existingTrans.length > 0) {
-            console.log(`Project ${projectId} already processed for cashback. Skipping.`);
-        } else {
-            const projectData = await query<any>(
-                "SELECT p.owner_id FROM projects p WHERE p.id = ?",
-                [projectId]
-            );
-
-            if (projectData.length > 0) {
-                const { owner_id } = projectData[0];
-
-                // --- Read phase (outside transaction) ---
-                const prevTurnoverRes = await query<any>(`
-                    SELECT COALESCE(SUM(i.amount_net), 0) as total
-                    FROM project_items i
-                    JOIN projects p ON i.project_id = p.id
-                    WHERE p.owner_id = ?
-                      AND i.type = 'PRODUCT'
-                      AND p.status = 'ZAKOŃCZONY'
-                      AND p.id != ?
-                `, [owner_id, projectId]);
-                let runningTurnover = Number(prevTurnoverRes[0]?.total || 0);
-
-                const items = await query<any>(
-                    "SELECT id, amount_net FROM project_items WHERE project_id = ? AND type = 'PRODUCT'",
-                    [projectId]
-                );
-
-                const pendingCommMap: Record<string, string | null> = {};
-                for (const item of items) {
-                    const pendingComm = await query<any>(
-                        "SELECT id FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
-                        [item.id]
-                    );
-                    pendingCommMap[item.id] = pendingComm.length > 0 ? pendingComm[0].id : null;
-                }
-
-                // --- Compute phase (pure JS, no DB) ---
-                const brackets = [
-                    { threshold: 10000, rate: 0.07 },
-                    { threshold: 50000, rate: 0.07 },
-                    { threshold: 120000, rate: 0.10 },
-                    { threshold: Infinity, rate: 0.14 },
-                ];
-
-                const itemOps: Array<{ item: any; commAmount: number; cashbackAmount: number }> = [];
-                for (const item of items) {
-                    const itemAmount = Number(item.amount_net);
-                    let remaining = itemAmount;
-                    let commAmount = 0;
-                    for (const bracket of brackets) {
-                        if (remaining <= 0) break;
-                        const bracketStart = bracket === brackets[0] ? 0 : brackets[brackets.indexOf(bracket) - 1].threshold;
-                        const capacityInBracket = bracket.threshold - Math.max(runningTurnover, bracketStart);
-                        if (capacityInBracket <= 0) continue;
-                        const portion = Math.min(remaining, capacityInBracket);
-                        commAmount += portion * bracket.rate;
-                        remaining -= portion;
-                    }
-                    runningTurnover += itemAmount;
-                    itemOps.push({ item, commAmount, cashbackAmount: itemAmount * 0.02 });
-                }
-
-                // --- Write phase (all in one transaction) ---
-                await withTransaction(async (queryFn) => {
-                    for (const { item, commAmount, cashbackAmount } of itemOps) {
-                        if (pendingCommMap[item.id]) {
-                            await queryFn(
-                                "UPDATE commissions SET status = 'EARNED', amount_net = ? WHERE project_item_id = ? AND status = 'PENDING'",
-                                [commAmount, item.id]
-                            );
-                        } else if (commAmount > 0) {
-                            await queryFn(
-                                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status) VALUES (?, ?, ?, ?, ?, 'EARNED')",
-                                [`c_${item.id}_earned`, projectId, item.id, owner_id, commAmount]
-                            );
-                        }
-
-                        if (cashbackAmount > 0) {
-                            const expiresAt = new Date();
-                            expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-                            await queryFn(
-                                "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-                                [`t_${item.id}_cashback`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
-                            );
-                        }
-                    }
-                });
             }
         }
     }
@@ -533,16 +551,6 @@ export async function updatePayoutStatus(payoutId: string, newStatus: string) {
         throw new Error("Unauthorized");
     }
 
-    // Get request info
-    const reqRes = await query<any>("SELECT * FROM payout_requests WHERE id = ?", [payoutId]);
-    const payoutReq = reqRes[0];
-    if (!payoutReq) throw new Error("Wniosek nie istnieje");
-
-    // Guard against re-processing terminal states
-    if (payoutReq.status === 'PAID' || payoutReq.status === 'REJECTED') {
-        throw new Error("Ten wniosek został już ostatecznie rozliczony i nie może być zmieniony.");
-    }
-
     // 2. Map Payout status to Commission status
     // Payout PENDING/IN_PAYMENT -> Commission IN_PAYMENT
     // Payout APPROVED/PAID -> Commission PAID
@@ -552,12 +560,22 @@ export async function updatePayoutStatus(payoutId: string, newStatus: string) {
     else if (newStatus === 'APPROVED' || newStatus === 'PAID') commissionStatus = 'PAID';
     else if (newStatus === 'REJECTED') commissionStatus = 'EARNED';
 
-    // Debit wallet via FIFO spendCashback if payout is being approved/paid for the first time
-    // ONLY for types that are not COMMISSION (commissions are handled by updating commission status)
-    const isFinalStatus = payoutReq.status === 'APPROVED' || payoutReq.status === 'PAID';
-    const movingToFinal = newStatus === 'APPROVED' || newStatus === 'PAID';
+    let payoutReq: any = null;
 
     const projectsRes = await withTransaction(async (queryFn) => {
+        const reqRes = await queryFn<any>("SELECT * FROM payout_requests WHERE id = ? FOR UPDATE", [payoutId]);
+        payoutReq = reqRes[0];
+        if (!payoutReq) throw new Error("Wniosek nie istnieje");
+
+        if (payoutReq.status === 'PAID' || payoutReq.status === 'REJECTED') {
+            throw new Error("Ten wniosek został już ostatecznie rozliczony i nie może być zmieniony.");
+        }
+
+        // Debit wallet via FIFO spendCashback if payout is being approved/paid for the first time.
+        // ONLY for types that are not COMMISSION (commissions are handled by updating commission status).
+        const isFinalStatus = payoutReq.status === 'APPROVED' || payoutReq.status === 'PAID';
+        const movingToFinal = newStatus === 'APPROVED' || newStatus === 'PAID';
+
         await queryFn(
             "UPDATE payout_requests SET status = ?, processed_at = CURRENT_TIMESTAMP, processed_by = ? WHERE id = ?",
             [newStatus, session.user.id, payoutId]
@@ -928,17 +946,19 @@ export async function applyCashbackToProject(projectId: string, amount: number) 
     const session = await getServerSession(authOptions);
     if (!session) throw new Error("Unauthorized");
 
-    // 1. Verify project ownership and status
-    const projectRes = await query<any>("SELECT * FROM projects WHERE id = ? AND owner_id = ?", [projectId, session.user.id]);
-    const project = projectRes[0];
-    if (!project) throw new Error("Projekt nie został znaleziony lub brak uprawnień");
+    await withTransaction(async (queryFn) => {
+        // 1. Verify project ownership and status
+        const projectRes = await queryFn<any>("SELECT * FROM projects WHERE id = ? AND owner_id = ?", [projectId, session.user.id]);
+        const project = projectRes[0];
+        if (!project) throw new Error("Projekt nie został znaleziony lub brak uprawnień");
 
-    if (project.status === 'ZAKOŃCZONY' || project.status === 'NIEZREALIZOWANY') {
-        throw new Error("Nie można zastosować cashbacku do zakończonego lub odrzuconego projektu");
-    }
+        if (project.status === 'ZAKOŃCZONY' || project.status === 'NIEZREALIZOWANY') {
+            throw new Error("Nie można zastosować cashbacku do zakończonego lub odrzuconego projektu");
+        }
 
-    // 2. Spend the cashback
-    await spendCashback(session.user.id, amount);
+        // 2. Spend the cashback
+        await spendCashback(session.user.id, amount, "Cashback zastosowany do projektu", projectId, queryFn);
+    });
 
     // 3. Log activity
     await logActivity(session.user.id, 'PROJECT_CASHBACK_APPLIED', `Zastosowano cashback w wysokości ${amount} PLN do projektu ${projectId}`, { projectId, amount });
