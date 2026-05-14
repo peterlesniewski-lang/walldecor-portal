@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
-import { query } from '@/lib/db';
+import { withTransaction } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
     try {
@@ -14,36 +14,45 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Hasło musi mieć co najmniej 8 znaków.' }, { status: 400 });
         }
 
-        // Find valid, unused, non-expired token
-        const tokens = await query<any>(
-            `SELECT t.id, t.user_id, t.expires_at
-             FROM password_reset_tokens t
-             WHERE t.token = ?
-               AND t.used = 0
-               AND t.expires_at > NOW()`,
-            [token]
-        );
+        const hashedPassword = await bcrypt.hash(password, 12);
+        let tokenWasConsumed = false;
 
-        if (tokens.length === 0) {
+        await withTransaction(async (queryFn) => {
+            const tokens = await queryFn<any>(
+                `SELECT t.id, t.user_id, t.expires_at
+                 FROM password_reset_tokens t
+                 WHERE t.token = ?
+                   AND t.used = 0
+                   AND t.expires_at > NOW()
+                 FOR UPDATE`,
+                [token]
+            );
+
+            if (tokens.length === 0) {
+                return;
+            }
+
+            const resetToken = tokens[0];
+
+            await queryFn(
+                "UPDATE users SET password = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
+                [hashedPassword, resetToken.user_id]
+            );
+
+            await queryFn(
+                "UPDATE password_reset_tokens SET used = 1 WHERE id = ?",
+                [resetToken.id]
+            );
+
+            tokenWasConsumed = true;
+        });
+
+        if (!tokenWasConsumed) {
             return NextResponse.json(
                 { error: 'Link resetujący jest nieważny lub wygasł. Poproś o nowy.' },
                 { status: 400 }
             );
         }
-
-        const resetToken = tokens[0];
-        const hashedPassword = await bcrypt.hash(password, 12);
-
-        // Update password and mark token as used in one go
-        await query(
-            "UPDATE users SET password = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
-            [hashedPassword, resetToken.user_id]
-        );
-
-        await query(
-            "UPDATE password_reset_tokens SET used = 1 WHERE id = ?",
-            [resetToken.id]
-        );
 
         return NextResponse.json({ ok: true });
     } catch (error) {

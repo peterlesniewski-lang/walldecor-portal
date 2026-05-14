@@ -7,6 +7,11 @@ import { readFile, unlink } from 'fs/promises';
 
 const SAFE_STORED_NAME = /^[a-f0-9-]+\.(pdf|jpg|jpeg|png|webp)$/;
 
+function sanitizeDownloadFilename(filename: string): string {
+    const basename = filename.split(/[\\/]/).pop() || 'plik';
+    return basename.replace(/[\r\n"]/g, '_').slice(0, 180);
+}
+
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ projectId: string; fileId: string }> }
@@ -48,7 +53,7 @@ export async function GET(
             status: 200,
             headers: {
                 'Content-Type': fileRecord.mime_type,
-                'Content-Disposition': `${isImage ? 'inline' : 'attachment'}; filename="${fileRecord.original_name}"`,
+                'Content-Disposition': `${isImage ? 'inline' : 'attachment'}; filename="${sanitizeDownloadFilename(fileRecord.original_name)}"`,
                 'Cache-Control': 'private, no-store',
             },
         });
