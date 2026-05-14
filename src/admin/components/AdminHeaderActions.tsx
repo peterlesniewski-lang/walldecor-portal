@@ -18,7 +18,7 @@ export default function AdminHeaderActions({ userRole }: HeaderActionsProps) {
             <button className="bg-black/5 border border-black/5 text-stone-400 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/10 hover:text-stone-900 transition-all">
                 Pomoc
             </button>
-            {userRole === 'ADMIN' && (
+            {(userRole === 'ADMIN' || userRole === 'STAFF') && (
                 <button
                     onClick={() => setIsArchiModalOpen(true)}
                     className="bg-black/5 border border-black/5 text-stone-400 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/10 hover:text-stone-900 transition-all flex items-center gap-2"

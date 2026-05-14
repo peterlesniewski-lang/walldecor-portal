@@ -9,6 +9,7 @@ import AdminProjectPipeline from './AdminProjectPipeline';
 interface Props {
     projects: any[];
     isAdmin: boolean;
+    canManageProjects: boolean;
     staffMembers: any[];
     redemptions: any[];
     projectCount: number;
@@ -16,7 +17,7 @@ interface Props {
 
 type Tab = 'activity' | 'pipeline';
 
-export default function DashboardBottomTabs({ projects, isAdmin, staffMembers, redemptions, projectCount }: Props) {
+export default function DashboardBottomTabs({ projects, isAdmin, canManageProjects, staffMembers, redemptions, projectCount }: Props) {
     const [active, setActive] = useState<Tab>('activity');
 
     const tabs: { id: Tab; label: string; icon: React.ReactNode; badge?: React.ReactNode }[] = [
@@ -80,7 +81,7 @@ export default function DashboardBottomTabs({ projects, isAdmin, staffMembers, r
                 {active === 'pipeline' && (
                     <AdminProjectPipeline
                         projects={projects}
-                        isAdmin={isAdmin}
+                        canManageProjects={canManageProjects}
                         staffMembers={staffMembers}
                     />
                 )}

@@ -4,10 +4,10 @@ import React, { useState } from 'react';
 import { UserPlus } from 'lucide-react';
 import ArchitectRegistrationModal from './ArchitectRegistrationModal';
 
-export default function AddArchitectButton({ isAdmin }: { isAdmin: boolean }) {
+export default function AddArchitectButton({ canRegisterArchitects }: { canRegisterArchitects: boolean }) {
     const [isOpen, setIsOpen] = useState(false);
 
-    if (!isAdmin) return null;
+    if (!canRegisterArchitects) return null;
 
     return (
         <>

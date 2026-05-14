@@ -413,6 +413,7 @@ export default async function AdminDashboard() {
                     <DashboardBottomTabs
                         projects={allProjects}
                         isAdmin={session.user.role === 'ADMIN'}
+                        canManageProjects={session.user.role === 'ADMIN' || session.user.role === 'STAFF'}
                         staffMembers={staffMembers}
                         redemptions={redemptions}
                         projectCount={allProjects.length}
@@ -465,7 +466,7 @@ export default async function AdminDashboard() {
                                 <Users size={16} className="text-brand-primary" />
                                 Baza Architektów
                             </h3>
-                            <AddArchitectButton isAdmin={session.user.role === 'ADMIN'} />
+                            <AddArchitectButton canRegisterArchitects={session.user.role === 'ADMIN' || session.user.role === 'STAFF'} />
                         </div>
                         <ArchitectList architects={architects} isAdmin={session.user.role === 'ADMIN'} />
                     </div>

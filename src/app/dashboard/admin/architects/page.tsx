@@ -101,7 +101,7 @@ export default async function AdminArchitectsPage({
                     <ArrowLeft size={14} />
                     Dashboard
                 </Link>
-                <AddArchitectButton isAdmin={session.user.role === 'ADMIN'} />
+                <AddArchitectButton canRegisterArchitects={session.user.role === 'ADMIN' || session.user.role === 'STAFF'} />
             </div>
 
             {/* Header / Title */}

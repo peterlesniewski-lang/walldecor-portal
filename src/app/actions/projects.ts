@@ -13,6 +13,7 @@ import { join } from 'path';
 import crypto from 'crypto';
 import { sendEmail } from "@/lib/email";
 import { buildArchitectRegisteredPlaceholders } from "@/lib/emailPlaceholders";
+import { canManageFinancialOperations, canManageOperationalProjects, canRegisterArchitects } from "@/lib/rbac";
 
 
 function generateTempPassword(): string {
@@ -93,7 +94,7 @@ export async function createProject(data: {
 
 export async function updateProjectStatus(projectId: string, status: string) {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
+    if (!session || !canManageOperationalProjects(session.user.role)) {
         throw new Error("Unauthorized");
     }
 
@@ -290,7 +291,7 @@ export async function registerArchitect(data: {
     password?: string
 }) {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'ADMIN') {
+    if (!session || !canRegisterArchitects(session.user.role)) {
         throw new Error("Unauthorized");
     }
 
@@ -515,7 +516,7 @@ export async function requestCommissionPayout(formData: FormData) {
 
 export async function updatePayoutStatus(payoutId: string, newStatus: string) {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== 'ADMIN') {
+    if (!session || !canManageFinancialOperations(session.user.role)) {
         throw new Error("Unauthorized");
     }
 

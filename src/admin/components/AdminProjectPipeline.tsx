@@ -43,7 +43,7 @@ const NEXT_STATUSES: Record<string, string[]> = {
     NIEZREALIZOWANY: [],
 };
 
-function ProjectRow({ project, isAdmin, staffMembers }: { project: Project; isAdmin: boolean; staffMembers: { id: string; name: string }[] }) {
+function ProjectRow({ project, canManageProjects, staffMembers }: { project: Project; canManageProjects: boolean; staffMembers: { id: string; name: string }[] }) {
     const router = useRouter();
     const [confirming, setConfirming] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -90,7 +90,7 @@ function ProjectRow({ project, isAdmin, staffMembers }: { project: Project; isAd
                 <p className="text-[10px] font-bold text-stone-400">{project.architect_name}</p>
             </td>
             <td className="px-6 py-4">
-                {isAdmin ? (
+                {canManageProjects ? (
                     <div className="relative group/select">
                         <select
                             defaultValue={project.staff_id || 'NONE'}
@@ -126,7 +126,7 @@ function ProjectRow({ project, isAdmin, staffMembers }: { project: Project; isAd
             <td className="px-6 py-4 text-right text-[10px] text-stone-500 font-bold">
                 {new Date(project.created_at).toLocaleDateString('pl-PL')}
             </td>
-            {isAdmin && (
+            {canManageProjects && (
                 <td className="px-6 py-4">
                     {confirming ? (
                         <div className="flex items-center gap-2 bg-black/5 border border-black/10 rounded-2xl px-3 py-2">
@@ -173,7 +173,7 @@ function ProjectRow({ project, isAdmin, staffMembers }: { project: Project; isAd
     );
 }
 
-export default function AdminProjectPipeline({ projects, isAdmin, staffMembers }: { projects: Project[]; isAdmin: boolean; staffMembers: { id: string; name: string }[] }) {
+export default function AdminProjectPipeline({ projects, canManageProjects, staffMembers }: { projects: Project[]; canManageProjects: boolean; staffMembers: { id: string; name: string }[] }) {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('ALL');
 
@@ -245,12 +245,12 @@ export default function AdminProjectPipeline({ projects, isAdmin, staffMembers }
                                     <th className="px-6 py-4 text-[9px] font-black text-stone-500 uppercase tracking-widest">Status</th>
                                     <th className="px-6 py-4 text-[9px] font-black text-stone-500 uppercase tracking-widest text-right">Wartość</th>
                                     <th className="px-6 py-4 text-[9px] font-black text-stone-500 uppercase tracking-widest text-right">Data</th>
-                                    {isAdmin && <th className="px-6 py-4 text-[9px] font-black text-stone-500 uppercase tracking-widest">Akcje</th>}
+                                    {canManageProjects && <th className="px-6 py-4 text-[9px] font-black text-stone-500 uppercase tracking-widest">Akcje</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-black/5">
                                 {filtered.map((p) => (
-                                    <ProjectRow key={p.id} project={p} isAdmin={isAdmin} staffMembers={staffMembers} />
+                                    <ProjectRow key={p.id} project={p} canManageProjects={canManageProjects} staffMembers={staffMembers} />
                                 ))}
                             </tbody>
                         </table>
