@@ -5,7 +5,6 @@ import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { logActivity } from "@/lib/services";
-import { spendCashback } from "@/lib/cashback";
 import { updatePayoutStatus } from "./projects";
 import { isTerminalPayoutStatus, mapPayoutActionToStatus } from "@/lib/payoutWorkflow";
 

@@ -5,12 +5,18 @@ import { v4 as uuidv4 } from 'uuid';
  * Deducts cashback from a user's wallet using FIFO (First-In-First-Out) logic.
  * Only non-expired 'EARN' or 'ADJUST' (positive) transactions are considered.
  */
-export async function spendCashback(userId: string, amountToSpend: number, description?: string, referenceId?: string) {
+export async function spendCashback(
+    userId: string,
+    amountToSpend: number,
+    description?: string,
+    referenceId?: string,
+    queryFn: typeof query = query
+) {
     if (amountToSpend <= 0) return { success: true };
 
     // 1. Get all available positive transactions that are not expired
     // Using LEFT JOIN aggregation instead of a correlated subquery for O(1) vs O(N) performance
-    const activeEarns = await query<any>(`
+    const activeEarns = await queryFn<any>(`
         SELECT wt.id, wt.amount - COALESCE(s.spent, 0) as remaining_amount
         FROM wallet_transactions wt
         LEFT JOIN (
@@ -41,7 +47,7 @@ export async function spendCashback(userId: string, amountToSpend: number, descr
         const spendFromThisEarn = Math.min(remainingToSpend, Number(earn.remaining_amount));
         if (spendFromThisEarn > 0) {
             const spendId = `s_${uuidv4().substring(0, 8)}`;
-            await query(
+            await queryFn(
                 "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
                 [spendId, userId, 'SPEND', spendFromThisEarn, earn.id, description || 'Obciążenie konta', referenceId || null]
             );

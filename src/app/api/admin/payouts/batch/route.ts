@@ -3,7 +3,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { logActivity } from "@/lib/services";
-import { spendCashback } from "@/lib/cashback";
 import { updatePayoutStatus } from "@/app/actions/projects";
 
 export async function POST(req: Request) {
@@ -40,12 +39,6 @@ export async function POST(req: Request) {
                 await updatePayoutStatus(payoutReq.id, 'PAID');
                 totalProcessed += Number(payoutReq.amount);
             } catch (err: any) {
-                // If a specific request fails, ensure it's marked rejected and commissions are reverted
-                try {
-                    await updatePayoutStatus(payoutReq.id, 'REJECTED');
-                } catch (revertErr) {
-                    console.error(`Failed to revert payout ${payoutReq.id}:`, revertErr);
-                }
                 errors.push(`${payoutReq.id}: ${err.message}`);
             }
         }

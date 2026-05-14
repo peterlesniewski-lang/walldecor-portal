@@ -530,12 +530,6 @@ export async function updatePayoutStatus(payoutId: string, newStatus: string) {
         throw new Error("Ten wniosek został już ostatecznie rozliczony i nie może być zmieniony.");
     }
 
-    // 1. Update payout request status
-    await query(
-        "UPDATE payout_requests SET status = ?, processed_at = CURRENT_TIMESTAMP, processed_by = ? WHERE id = ?",
-        [newStatus, session.user.id, payoutId]
-    );
-
     // 2. Map Payout status to Commission status
     // Payout PENDING/IN_PAYMENT -> Commission IN_PAYMENT
     // Payout APPROVED/PAID -> Commission PAID
@@ -545,25 +539,34 @@ export async function updatePayoutStatus(payoutId: string, newStatus: string) {
     else if (newStatus === 'APPROVED' || newStatus === 'PAID') commissionStatus = 'PAID';
     else if (newStatus === 'REJECTED') commissionStatus = 'EARNED';
 
-    // 3. Update linked commissions
-    await query(
-        "UPDATE commissions SET status = ? WHERE payout_id = ?",
-        [commissionStatus, payoutId]
-    );
-
-    // 4. Handle side effects
-    if (newStatus === 'REJECTED') {
-        await query("UPDATE commissions SET payout_id = NULL WHERE payout_id = ?", [payoutId]);
-    }
-
     // Debit wallet via FIFO spendCashback if payout is being approved/paid for the first time
     // ONLY for types that are not COMMISSION (commissions are handled by updating commission status)
     const isFinalStatus = payoutReq.status === 'APPROVED' || payoutReq.status === 'PAID';
     const movingToFinal = newStatus === 'APPROVED' || newStatus === 'PAID';
 
-    if (movingToFinal && !isFinalStatus && payoutReq.type !== 'COMMISSION') {
-        await spendCashback(payoutReq.architect_id, Number(payoutReq.amount));
-    }
+    const projectsRes = await withTransaction(async (queryFn) => {
+        await queryFn(
+            "UPDATE payout_requests SET status = ?, processed_at = CURRENT_TIMESTAMP, processed_by = ? WHERE id = ?",
+            [newStatus, session.user.id, payoutId]
+        );
+
+        await queryFn(
+            "UPDATE commissions SET status = ? WHERE payout_id = ?",
+            [commissionStatus, payoutId]
+        );
+
+        const linkedProjects = await queryFn<any>("SELECT DISTINCT project_id FROM commissions WHERE payout_id = ?", [payoutId]);
+
+        if (newStatus === 'REJECTED') {
+            await queryFn("UPDATE commissions SET payout_id = NULL WHERE payout_id = ?", [payoutId]);
+        }
+
+        if (movingToFinal && !isFinalStatus && payoutReq.type !== 'COMMISSION') {
+            await spendCashback(payoutReq.architect_id, Number(payoutReq.amount), undefined, undefined, queryFn);
+        }
+
+        return linkedProjects;
+    });
 
     await logActivity(session.user.id, 'PAYOUT_STATUS_CHANGE', `Zmieniono status wypłaty ${payoutId} na ${newStatus}`, { payoutId, newStatus });
 
@@ -585,9 +588,7 @@ export async function updatePayoutStatus(payoutId: string, newStatus: string) {
         }
     }
 
-
     // Revalidate specific projects linked to this payout
-    const projectsRes = await query<any>("SELECT DISTINCT project_id FROM commissions WHERE payout_id = ?", [payoutId]);
     for (const p of projectsRes) {
         if (p.project_id) revalidatePath(`/dashboard/admin/projects/${p.project_id}`);
     }

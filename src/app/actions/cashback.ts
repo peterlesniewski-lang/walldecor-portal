@@ -2,7 +2,7 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, withTransaction } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { spendCashback } from "@/lib/cashback";
 import { v4 as uuidv4 } from 'uuid';
@@ -23,17 +23,17 @@ export async function requestRedemption(amount: number) {
 
     const userId = session.user.id;
 
-    // 1. Deduct from wallet using FIFO
     const redemptionId = `r_${uuidv4().substring(0, 8)}`;
-    await spendCashback(userId, amount, "Wymiana na kartę podarunkową", redemptionId);
 
-    // 2. Create a pending redemption request
-    await query(
-        "INSERT INTO cashback_redemptions (id, user_id, amount, status) VALUES (?, ?, ?, 'PENDING')",
-        [redemptionId, userId, amount]
-    );
+    await withTransaction(async (queryFn) => {
+        await spendCashback(userId, amount, "Wymiana na kartę podarunkową", redemptionId, queryFn);
 
-    // 3. Log activity
+        await queryFn(
+            "INSERT INTO cashback_redemptions (id, user_id, amount, status) VALUES (?, ?, ?, 'PENDING')",
+            [redemptionId, userId, amount]
+        );
+    });
+
     await logActivity(userId, 'CASHBACK_REDEMPTION_REQUEST', `Zawnioskowano o realizację cashbacku: ${amount} PLN`, { amount, redemptionId });
 
     revalidatePath('/dashboard');
