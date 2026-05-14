@@ -37,7 +37,7 @@ export async function POST(req: Request) {
         for (const payoutReq of requests) {
             try {
                 // Use the consolidated business logic
-                await updatePayoutStatus(payoutReq.id, 'APPROVED');
+                await updatePayoutStatus(payoutReq.id, 'PAID');
                 totalProcessed += Number(payoutReq.amount);
             } catch (err: any) {
                 // If a specific request fails, ensure it's marked rejected and commissions are reverted

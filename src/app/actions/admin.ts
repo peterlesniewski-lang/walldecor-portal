@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { logActivity } from "@/lib/services";
 import { spendCashback } from "@/lib/cashback";
 import { updatePayoutStatus } from "./projects";
+import { isTerminalPayoutStatus, mapPayoutActionToStatus } from "@/lib/payoutWorkflow";
 
 export async function handlePayoutRequest(requestId: string, action: 'APPROVE' | 'REJECT' | 'HOLD' | 'IN_PAYMENT' | 'PAID') {
     const session = await getServerSession(authOptions);
@@ -18,21 +19,17 @@ export async function handlePayoutRequest(requestId: string, action: 'APPROVE' |
     const payoutReq = requestRes[0];
     if (!payoutReq) throw new Error("Request not found");
 
-    if (payoutReq.status === 'APPROVED' || payoutReq.status === 'REJECTED') {
+    if (isTerminalPayoutStatus(payoutReq.status)) {
         throw new Error("Wniosek został już przetworzony.");
     }
 
-    if (action === 'APPROVE' || action === 'PAID') {
-        return await updatePayoutStatus(requestId, 'APPROVED');
-    } else if (action === 'REJECT') {
-        return await updatePayoutStatus(requestId, 'REJECTED');
-    } else if (action === 'IN_PAYMENT') {
-        return await updatePayoutStatus(requestId, 'IN_PAYMENT');
-    } else if (action === 'HOLD') {
+    if (action === 'HOLD') {
         await query(
             "UPDATE payout_requests SET status = 'HOLD' WHERE id = ?",
             [requestId]
         );
+    } else {
+        return await updatePayoutStatus(requestId, mapPayoutActionToStatus(action));
     }
 
     revalidatePath('/dashboard/admin');
