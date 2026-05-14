@@ -106,9 +106,20 @@ DB_PASSWORD=${DB_PASS}
 DB_NAME=${DB_NAME}
 
 DEMO_MODE=false
+
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+EMAIL_HOST=
+EMAIL_PORT=587
+EMAIL_SECURE=false
+EMAIL_USER=
+EMAIL_PASS=
+EMAIL_FROM="WallDecor - Portal Architekta" <no-reply@walldecor.pl>
 EOF
     info ".env created at $APP_DIR/.env"
     warn "Remember to update NEXTAUTH_URL when you add a domain!"
+    warn "Configure EMAIL_* before inviting architects so welcome and password-reset emails can be sent."
 else
     warn ".env already exists — skipping. Edit manually if needed."
 fi
@@ -128,10 +139,13 @@ info "private_uploads ready."
 # ─── 11. Install dependencies + build ─────────────────────────────────────────
 info "Installing npm dependencies..."
 cd "$APP_DIR"
-npm ci --omit=dev
+npm ci
 
 info "Building Next.js app (this may take a few minutes)..."
 npm run build
+
+info "Pruning development dependencies after successful build..."
+npm prune --omit=dev
 
 # ─── 12. PM2 start ────────────────────────────────────────────────────────────
 info "Starting app with PM2..."

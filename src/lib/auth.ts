@@ -25,58 +25,65 @@ function resetRateLimit(email: string) {
     loginAttempts.delete(email);
 }
 
+const authProviders: NextAuthOptions['providers'] = [
+    CredentialsProvider({
+        name: 'WallDecor Portal',
+        credentials: {
+            email: { label: "Email", type: "text" },
+            password: { label: "Password", type: "password" }
+        },
+        async authorize(credentials) {
+            if (!credentials?.email || !credentials?.password) return null;
+
+            if (!checkRateLimit(credentials.email)) {
+                throw new Error("Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za 5 minut.");
+            }
+
+            if (process.env.DEMO_MODE === 'true') {
+                if (credentials.email === 'architekt@demo.pl') {
+                    return { id: 'u2', name: 'Piotr Architekt', email: 'architekt@demo.pl', role: 'ARCHI' };
+                }
+                if (credentials.email === 'admin@walldecor.pl') {
+                    return { id: 'u1', name: 'Admin WallDecor', email: 'admin@walldecor.pl', role: 'ADMIN' };
+                }
+            }
+
+            const users = await query<any>(
+                'SELECT * FROM users WHERE email = ?',
+                [credentials.email]
+            );
+
+            const user = users[0];
+
+            if (user && user.password && await bcrypt.compare(credentials.password, user.password)) {
+                resetRateLimit(credentials.email);
+                query("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?", [user.id]).catch(() => {});
+                return {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                };
+            }
+            return null;
+        }
+    })
+];
+
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    authProviders.push(
+        GoogleProvider({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        })
+    );
+}
+
 export const authOptions: NextAuthOptions = {
     session: {
         strategy: 'jwt',
     },
-    providers: [
-        GoogleProvider({
-            clientId: process.env.GOOGLE_CLIENT_ID!,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-        }),
-        CredentialsProvider({
-            name: 'WallDecor Portal',
-            credentials: {
-                email: { label: "Email", type: "text" },
-                password: { label: "Password", type: "password" }
-            },
-            async authorize(credentials) {
-                if (!credentials?.email || !credentials?.password) return null;
-
-                if (!checkRateLimit(credentials.email)) {
-                    throw new Error("Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za 5 minut.");
-                }
-
-                if (process.env.DEMO_MODE === 'true') {
-                    if (credentials.email === 'architekt@demo.pl') {
-                        return { id: 'u2', name: 'Piotr Architekt', email: 'architekt@demo.pl', role: 'ARCHI' };
-                    }
-                    if (credentials.email === 'admin@walldecor.pl') {
-                        return { id: 'u1', name: 'Admin WallDecor', email: 'admin@walldecor.pl', role: 'ADMIN' };
-                    }
-                }
-
-                const users = await query<any>(
-                    'SELECT * FROM users WHERE email = ?',
-                    [credentials.email]
-                );
-
-                const user = users[0];
-
-                if (user && user.password && await bcrypt.compare(credentials.password, user.password)) {
-                    resetRateLimit(credentials.email);
-                    query("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?", [user.id]).catch(() => {});
-                    return {
-                        id: user.id,
-                        name: user.name,
-                        email: user.email,
-                        role: user.role,
-                    };
-                }
-                return null;
-            }
-        })
-    ],
+    providers: authProviders,
     callbacks: {
         async signIn({ user, account, profile }) {
             if (account?.provider === 'google') {
