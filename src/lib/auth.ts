@@ -2,7 +2,6 @@ import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import bcrypt from 'bcrypt';
-import { v4 as uuidv4 } from 'uuid';
 import { query } from './db';
 
 // In-memory rate limiter: max 5 failed attempts per email per 5 minutes
@@ -103,16 +102,7 @@ export const authOptions: NextAuthOptions = {
                     user.id = dbUser.id;
                     (user as any).role = dbUser.role;
                 } else {
-                    // Auto-create new ARCHI account
-                    const newId = uuidv4();
-                    const name = user.name || email.split('@')[0];
-                    await query(
-                        `INSERT INTO users (id, email, name, password, role, provider, provider_account_id, created_at)
-                         VALUES (?, ?, ?, NULL, 'ARCHI', 'google', ?, NOW())`,
-                        [newId, email, name, providerAccountId]
-                    );
-                    user.id = newId;
-                    (user as any).role = 'ARCHI';
+                    return false;
                 }
                 return true;
             }

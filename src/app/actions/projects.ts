@@ -14,6 +14,8 @@ import crypto from 'crypto';
 import { sendEmail } from "@/lib/email";
 import { buildArchitectRegisteredPlaceholders } from "@/lib/emailPlaceholders";
 import { canManageFinancialOperations, canManageOperationalProjects, canRegisterArchitects } from "@/lib/rbac";
+import { assertFullCommissionPayoutAmount } from "@/lib/payoutWorkflow";
+import { formatSqlDateTime } from "@/lib/dbDate";
 
 
 function generateTempPassword(): string {
@@ -45,6 +47,11 @@ export async function createProject(data: {
     const ownerId = (session.user.role === 'ADMIN' || session.user.role === 'STAFF') && data.ownerId
         ? data.ownerId
         : session.user.id;
+
+    const ownerRes = await query<any>("SELECT role FROM users WHERE id = ?", [ownerId]);
+    if (ownerRes[0]?.role !== 'ARCHI') {
+        throw new Error("Projekt może być przypisany wyłącznie do konta architekta.");
+    }
 
     // 1. Create Project
     await query(
@@ -245,7 +252,7 @@ export async function updateProjectStatus(projectId: string, status: string) {
                             expiresAt.setFullYear(expiresAt.getFullYear() + 1);
                             await queryFn(
                                 "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-                                [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, item.id, expiresAt.toISOString()]
+                                [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
                             );
                         }
                     }
@@ -418,7 +425,7 @@ export async function requestPayout() {
 
 export async function requestCommissionPayout(formData: FormData) {
     const session = await getServerSession(authOptions);
-    if (!session) throw new Error("Unauthorized");
+    if (!session || session.user.role !== 'ARCHI') throw new Error("Unauthorized");
 
     const amount = Number(formData.get('amount'));
     const invoiceFile = formData.get('invoice') as File;
@@ -448,6 +455,8 @@ export async function requestCommissionPayout(formData: FormData) {
     if (amount > earnedTotal) {
         throw new Error("Niewystarczająca ilość zarobionej prowizji.");
     }
+
+    assertFullCommissionPayoutAmount(amount, earnedTotal);
 
     // 2. Handle File Upload
     const fileName = `invoice_${session.user.id}_${Date.now()}.pdf`;
@@ -495,10 +504,14 @@ export async function requestCommissionPayout(formData: FormData) {
                 [requestId, session.user.id, amount, invoiceUrl]
             );
             for (const id of toLock) {
-                await queryFn(
-                    "UPDATE commissions SET status = 'IN_PAYMENT', payout_id = ? WHERE id = ?",
+                const updateResult = await queryFn<any>(
+                    "UPDATE commissions SET status = 'IN_PAYMENT', payout_id = ? WHERE id = ? AND status = 'EARNED'",
                     [requestId, id]
                 );
+                const affectedRows = Number((updateResult as any).affectedRows ?? updateResult?.[0]?.affectedRows ?? 0);
+                if (affectedRows !== 1) {
+                    throw new Error("Nie udało się zablokować pełnej kwoty prowizji. Odśwież portfel i spróbuj ponownie.");
+                }
             }
         });
     } catch (error) {
@@ -709,7 +722,7 @@ export async function updateProjectItem(itemId: string, amount_net: number, note
 
             await query(
                 "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [`t_${uuidv4().substring(0, 8)}`, ownerId, transType, Math.abs(diffCashback), itemId, note || (diffCashback > 0 ? 'Korekta: zwiększenie kwoty' : 'Korekta: zwrot/pomniejszenie kwoty'), diffCashback > 0 ? expiresAt.toISOString() : null]
+                [`t_${uuidv4().substring(0, 8)}`, ownerId, transType, Math.abs(diffCashback), itemId, note || (diffCashback > 0 ? 'Korekta: zwiększenie kwoty' : 'Korekta: zwrot/pomniejszenie kwoty'), diffCashback > 0 ? formatSqlDateTime(expiresAt) : null]
             );
         }
     }
@@ -799,7 +812,7 @@ export async function addProjectItem(projectId: string, data: {
                 expiresAt.setFullYear(expiresAt.getFullYear() + 1);
                 await query(
                     "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, itemId, note || 'Cashback: nowa pozycja po rozliczeniu', expiresAt.toISOString()]
+                    [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, itemId, note || 'Cashback: nowa pozycja po rozliczeniu', formatSqlDateTime(expiresAt)]
                 );
             }
         }
@@ -897,7 +910,7 @@ export async function updateProjectItemMeta(itemId: string, meta: {
 
 export async function updatePayoutInvoiceNumber(payoutId: string, invoiceNumber: string) {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
+    if (!session || !canManageFinancialOperations(session.user.role)) {
         throw new Error("Unauthorized");
     }
 

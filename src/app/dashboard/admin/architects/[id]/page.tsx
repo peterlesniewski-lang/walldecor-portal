@@ -20,6 +20,7 @@ import ArchitectDataCard from './ArchitectDataCard';
 import AdminRedemptionQueue from '@/admin/components/AdminRedemptionQueue';
 import AdminPayoutsQueue from '@/admin/components/AdminPayoutsQueue';
 import { getArchitectRedemptions } from "@/app/actions/cashback";
+import { walletBalanceSql } from "@/lib/walletSql";
 
 export default async function ArchitectProfilePage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -54,17 +55,7 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
     `, [id]);
     const commissions = commissionsRes[0] || { earned: 0, pending: 0 };
 
-    // 4. Wallet balance (excluding expired EARN)
-    const walletRes = await query<any>(`
-        SELECT COALESCE(SUM(CASE
-            WHEN type = 'EARN' AND (expires_at IS NULL OR expires_at > NOW()) THEN amount
-            WHEN type = 'ADJUST' THEN amount
-            WHEN type NOT IN ('EARN', 'ADJUST') THEN -amount
-            ELSE 0
-        END), 0) as balance
-        FROM wallet_transactions
-        WHERE user_id = ?
-    `, [id]);
+    const walletRes = await query<any>(`SELECT (${walletBalanceSql('?')}) as balance`, [id]);
     const walletBalance = Number(walletRes[0]?.balance || 0);
 
     // 5. Projects list

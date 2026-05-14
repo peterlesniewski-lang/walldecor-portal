@@ -27,6 +27,7 @@ import AdminCharts from '@/admin/components/AdminCharts';
 import DashboardBottomTabs from '@/admin/components/DashboardBottomTabs';
 import { getPendingRedemptions } from "@/app/actions/cashback";
 import { formatPLN } from "@/lib/utils";
+import { walletBalanceSql } from "@/lib/walletSql";
 
 export default async function AdminDashboard() {
     const session = await getServerSession(authOptions);
@@ -42,15 +43,9 @@ export default async function AdminDashboard() {
         SELECT
             u.id, u.name, u.email,
             COUNT(DISTINCT CASE WHEN p.status != 'NIEZREALIZOWANY' THEN p.id END) as projects_count,
-            COALESCE(SUM(CASE
-                WHEN t.type = 'EARN' AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN t.amount
-                WHEN t.type = 'ADJUST' THEN t.amount
-                WHEN t.type NOT IN ('EARN', 'ADJUST') THEN -t.amount
-                ELSE 0
-            END), 0) as balance
+            (${walletBalanceSql('u.id')}) as balance
         FROM users u
         LEFT JOIN projects p ON u.id = p.owner_id
-        LEFT JOIN wallet_transactions t ON u.id = t.user_id
         WHERE u.role = 'ARCHI'
         GROUP BY u.id
     `);

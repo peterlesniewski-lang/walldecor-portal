@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { v4 as uuidv4 } from 'uuid';
+import { walletBalanceSql } from "@/lib/walletSql";
 
 const IS_DEMO = process.env.DEMO_MODE === 'true';
 
@@ -42,15 +43,8 @@ export async function getArchitectStats(userId: string) {
     const pendingCommission = Number(comm.pending) + Number(comm.in_payment);
     const totalRealizedCommission = Number(comm.earned) + Number(comm.in_payment) + Number(comm.paid);
 
-    const transactions = await query<any>("SELECT amount, type, expires_at FROM wallet_transactions WHERE user_id = ?", [userId]);
-    const now = new Date();
-    const cashbackBalance = transactions.reduce((acc: number, curr: any) => {
-        // Exclude expired EARN transactions
-        if (curr.type === 'EARN' && curr.expires_at && new Date(curr.expires_at) < now) {
-            return acc;
-        }
-        return curr.type === 'EARN' || curr.type === 'ADJUST' ? acc + Number(curr.amount) : acc - Number(curr.amount);
-    }, 0);
+    const balanceRes = await query<any>(`SELECT (${walletBalanceSql('?')}) as balance`, [userId]);
+    const cashbackBalance = Number(balanceRes[0]?.balance || 0);
 
     const projectsRes = await query<any>("SELECT COUNT(*) as count FROM projects WHERE owner_id = ? AND status != 'NIEZREALIZOWANY'", [userId]);
     const activeProjects = projectsRes[0].count;
@@ -262,12 +256,7 @@ export async function getAdminMetrics() {
     // 3. Wallet Stats (EARN entries excluded if expired; ADJUST always positive; everything else negative)
     const walletRes = await query<any>(`
         SELECT
-            COALESCE(SUM(CASE
-                WHEN type = 'EARN' AND (expires_at IS NULL OR expires_at > NOW()) THEN amount
-                WHEN type = 'ADJUST' THEN amount
-                WHEN type NOT IN ('EARN', 'ADJUST') THEN -amount
-                ELSE 0
-            END), 0) as total_available,
+            (${walletBalanceSql()}) as total_available,
             COALESCE(SUM(CASE WHEN type = 'EARN' AND expires_at BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 30 DAY) THEN amount ELSE 0 END), 0) as expiring_30d
         FROM wallet_transactions
     `);
@@ -319,15 +308,10 @@ export async function getAdminMetrics() {
             wt_summary.wallet_balance
         FROM (
             SELECT
-                user_id,
-                COALESCE(SUM(CASE
-                    WHEN type = 'EARN' AND (expires_at IS NULL OR expires_at > NOW()) THEN amount
-                    WHEN type = 'ADJUST' THEN amount
-                    WHEN type NOT IN ('EARN', 'ADJUST') THEN -amount
-                    ELSE 0
-                END), 0) as wallet_balance
-            FROM wallet_transactions
-            GROUP BY user_id
+                u.id as user_id,
+                (${walletBalanceSql('u.id')}) as wallet_balance
+            FROM users u
+            WHERE u.role = 'ARCHI'
         ) wt_summary
         JOIN users u ON wt_summary.user_id = u.id
         LEFT JOIN payout_requests pr

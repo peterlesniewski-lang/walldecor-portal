@@ -68,7 +68,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
     );
 }
 
-function InvoiceNumberField({ payoutId, initialValue }: { payoutId: string; initialValue?: string | null }) {
+function InvoiceNumberField({ payoutId, initialValue, isAdmin }: { payoutId: string; initialValue?: string | null; isAdmin: boolean }) {
     const router = useRouter();
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState(initialValue || '');
@@ -86,6 +86,15 @@ function InvoiceNumberField({ payoutId, initialValue }: { payoutId: string; init
             setSaving(false);
         }
     };
+
+    if (!isAdmin) {
+        return (
+            <div className="flex items-center gap-1.5 text-[10px] font-mono text-stone-400">
+                <FileText size={11} className="shrink-0" />
+                {value ? <span className="font-bold text-stone-600">{value}</span> : <span className="italic">Brak nr faktury</span>}
+            </div>
+        );
+    }
 
     if (editing) {
         return (
@@ -393,7 +402,7 @@ export default function AdminPayoutsQueue({ initialPayouts, isAdmin }: { initial
                                             })}
                                         </div>
                                     )}
-                                    <InvoiceNumberField payoutId={p.id} initialValue={p.invoice_number} />
+                                    <InvoiceNumberField payoutId={p.id} initialValue={p.invoice_number} isAdmin={isAdmin} />
                                     <div className="flex items-center gap-3">
                                         <span className="text-[10px] text-stone-500 font-bold uppercase tracking-widest">
                                             ID: {p.id.substring(0, 8)}

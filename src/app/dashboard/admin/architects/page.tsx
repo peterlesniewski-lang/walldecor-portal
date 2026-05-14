@@ -18,6 +18,7 @@ import AddArchitectButton from "@/components/AddArchitectButton";
 import { getAdminMetrics } from "@/lib/services";
 import { getPendingRedemptions } from "@/app/actions/cashback";
 import { formatPLN } from "@/lib/utils";
+import { walletBalanceSql } from "@/lib/walletSql";
 
 export default async function AdminArchitectsPage({
     searchParams
@@ -42,16 +43,7 @@ export default async function AdminArchitectsPage({
                 JOIN projects p ON i.project_id = p.id
                 WHERE p.owner_id = u.id AND i.type = 'PRODUCT' AND p.status != 'NIEZREALIZOWANY'
             ), 0) as turnover,
-            COALESCE((
-                SELECT SUM(CASE 
-                    WHEN t.type = 'EARN' AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN t.amount
-                    WHEN t.type = 'ADJUST' THEN t.amount
-                    WHEN t.type NOT IN ('EARN', 'ADJUST') THEN -t.amount
-                    ELSE 0 
-                END)
-                FROM wallet_transactions t
-                WHERE t.user_id = u.id
-            ), 0) as balance,
+            (${walletBalanceSql('u.id')}) as balance,
             (SELECT COUNT(*) FROM cashback_redemptions WHERE user_id = u.id AND status = 'PENDING') as pending_redemptions
         FROM users u
         LEFT JOIN projects p ON u.id = p.owner_id

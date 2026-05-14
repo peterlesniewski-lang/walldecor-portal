@@ -12,6 +12,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
     const project = await getProjectDetails(id);
     if (!project) notFound();
+    if (session.user.role === 'ARCHI' && project.owner_id !== session.user.id) notFound();
 
     const files = await query<any>(`
         SELECT pf.*, u.name as uploaded_by_name

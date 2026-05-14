@@ -11,6 +11,7 @@ const TABLES = [
     'wallet_transactions',
     'payout_requests',
     'activity_logs',
+    'project_files',
     'email_templates',
     'cashback_redemptions',
 ];

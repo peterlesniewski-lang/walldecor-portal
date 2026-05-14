@@ -12,3 +12,12 @@ export function mapPayoutActionToStatus(action: PayoutAction): PayoutStatus {
 export function isTerminalPayoutStatus(status: string): boolean {
     return status === 'PAID' || status === 'REJECTED';
 }
+
+export function assertFullCommissionPayoutAmount(requestedAmount: number, availableAmount: number): void {
+    const requestedCents = Math.round(requestedAmount * 100);
+    const availableCents = Math.round(availableAmount * 100);
+
+    if (requestedCents !== availableCents) {
+        throw new Error("Wypłata prowizji musi obejmować pełną dostępną kwotę. Odśwież portfel i wystaw fakturę na aktualną kwotę prowizji.");
+    }
+}
