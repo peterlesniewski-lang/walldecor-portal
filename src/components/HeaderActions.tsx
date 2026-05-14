@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Plus } from 'lucide-react';
+import Link from 'next/link';
 import ProjectSubmissionModal from './ProjectSubmissionModal';
 import ArchitectRegistrationModal from './ArchitectRegistrationModal';
 
@@ -15,9 +16,12 @@ export default function HeaderActions({ userRole }: HeaderActionsProps) {
 
     return (
         <div className="flex items-center gap-4">
-            <button className="bg-black/5 border border-black/5 text-stone-400 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/10 hover:text-stone-900 transition-all">
+            <Link
+                href={userRole === 'ADMIN' || userRole === 'STAFF' ? '/dashboard/admin/help' : '/dashboard/help'}
+                className="bg-black/5 border border-black/5 text-stone-400 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/10 hover:text-stone-900 transition-all"
+            >
                 Pomoc
-            </button>
+            </Link>
             {userRole === 'ADMIN' || userRole === 'STAFF' ? (
                 <>
                     {(userRole === 'ADMIN' || userRole === 'STAFF') && (
