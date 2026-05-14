@@ -1,6 +1,6 @@
 # PROGRESS.md — WallDecor Architect Partner Portal
 
-Last updated: 2026-02-24 (audit session 2)
+Last updated: 2026-05-14 (mail onboarding fix)
 
 ---
 
@@ -306,6 +306,16 @@ migrations/
 - Reset hasła nie ujawnia czy email istnieje w systemie (anti-enumeration)
 - Auto-create: nowy user przez Google → `role='ARCHI'`, `name` z Google profile
 - Istniejący user loguje się przez Google: `provider_account_id` uzupełniany przy pierwszym OAuth logowaniu
+
+---
+
+### Faza 10 — Mail powitalny dla ręcznej rejestracji architekta (2026-05-14)
+
+- Naprawiono placeholdery dla `ARCHITECT_REGISTERED`: ręczna rejestracja przekazuje teraz `email`, `password`, `portal_url`
+- Dodano `buildArchitectRegisteredPlaceholders()` jako wspólny helper dla ręcznej rejestracji i importu CSV
+- `sendEmail()` zwraca jawne `success: false`, gdy szablon maila jest nieaktywny lub nie istnieje
+- Modal ręcznej rejestracji pokazuje managerowi, czy mail powitalny faktycznie został wysłany
+- Dodano test `tests/emailPlaceholders.test.ts` dla kontraktu placeholderów maila powitalnego
 
 ---
 

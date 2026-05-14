@@ -12,6 +12,7 @@ import { writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import crypto from 'crypto';
 import { sendEmail } from "@/lib/email";
+import { buildArchitectRegisteredPlaceholders } from "@/lib/emailPlaceholders";
 
 
 function generateTempPassword(): string {
@@ -328,19 +329,33 @@ export async function registerArchitect(data: {
     );
 
     // --- Email Notification ---
+    let emailSent = false;
+    let emailError: string | null = null;
     try {
-        await sendEmail('ARCHITECT_REGISTERED', data.email, {
-            user_name: fullName,
-            password: passwordToHash,
-            site_url: process.env.NEXTAUTH_URL || 'http://localhost:3000'
-        });
+        const portalUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+        const result = await sendEmail(
+            'ARCHITECT_REGISTERED',
+            data.email,
+            buildArchitectRegisteredPlaceholders({
+                userName: fullName,
+                email: data.email,
+                password: passwordToHash,
+                portalUrl,
+            })
+        );
+
+        emailSent = result?.success === true;
+        if (!emailSent) {
+            emailError = "Konto zostało utworzone, ale nie udało się wysłać maila powitalnego. Sprawdź konfigurację SMTP i aktywność szablonu ARCHITECT_REGISTERED.";
+        }
 
     } catch (err) {
         console.error("Email notification failed:", err);
+        emailError = "Konto zostało utworzone, ale wysyłka maila powitalnego zakończyła się błędem.";
     }
 
     revalidatePath('/dashboard/admin');
-    return { success: true, userId, generatedPassword };
+    return { success: true, userId, generatedPassword, emailSent, emailError };
 }
 
 

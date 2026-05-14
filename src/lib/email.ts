@@ -21,7 +21,7 @@ export async function sendEmail(slug: string, to: string, placeholders: Record<s
 
         if (templates.length === 0) {
             console.warn(`Email template for slug "${slug}" not found or inactive.`);
-            return;
+            return { success: false, error: `Email template for slug "${slug}" not found or inactive.` };
         }
 
         const template = templates[0];
