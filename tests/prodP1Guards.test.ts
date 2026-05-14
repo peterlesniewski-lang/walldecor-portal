@@ -55,3 +55,18 @@ test('commission payout locks only still-earned commission rows', async () => {
     assert.match(source, /UPDATE commissions SET status = 'IN_PAYMENT', payout_id = \? WHERE id = \? AND status = 'EARNED'/);
     assert.match(source, /Nie udało się zablokować pełnej kwoty prowizji/);
 });
+
+test('cashback spending locks active earning rows in MySQL transactions', async () => {
+    const cashbackSource = await readFile(new URL('../src/lib/cashback.ts', import.meta.url), 'utf8');
+    const dbSource = await readFile(new URL('../src/lib/db.ts', import.meta.url), 'utf8');
+
+    assert.match(cashbackSource, /FOR UPDATE/);
+    assert.match(dbSource, /FOR UPDATE\\b/);
+});
+
+test('project finalization uses deterministic ids for base commission and cashback grants', async () => {
+    const source = await readFile(new URL('../src/app/actions/projects.ts', import.meta.url), 'utf8');
+
+    assert.match(source, /`c_\$\{item\.id\}_earned`/);
+    assert.match(source, /`t_\$\{item\.id\}_cashback`/);
+});

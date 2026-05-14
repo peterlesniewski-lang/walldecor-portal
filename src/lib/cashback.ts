@@ -30,6 +30,7 @@ export async function spendCashback(
         AND wt.amount > 0
         AND (wt.expires_at IS NULL OR wt.expires_at > CURRENT_TIMESTAMP)
         ORDER BY wt.created_at ASC
+        FOR UPDATE
     `, [userId]);
 
     const totalAvailable = activeEarns.reduce((sum: number, row: any) => sum + Number(row.remaining_amount), 0);

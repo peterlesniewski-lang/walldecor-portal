@@ -56,6 +56,9 @@ function preprocessSQL(sql: string): string {
         return `datetime(${date.trim()}, '+${val} ${u}${u.endsWith('s') ? '' : 's'}')`;
     });
 
+    // 4. MySQL row locks are unnecessary in SQLite's write transaction model.
+    processed = processed.replace(/\s+FOR UPDATE\b/gi, '');
+
     return processed;
 }
 

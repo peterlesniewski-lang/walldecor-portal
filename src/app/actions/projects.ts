@@ -243,7 +243,7 @@ export async function updateProjectStatus(projectId: string, status: string) {
                         } else if (commAmount > 0) {
                             await queryFn(
                                 "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status) VALUES (?, ?, ?, ?, ?, 'EARNED')",
-                                [`c_${uuidv4().substring(0, 8)}`, projectId, item.id, owner_id, commAmount]
+                                [`c_${item.id}_earned`, projectId, item.id, owner_id, commAmount]
                             );
                         }
 
@@ -252,7 +252,7 @@ export async function updateProjectStatus(projectId: string, status: string) {
                             expiresAt.setFullYear(expiresAt.getFullYear() + 1);
                             await queryFn(
                                 "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-                                [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
+                                [`t_${item.id}_cashback`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
                             );
                         }
                     }
