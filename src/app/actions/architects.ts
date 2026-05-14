@@ -106,6 +106,19 @@ export async function deleteArchitect(architectId: string) {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
 
+    const projectCount = await query<any>(
+        "SELECT COUNT(*) as count FROM projects WHERE owner_id = ?",
+        [architectId]
+    );
+    const commissionCount = await query<any>(
+        "SELECT COUNT(*) as count FROM commissions WHERE architect_id = ?",
+        [architectId]
+    );
+
+    if (Number(projectCount[0]?.count || 0) > 0 || Number(commissionCount[0]?.count || 0) > 0) {
+        throw new Error("Nie można usunąć architekta z historią projektów lub rozliczeń. Zachowaj konto jako rekord archiwalny.");
+    }
+
     await query("DELETE FROM users WHERE id = ? AND role = 'ARCHI'", [architectId]);
 
     revalidatePath('/dashboard/admin');
