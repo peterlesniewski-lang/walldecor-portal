@@ -305,13 +305,13 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
                                         Oczekująca Wypłata
                                     </h3>
                                 </div>
-                                <AdminPayoutsQueue initialPayouts={payoutRequests} />
+                                <AdminPayoutsQueue initialPayouts={payoutRequests} isAdmin={isAdmin} />
                             </div>
                         )}
 
                         {/* Redemptions queue (if any pending or history) */}
                         {redemptions.length > 0 && (
-                            <AdminRedemptionQueue requests={redemptions} />
+                            <AdminRedemptionQueue requests={redemptions} isAdmin={isAdmin} />
                         )}
 
                         <div className="space-y-4">

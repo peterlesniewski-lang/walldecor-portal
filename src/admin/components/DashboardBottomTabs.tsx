@@ -62,7 +62,7 @@ export default function DashboardBottomTabs({ projects, isAdmin, staffMembers, r
                 {active === 'activity' && (
                     <div className="space-y-8">
                         <AdminActivityFeed />
-                        {redemptions.length > 0 && (
+                        {isAdmin && redemptions.length > 0 && (
                             <div className="space-y-4">
                                 <p className="text-[10px] font-black text-stone-500 uppercase tracking-[0.3em] flex items-center gap-2">
                                     <CreditCard size={14} className="text-amber-600" />
@@ -71,7 +71,7 @@ export default function DashboardBottomTabs({ projects, isAdmin, staffMembers, r
                                         {redemptions.length}
                                     </span>
                                 </p>
-                                <AdminRedemptionQueue requests={redemptions} />
+                                <AdminRedemptionQueue requests={redemptions} isAdmin={isAdmin} />
                             </div>
                         )}
                     </div>

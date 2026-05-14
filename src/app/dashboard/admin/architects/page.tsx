@@ -101,7 +101,7 @@ export default async function AdminArchitectsPage({
                     <ArrowLeft size={14} />
                     Dashboard
                 </Link>
-                <AddArchitectButton />
+                <AddArchitectButton isAdmin={session.user.role === 'ADMIN'} />
             </div>
 
             {/* Header / Title */}
@@ -185,7 +185,7 @@ export default async function AdminArchitectsPage({
                     </div>
                 ) : (
                     <div className="divide-y divide-black/5">
-                        <ArchitectList architects={architects} />
+            <ArchitectList architects={architects} isAdmin={session.user.role === 'ADMIN'} />
                     </div>
                 )}
             </div>

@@ -753,7 +753,11 @@ export default function AdminProjectDetailClient({ project, items, commissions, 
                                     <div className="bg-black/20 rounded-2xl p-6 border border-black/5 space-y-4">
                                         <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest">Zarządzanie statusem płatności</p>
                                         <div className="space-y-3">
-                                            <PayoutStatusActions payoutId={project.payout.id} currentStatus={project.payout.status} />
+                                            <PayoutStatusActions
+                                                payoutId={project.payout.id}
+                                                currentStatus={project.payout.status}
+                                                isAdmin={isAdmin}
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -877,7 +881,7 @@ export default function AdminProjectDetailClient({ project, items, commissions, 
     );
 }
 
-function PayoutStatusActions({ payoutId, currentStatus }: { payoutId: string; currentStatus: string }) {
+function PayoutStatusActions({ payoutId, currentStatus, isAdmin }: { payoutId: string; currentStatus: string; isAdmin: boolean }) {
     const router = useRouter();
     const [loading, setLoading] = useState<string | null>(null);
 
@@ -898,6 +902,14 @@ function PayoutStatusActions({ payoutId, currentStatus }: { payoutId: string; cu
             <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">
                 <CheckCircle2 size={16} />
                 Rozliczenie zakończone (Płatne)
+            </div>
+        );
+    }
+
+    if (!isAdmin) {
+        return (
+            <div className="p-3 rounded-xl bg-black/5 border border-black/10 text-[10px] font-black uppercase tracking-widest text-stone-500">
+                Podgląd tylko do odczytu. Status płatności może zmienić wyłącznie ADMIN.
             </div>
         );
     }

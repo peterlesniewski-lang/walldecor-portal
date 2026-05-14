@@ -8,9 +8,10 @@ import { formatPLN } from '@/lib/utils';
 
 interface ArchitectListProps {
     architects: any[];
+    isAdmin: boolean;
 }
 
-export default function ArchitectList({ architects }: ArchitectListProps) {
+export default function ArchitectList({ architects, isAdmin }: ArchitectListProps) {
     const [editId, setEditId] = useState<string | null>(null);
 
     return (
@@ -40,13 +41,15 @@ export default function ArchitectList({ architects }: ArchitectListProps) {
                             </div>
                         </div>
                         <div className="flex gap-2">
-                            <button
-                                onClick={() => setEditId(archi.id)}
-                                title="Edytuj dane"
-                                className="p-2.5 text-stone-700 hover:text-stone-900 hover:bg-black/5 rounded-xl transition-all border border-transparent hover:border-black/5"
-                            >
-                                <Edit2 size={16} />
-                            </button>
+                            {isAdmin && (
+                                <button
+                                    onClick={() => setEditId(archi.id)}
+                                    title="Edytuj dane"
+                                    className="p-2.5 text-stone-700 hover:text-stone-900 hover:bg-black/5 rounded-xl transition-all border border-transparent hover:border-black/5"
+                                >
+                                    <Edit2 size={16} />
+                                </button>
+                            )}
                             <Link
                                 href={`/dashboard/admin/architects/${archi.id}`}
                                 title="Profil architekta"

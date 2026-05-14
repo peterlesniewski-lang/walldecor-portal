@@ -355,7 +355,10 @@ export default async function AdminDashboard() {
                                 </span>
                             )}
                         </h3>
-                        <AdminPayoutsQueue initialPayouts={payoutRequests} />
+                        <AdminPayoutsQueue
+                            initialPayouts={payoutRequests}
+                            isAdmin={session.user.role === 'ADMIN'}
+                        />
                     </div>
 
                     {/* Leaderboard */}
@@ -462,9 +465,9 @@ export default async function AdminDashboard() {
                                 <Users size={16} className="text-brand-primary" />
                                 Baza Architektów
                             </h3>
-                            <AddArchitectButton />
+                            <AddArchitectButton isAdmin={session.user.role === 'ADMIN'} />
                         </div>
-                        <ArchitectList architects={architects} />
+                        <ArchitectList architects={architects} isAdmin={session.user.role === 'ADMIN'} />
                     </div>
                 </div>
             </div>

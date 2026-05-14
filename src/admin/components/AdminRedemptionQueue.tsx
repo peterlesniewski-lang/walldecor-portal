@@ -8,9 +8,10 @@ import { formatPLN } from '@/lib/utils';
 
 interface AdminRedemptionQueueProps {
     requests: any[];
+    isAdmin: boolean;
 }
 
-export default function AdminRedemptionQueue({ requests }: AdminRedemptionQueueProps) {
+export default function AdminRedemptionQueue({ requests, isAdmin }: AdminRedemptionQueueProps) {
     const [processingId, setProcessingId] = useState<string | null>(null);
     const [codeInputs, setCodeInputs] = useState<Record<string, string>>({});
     const router = useRouter();
@@ -62,24 +63,26 @@ export default function AdminRedemptionQueue({ requests }: AdminRedemptionQueueP
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <input
-                                type="text"
-                                placeholder="Wpisz kod rabatowy..."
-                                value={codeInputs[req.id] || ''}
-                                onChange={(e) => setCodeInputs({ ...codeInputs, [req.id]: e.target.value })}
-                                className="bg-black/5 border border-black/10 rounded-xl px-4 py-2.5 text-xs font-bold text-stone-900 focus:outline-none focus:border-brand-primary/50 min-w-[200px]"
-                            />
-                            <button
-                                onClick={() => handleIssue(req.id)}
-                                disabled={processingId === req.id || !codeInputs[req.id]}
-                                className="p-3 bg-brand-primary text-black rounded-xl hover:bg-white transition-all disabled:opacity-50 flex items-center gap-2"
-                                title="Zatwierdź i wyślij kod"
-                            >
-                                {processingId === req.id ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                                <span className="text-[10px] font-black uppercase tracking-widest px-1">Wyślij</span>
-                            </button>
-                        </div>
+                        {isAdmin && (
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="text"
+                                    placeholder="Wpisz kod rabatowy..."
+                                    value={codeInputs[req.id] || ''}
+                                    onChange={(e) => setCodeInputs({ ...codeInputs, [req.id]: e.target.value })}
+                                    className="bg-black/5 border border-black/10 rounded-xl px-4 py-2.5 text-xs font-bold text-stone-900 focus:outline-none focus:border-brand-primary/50 min-w-[200px]"
+                                />
+                                <button
+                                    onClick={() => handleIssue(req.id)}
+                                    disabled={processingId === req.id || !codeInputs[req.id]}
+                                    className="p-3 bg-brand-primary text-black rounded-xl hover:bg-white transition-all disabled:opacity-50 flex items-center gap-2"
+                                    title="Zatwierdź i wyślij kod"
+                                >
+                                    {processingId === req.id ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                                    <span className="text-[10px] font-black uppercase tracking-widest px-1">Wyślij</span>
+                                </button>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

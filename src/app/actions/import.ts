@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { sendEmail } from '@/lib/email';
+import { buildArchitectRegisteredPlaceholders } from '@/lib/emailPlaceholders';
 import { updateProjectStatus } from './projects';
 
 function generateTempPassword(): string {
@@ -120,12 +121,12 @@ export async function importProjectsFromCSV(rows: ImportRowInput[], importedAt?:
                 );
 
                 // Send welcome email (non-blocking — failure doesn't abort import)
-                await sendEmail('ARCHITECT_REGISTERED', email, {
-                    user_name: row.architectName.trim(),
+                await sendEmail('ARCHITECT_REGISTERED', email, buildArchitectRegisteredPlaceholders({
+                    userName: row.architectName.trim(),
                     email,
                     password: tempPassword,
-                    portal_url: portalUrl,
-                });
+                    portalUrl,
+                }));
 
                 // Cache for subsequent rows with the same architect in this batch
                 architectMap.set(row.architectName.toLowerCase().trim(), newArchitectId);
@@ -170,8 +171,8 @@ export async function importProjectsFromCSV(rows: ImportRowInput[], importedAt?:
                     [projectId, architectId, projectName, row.clientLabel || '—', createdAt]
                 );
                 await query(
-                    "INSERT INTO project_items (id, project_id, type, category, amount_net, order_number, invoice_number, is_paid, created_at) VALUES (?, ?, 'PRODUCT', 'Inne', ?, ?, ?, ?, ?)",
-                    [itemId, projectId, row.amountNet, row.orderNumber || null, row.invoiceNumber || null, row.isPaid ? 1 : 0, createdAt]
+                    "INSERT INTO project_items (id, project_id, type, category, amount_net, order_number, invoice_number, is_paid) VALUES (?, ?, 'PRODUCT', 'Inne', ?, ?, ?, ?)",
+                    [itemId, projectId, row.amountNet, row.orderNumber || null, row.invoiceNumber || null, row.isPaid ? 1 : 0]
                 );
             } else {
                 await query(

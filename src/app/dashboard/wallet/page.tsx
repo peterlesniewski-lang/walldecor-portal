@@ -32,7 +32,7 @@ export default async function WalletPage() {
             [session.user.id]
         ),
         query<any>(
-            "SELECT id, amount, status, created_at FROM payout_requests WHERE architect_id = ? AND (status IN ('PENDING', 'IN_PAYMENT', 'HOLD') OR (status IN ('REJECTED', 'PAID') AND created_at >= datetime('now', '-90 days'))) ORDER BY created_at DESC",
+            "SELECT id, amount, status, created_at FROM payout_requests WHERE architect_id = ? AND (status IN ('PENDING', 'IN_PAYMENT', 'HOLD') OR (status IN ('REJECTED', 'PAID') AND created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY))) ORDER BY created_at DESC",
             [session.user.id]
         ),
         getMyRedemptions()

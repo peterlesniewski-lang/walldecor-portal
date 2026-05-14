@@ -47,7 +47,7 @@ export async function requestRedemption(amount: number) {
  */
 export async function issueDiscountCode(redemptionId: string, code: string) {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
+    if (!session || session.user.role !== 'ADMIN') {
         throw new Error("Unauthorized");
     }
 
@@ -115,7 +115,7 @@ export async function getMyRedemptions() {
  */
 export async function getPendingRedemptions() {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
+    if (!session || session.user.role !== 'ADMIN') {
         return [];
     }
 

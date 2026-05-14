@@ -1,8 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { query } from '@/lib/db';
-import { readFile } from 'fs/promises';
-import { join } from 'path';
 import { NextResponse } from 'next/server';
 
 const TABLES = [
@@ -14,7 +12,7 @@ const TABLES = [
     'payout_requests',
     'activity_logs',
     'email_templates',
-    'discount_cards',
+    'cashback_redemptions',
 ];
 
 export async function GET() {
@@ -24,27 +22,8 @@ export async function GET() {
     }
 
     const dateStr = new Date().toISOString().split('T')[0];
-    const isSQLite = process.env.DB_TYPE === 'sqlite';
 
-    if (isSQLite) {
-        // SQLite: serve the raw database file — complete and lossless backup
-        const dbPath = join(process.cwd(), process.env.DB_PATH || 'walldecor.sqlite');
-        try {
-            const fileBuffer = await readFile(dbPath);
-            return new NextResponse(fileBuffer, {
-                status: 200,
-                headers: {
-                    'Content-Type': 'application/octet-stream',
-                    'Content-Disposition': `attachment; filename="walldecor-backup-${dateStr}.sqlite"`,
-                    'Cache-Control': 'no-store',
-                },
-            });
-        } catch {
-            return NextResponse.json({ error: 'Nie można odczytać pliku bazy danych.' }, { status: 500 });
-        }
-    }
-
-    // MySQL: export all tables as JSON
+    // Export all business tables as JSON for both MySQL production and SQLite development.
     const exportedTables: Record<string, any[]> = {};
     for (const table of TABLES) {
         try {

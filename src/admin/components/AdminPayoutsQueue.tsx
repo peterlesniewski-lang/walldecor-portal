@@ -132,7 +132,7 @@ function InvoiceNumberField({ payoutId, initialValue }: { payoutId: string; init
     );
 }
 
-export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: PayoutRequest[] }) {
+export default function AdminPayoutsQueue({ initialPayouts, isAdmin }: { initialPayouts: PayoutRequest[]; isAdmin: boolean }) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     // 'idle' | 'confirming' | 'loading' | 'error'
     const [phase, setPhase] = useState<'idle' | 'confirming' | 'loading' | 'error'>('idle');
@@ -224,34 +224,42 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
     return (
         <div className="space-y-6">
             {/* Toolbar */}
-            <div className="flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={toggleSelectAll}
-                        className="flex items-center gap-2 text-[10px] font-black text-stone-500 uppercase tracking-widest hover:text-stone-900 transition-all"
-                    >
-                        {selectedIds.length > 0 && selectedIds.length === initialPayouts.filter(p => isSelectable(p.status)).length
-                            ? <CheckSquare size={16} className="text-brand-primary" />
-                            : <Square size={16} />}
-                        Zaznacz wszystkie do wypłaty
-                    </button>
-                    {selectedIds.length > 0 && (
-                        <span className="text-[10px] font-black text-brand-primary uppercase tracking-widest bg-brand-primary/10 px-3 py-1 rounded-lg border border-brand-primary/20">
-                            Wybrano: {selectedIds.length} · {formatPLN(selectedTotal)} PLN
-                        </span>
+            {isAdmin ? (
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={toggleSelectAll}
+                            className="flex items-center gap-2 text-[10px] font-black text-stone-500 uppercase tracking-widest hover:text-stone-900 transition-all"
+                        >
+                            {selectedIds.length > 0 && selectedIds.length === initialPayouts.filter(p => isSelectable(p.status)).length
+                                ? <CheckSquare size={16} className="text-brand-primary" />
+                                : <Square size={16} />}
+                            Zaznacz wszystkie do wypłaty
+                        </button>
+                        {selectedIds.length > 0 && (
+                            <span className="text-[10px] font-black text-brand-primary uppercase tracking-widest bg-brand-primary/10 px-3 py-1 rounded-lg border border-brand-primary/20">
+                                Wybrano: {selectedIds.length} · {formatPLN(selectedTotal)} PLN
+                            </span>
+                        )}
+                    </div>
+
+                    {selectedIds.length > 0 && phase === 'idle' && (
+                        <button
+                            onClick={() => setPhase('confirming')}
+                            className="bg-brand-primary hover:bg-brand-secondary text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-[0_8px_20px_rgba(212,175,55,0.2)] active:scale-95"
+                        >
+                            <Zap size={14} fill="currentColor" />
+                            Zatwierdź Wybrane ({selectedIds.length})
+                        </button>
                     )}
                 </div>
-
-                {selectedIds.length > 0 && phase === 'idle' && (
-                    <button
-                        onClick={() => setPhase('confirming')}
-                        className="bg-brand-primary hover:bg-brand-secondary text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-[0_8px_20px_rgba(212,175,55,0.2)] active:scale-95"
-                    >
-                        <Zap size={14} fill="currentColor" />
-                        Zatwierdź Wybrane ({selectedIds.length})
-                    </button>
-                )}
-            </div>
+            ) : (
+                <div className="bg-black/5 border border-black/10 rounded-3xl px-6 py-4">
+                    <p className="text-[10px] font-black text-stone-500 uppercase tracking-widest">
+                        Podgląd tylko do odczytu. Wypłaty może rozliczać wyłącznie ADMIN.
+                    </p>
+                </div>
+            )}
 
             {/* Inline confirmation banner */}
             {phase === 'confirming' && (
@@ -420,8 +428,9 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
                                 <p className="text-[9px] text-stone-500 font-black uppercase tracking-widest">Kwota wniosku</p>
                             </div>
 
-                            <div className="flex items-center gap-1.5 border-l border-black/5 pl-4 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                {!(p.status === 'APPROVED' || p.status === 'PAID' || p.status === 'REJECTED') && (
+                            {isAdmin && (
+                                <div className="flex items-center gap-1.5 border-l border-black/5 pl-4 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {!(p.status === 'APPROVED' || p.status === 'PAID' || p.status === 'REJECTED') && (
                                     <>
                                         {p.status !== 'IN_PAYMENT' && (
                                             <button
@@ -474,8 +483,9 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
                                             <PauseCircle size={14} />
                                         </button>
                                     </>
-                                )}
-                            </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                         {/* Expand/collapse indicator */}
                         <div className="ml-3 text-stone-300">
@@ -556,7 +566,7 @@ export default function AdminPayoutsQueue({ initialPayouts }: { initialPayouts: 
                                     </div>
                                 )}
 
-                                {!(p.status === 'APPROVED' || p.status === 'PAID' || p.status === 'REJECTED') && (
+                                {isAdmin && !(p.status === 'APPROVED' || p.status === 'PAID' || p.status === 'REJECTED') && (
                                     <button
                                         onClick={(e) => { e.stopPropagation(); onIndividualAction(p.id, 'PAID'); setExpandedId(null); }}
                                         className="w-full py-3 rounded-xl bg-emerald-500 text-black font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-400 transition-all shadow-[0_4px_16px_rgba(16,185,129,0.2)]"

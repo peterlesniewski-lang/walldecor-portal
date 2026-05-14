@@ -13,6 +13,8 @@ export default function AdminArchitectRegistrationModal({ isOpen, onClose }: Adm
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
+    const [emailSent, setEmailSent] = useState<boolean | null>(null);
+    const [emailError, setEmailError] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -33,10 +35,14 @@ export default function AdminArchitectRegistrationModal({ isOpen, onClose }: Adm
         e.preventDefault();
         setLoading(true);
         setError(null);
+        setEmailSent(null);
+        setEmailError(null);
 
         try {
             const res = await registerArchitect(formData);
             setGeneratedPassword(res.generatedPassword ?? null);
+            setEmailSent(res.emailSent);
+            setEmailError(res.emailError ?? null);
             setSuccess(true);
         } catch (err: any) {
             setError(err.message || 'Wystąpił błąd podczas rejestracji architekta.');
@@ -68,6 +74,14 @@ export default function AdminArchitectRegistrationModal({ isOpen, onClose }: Adm
                                 <CheckCircle2 size={40} />
                             </div>
                             <h4 className="text-xl font-bold text-stone-900">Architekt zarejestrowany!</h4>
+                            {emailSent ? (
+                                <p className="text-stone-500">Dane logowania zostały wysłane na adres {formData.email}.</p>
+                            ) : (
+                                <div className="text-left mx-auto max-w-sm p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                                    <p className="text-sm font-bold text-amber-900">Mail powitalny nie został wysłany.</p>
+                                    <p className="text-xs text-amber-700 mt-1">{emailError || 'Sprawdź konfigurację SMTP i szablon ARCHITECT_REGISTERED.'}</p>
+                                </div>
+                            )}
                             {generatedPassword && (
                                 <div className="text-left mx-auto max-w-sm space-y-2">
                                     <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Tymczasowe hasło — przekaż architektowi:</p>
@@ -89,6 +103,8 @@ export default function AdminArchitectRegistrationModal({ isOpen, onClose }: Adm
                                 onClick={() => {
                                     setSuccess(false);
                                     setGeneratedPassword(null);
+                                    setEmailSent(null);
+                                    setEmailError(null);
                                     setFormData({ first_name: '', last_name: '', email: '', studio_name: '', nip: '', address: '', bank_account: '', is_vat_payer: false });
                                     onClose();
                                 }}

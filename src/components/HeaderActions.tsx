@@ -20,12 +20,14 @@ export default function HeaderActions({ userRole }: HeaderActionsProps) {
             </button>
             {userRole === 'ADMIN' || userRole === 'STAFF' ? (
                 <>
-                    <button
-                        onClick={() => setIsArchiModalOpen(true)}
-                        className="bg-black/5 border border-black/5 text-stone-400 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/10 hover:text-stone-900 transition-all flex items-center gap-2"
-                    >
-                        Rejestruj Architekta
-                    </button>
+                    {userRole === 'ADMIN' && (
+                        <button
+                            onClick={() => setIsArchiModalOpen(true)}
+                            className="bg-black/5 border border-black/5 text-stone-400 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/10 hover:text-stone-900 transition-all flex items-center gap-2"
+                        >
+                            Rejestruj Architekta
+                        </button>
+                    )}
                     <button
                         onClick={() => setIsProjectModalOpen(true)}
                         className="gold-gradient text-black px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:shadow-[0_10px_20px_rgba(212,175,55,0.2)] transition-all"

@@ -10,7 +10,7 @@ import { updatePayoutStatus } from "./projects";
 
 export async function handlePayoutRequest(requestId: string, action: 'APPROVE' | 'REJECT' | 'HOLD' | 'IN_PAYMENT' | 'PAID') {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
+    if (!session || session.user.role !== 'ADMIN') {
         throw new Error("Unauthorized");
     }
 
@@ -30,7 +30,7 @@ export async function handlePayoutRequest(requestId: string, action: 'APPROVE' |
         return await updatePayoutStatus(requestId, 'IN_PAYMENT');
     } else if (action === 'HOLD') {
         await query(
-            "UPDATE payout_requests SET status = 'HOLD', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            "UPDATE payout_requests SET status = 'HOLD' WHERE id = ?",
             [requestId]
         );
     }

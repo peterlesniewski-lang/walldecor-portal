@@ -13,6 +13,8 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [emailSent, setEmailSent] = useState<boolean | null>(null);
+    const [emailError, setEmailError] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
         first_name: '',
@@ -32,25 +34,14 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
         e.preventDefault();
         setLoading(true);
         setError(null);
+        setEmailSent(null);
+        setEmailError(null);
 
         try {
-            await registerArchitect(formData);
+            const res = await registerArchitect(formData);
+            setEmailSent(res.emailSent);
+            setEmailError(res.emailError ?? null);
             setSuccess(true);
-            setTimeout(() => {
-                setSuccess(false);
-                setFormData({
-                    first_name: '',
-                    last_name: '',
-                    email: '',
-                    studio_name: '',
-                    nip: '',
-                    address: '',
-                    bank_account: '',
-                    is_vat_payer: false,
-                    password: ''
-                });
-                onClose();
-            }, 2000);
         } catch (err: any) {
             setError(err.message || 'Wystąpił błąd podczas rejestracji architekta.');
         } finally {
@@ -81,7 +72,37 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 <CheckCircle2 size={40} />
                             </div>
                             <h4 className="text-xl font-bold text-stone-900">Architekt zarejestrowany!</h4>
-                            <p className="text-stone-500">Konto zostało utworzone i jest gotowe do pracy.</p>
+                            {emailSent ? (
+                                <p className="text-stone-500">Konto zostało utworzone, a dane logowania wysłane na adres {formData.email}.</p>
+                            ) : (
+                                <div className="max-w-lg mx-auto p-4 bg-amber-50 border border-amber-200 rounded-2xl text-left">
+                                    <p className="text-sm font-bold text-amber-900">Konto zostało utworzone, ale mail powitalny nie został wysłany.</p>
+                                    <p className="text-xs text-amber-700 mt-1">{emailError || 'Sprawdź konfigurację SMTP i szablon ARCHITECT_REGISTERED.'}</p>
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSuccess(false);
+                                    setEmailSent(null);
+                                    setEmailError(null);
+                                    setFormData({
+                                        first_name: '',
+                                        last_name: '',
+                                        email: '',
+                                        studio_name: '',
+                                        nip: '',
+                                        address: '',
+                                        bank_account: '',
+                                        is_vat_payer: false,
+                                        password: ''
+                                    });
+                                    onClose();
+                                }}
+                                className="px-8 py-3 bg-stone-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all"
+                            >
+                                Zamknij
+                            </button>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

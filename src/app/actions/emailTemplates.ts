@@ -8,7 +8,7 @@ import { sendEmail } from "@/lib/email";
 
 export async function getEmailTemplates() {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
+    if (!session || session.user.role !== 'ADMIN') {
         throw new Error("Unauthorized");
     }
 
@@ -21,7 +21,7 @@ export async function updateEmailTemplate(id: string, data: {
     is_active: boolean
 }) {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
+    if (!session || session.user.role !== 'ADMIN') {
         throw new Error("Unauthorized");
     }
 
@@ -36,7 +36,7 @@ export async function updateEmailTemplate(id: string, data: {
 
 export async function testEmailTemplate(id: string, testEmail: string) {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
+    if (!session || session.user.role !== 'ADMIN') {
         throw new Error("Unauthorized");
     }
 
@@ -48,6 +48,10 @@ export async function testEmailTemplate(id: string, testEmail: string) {
     // Default test placeholders
     const placeholders = {
         user_name: "Użytkownik Testowy",
+        email: "test@example.com",
+        password: "TestHaslo123",
+        portal_url: process.env.NEXTAUTH_URL || "http://localhost:3000",
+        reset_link: `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/auth/reset-password?token=test`,
         project_name: "Projekt Testowy",
         client_label: "Firma Testowa",
         card_code: "TEST-CARD-123",
