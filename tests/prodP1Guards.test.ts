@@ -74,6 +74,14 @@ test('payout status updates lock the payout request before final processing', as
     assert.doesNotMatch(actionSource, /const reqRes = await query<any>\("SELECT \* FROM payout_requests WHERE id = \?"/);
 });
 
+test('hold payout action locks the payout request before updating status', async () => {
+    const source = await readFile(new URL('../src/app/actions/admin.ts', import.meta.url), 'utf8');
+
+    assert.match(source, /withTransaction\(async \(queryFn\) => \{[\s\S]*FROM payout_requests WHERE id = \? FOR UPDATE/);
+    assert.match(source, /UPDATE payout_requests SET status = 'HOLD' WHERE id = \?/);
+    assert.doesNotMatch(source, /await query\(\s*"UPDATE payout_requests SET status = 'HOLD' WHERE id = \?"/);
+});
+
 test('cashback spending locks active earning rows in MySQL transactions', async () => {
     const cashbackSource = await readFile(new URL('../src/lib/cashback.ts', import.meta.url), 'utf8');
     const dbSource = await readFile(new URL('../src/lib/db.ts', import.meta.url), 'utf8');

@@ -2,7 +2,7 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { withTransaction } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { logActivity } from "@/lib/services";
 import { updatePayoutStatus } from "./projects";
@@ -14,19 +14,21 @@ export async function handlePayoutRequest(requestId: string, action: 'APPROVE' |
         throw new Error("Unauthorized");
     }
 
-    const requestRes = await query<any>("SELECT * FROM payout_requests WHERE id = ?", [requestId]);
-    const payoutReq = requestRes[0];
-    if (!payoutReq) throw new Error("Request not found");
-
-    if (isTerminalPayoutStatus(payoutReq.status)) {
-        throw new Error("Wniosek został już przetworzony.");
-    }
-
     if (action === 'HOLD') {
-        await query(
-            "UPDATE payout_requests SET status = 'HOLD' WHERE id = ?",
-            [requestId]
-        );
+        await withTransaction(async (queryFn) => {
+            const requestRes = await queryFn<any>("SELECT status FROM payout_requests WHERE id = ? FOR UPDATE", [requestId]);
+            const payoutReq = requestRes[0];
+            if (!payoutReq) throw new Error("Request not found");
+
+            if (isTerminalPayoutStatus(payoutReq.status)) {
+                throw new Error("Wniosek został już przetworzony.");
+            }
+
+            await queryFn(
+                "UPDATE payout_requests SET status = 'HOLD' WHERE id = ?",
+                [requestId]
+            );
+        });
     } else {
         return await updatePayoutStatus(requestId, mapPayoutActionToStatus(action));
     }
