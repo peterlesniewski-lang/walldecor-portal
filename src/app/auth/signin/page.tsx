@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { useEffect, useState } from 'react';
+import { getProviders, signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { LogIn, ShieldCheck, Mail, Lock } from 'lucide-react';
 import Link from 'next/link';
@@ -23,7 +23,18 @@ export default function SignIn() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
+    const [hasGoogleProvider, setHasGoogleProvider] = useState(false);
     const router = useRouter();
+
+    useEffect(() => {
+        getProviders()
+            .then((providers) => {
+                setHasGoogleProvider(Boolean(providers?.google));
+            })
+            .catch(() => {
+                setHasGoogleProvider(false);
+            });
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -71,28 +82,32 @@ export default function SignIn() {
 
                 <div className="stat-card bg-card p-10 border border-black/5 shadow-[0_32px_64px_rgba(0,0,0,0.5)]">
                     {/* Google Sign In */}
-                    <button
-                        type="button"
-                        onClick={handleGoogleSignIn}
-                        disabled={googleLoading || loading}
-                        className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl border border-black/10 bg-white hover:bg-stone-50 transition-all font-bold text-stone-700 text-sm disabled:opacity-50 shadow-sm hover:shadow-md mb-8"
-                    >
-                        {googleLoading ? (
-                            <span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Przekierowanie...</span>
-                        ) : (
-                            <>
-                                <GoogleIcon />
-                                Zaloguj się przez Google
-                            </>
-                        )}
-                    </button>
+                    {hasGoogleProvider && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={handleGoogleSignIn}
+                                disabled={googleLoading || loading}
+                                className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl border border-black/10 bg-white hover:bg-stone-50 transition-all font-bold text-stone-700 text-sm disabled:opacity-50 shadow-sm hover:shadow-md mb-8"
+                            >
+                                {googleLoading ? (
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Przekierowanie...</span>
+                                ) : (
+                                    <>
+                                        <GoogleIcon />
+                                        Zaloguj się przez Google
+                                    </>
+                                )}
+                            </button>
 
-                    {/* Separator */}
-                    <div className="flex items-center gap-4 mb-8">
-                        <div className="flex-1 h-px bg-black/5"></div>
-                        <span className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em]">lub</span>
-                        <div className="flex-1 h-px bg-black/5"></div>
-                    </div>
+                            {/* Separator */}
+                            <div className="flex items-center gap-4 mb-8">
+                                <div className="flex-1 h-px bg-black/5"></div>
+                                <span className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em]">lub</span>
+                                <div className="flex-1 h-px bg-black/5"></div>
+                            </div>
+                        </>
+                    )}
 
                     <form onSubmit={handleSubmit} className="space-y-8">
                         {error && (

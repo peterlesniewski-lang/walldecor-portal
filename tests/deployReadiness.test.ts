@@ -23,6 +23,15 @@ test('google auth provider is enabled only when OAuth credentials are configured
     assert.match(source, /providers: authProviders/);
 });
 
+test('sign-in page renders google login only when provider is configured', async () => {
+    const source = await readFile(new URL('../src/app/auth/signin/page.tsx', import.meta.url), 'utf8');
+
+    assert.match(source, /getProviders/);
+    assert.match(source, /hasGoogleProvider/);
+    assert.match(source, /hasGoogleProvider &&/);
+    assert.doesNotMatch(source, /\/\*\s*Google Sign In\s*\*\/\s*<button[\s\S]*Zaloguj się przez Google/);
+});
+
 test('server setup generated env includes explicit email and google configuration placeholders', async () => {
     const source = await readFile(new URL('../deploy/setup-server.sh', import.meta.url), 'utf8');
 
