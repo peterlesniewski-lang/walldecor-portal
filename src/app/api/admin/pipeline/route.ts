@@ -12,9 +12,11 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
     const search = searchParams.get("search");
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "10");
-    const offset = (page - 1) * limit;
+    const requestedPage = Number.parseInt(searchParams.get("page") || "1", 10);
+    const requestedLimit = Number.parseInt(searchParams.get("limit") || "10", 10);
+    const safePage = Number.isFinite(requestedPage) ? Math.max(requestedPage, 1) : 1;
+    const safeLimit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 10;
+    const safeOffset = (safePage - 1) * safeLimit;
 
     try {
         let sql = `
@@ -40,8 +42,7 @@ export async function GET(req: Request) {
             params.push(searchTerm, searchTerm, searchTerm);
         }
 
-        sql += " ORDER BY p.created_at DESC LIMIT ? OFFSET ?";
-        params.push(limit, offset);
+        sql += ` ORDER BY p.created_at DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`;
 
         const projects = await query<any>(sql, params);
 
@@ -63,9 +64,9 @@ export async function GET(req: Request) {
             projects,
             pagination: {
                 total: totalCount[0].total,
-                page,
-                limit,
-                pages: Math.ceil(totalCount[0].total / limit)
+                page: safePage,
+                limit: safeLimit,
+                pages: Math.ceil(totalCount[0].total / safeLimit)
             }
         });
     } catch (error) {

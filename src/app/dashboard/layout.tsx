@@ -15,6 +15,12 @@ export default async function DashboardLayout({
         redirect("/auth/signin");
     }
 
+    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'STAFF';
+    const title = isAdmin ? 'Centrum operacyjne' : 'Panel architekta';
+    const subtitle = isAdmin
+        ? 'Wypłaty, projekty i partnerzy w jednym widoku roboczym.'
+        : 'Projekty, prowizje i cashback bez zbędnego szumu.';
+
     return (
         <div className="flex min-h-screen bg-background">
             {/* Sidebar */}
@@ -25,9 +31,9 @@ export default async function DashboardLayout({
                 <header className="flex justify-between items-center mb-12">
                     <div>
                         <h1 className="text-3xl font-black text-foreground tracking-tight">
-                            Witaj ponownie, <span className="gold-text">{session.user.name}</span> 👋
+                            {title}
                         </h1>
-                        <p className="text-stone-400 mt-1 font-medium italic">Premium Portal dla Architektów i Projektantów</p>
+                        <p className="text-stone-500 mt-1 font-medium">{subtitle}</p>
                     </div>
                     <HeaderActions userRole={session.user.role} />
                 </header>

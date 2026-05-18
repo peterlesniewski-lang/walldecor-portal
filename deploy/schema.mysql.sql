@@ -1,5 +1,5 @@
 -- WallDecor Portal — MySQL Production Schema
--- Generated from SQLite schema (all migrations applied through 014)
+-- Generated from SQLite schema (all migrations applied through 015)
 -- Run ONCE on a fresh MySQL database: mysql -u walldecor -p walldecor_prod < schema.mysql.sql
 
 SET NAMES utf8mb4;
@@ -37,9 +37,13 @@ CREATE TABLE IF NOT EXISTS projects (
     client_label VARCHAR(255),
     status VARCHAR(50) DEFAULT 'ZGŁOSZONY',
     staff_id VARCHAR(255),
+    completed_by VARCHAR(255) NULL,
+    completed_at DATETIME NULL,
+    completion_note TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (owner_id) REFERENCES users(id)
+    FOREIGN KEY (owner_id) REFERENCES users(id),
+    FOREIGN KEY (completed_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS project_items (

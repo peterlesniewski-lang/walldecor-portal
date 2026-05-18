@@ -396,11 +396,16 @@ export async function logActivity(userId: string | null, eventType: string, desc
 }
 
 export async function getAdminActivity(limit = 20) {
+    const parsedLimit = Number(limit);
+    const safeLimit = Number.isFinite(parsedLimit)
+        ? Math.min(Math.max(Math.trunc(parsedLimit), 1), 100)
+        : 20;
+
     return await query<any>(`
         SELECT a.*, u.name as user_name
         FROM activity_logs a
         LEFT JOIN users u ON a.user_id = u.id
         ORDER BY a.created_at DESC
-        LIMIT ?
-    `, [limit]);
+        LIMIT ${safeLimit}
+    `);
 }

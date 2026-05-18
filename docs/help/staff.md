@@ -4,7 +4,7 @@
 
 STAFF obsługuje architektów i projekty. Może rejestrować architektów, dodawać projekty na konto architekta, przypisywać opiekuna i zmieniać status projektu w procesie operacyjnym.
 
-STAFF nie wykonuje operacji finansowych ani ustawień systemowych. Wypłaty, cashback, backup, szablony email, role zespołu i ręczne resety haseł są po stronie ADMINA.
+STAFF widzi dane finansowe potrzebne do weryfikacji projektów: wartości pozycji, prowizje i statusy rozliczenia. STAFF nie wykonuje finalnych płatności ani ustawień systemowych. Wypłaty, cashback, backup, szablony email, role zespołu i ręczne resety haseł są po stronie ADMINA.
 
 ## Dodanie architekta
 
@@ -41,6 +41,8 @@ Nowy projekt trafia do statusu `ZGŁOSZONY`.
 
 ## Zmiana statusu projektu
 
+Na dashboardzie admin/staff projekty są w pipeline. Kliknięcie karty projektu otwiera drawer z podglądem klienta, architekta, opiekuna, kwot oraz linkiem do pełnej strony projektu. Szybkie akcje statusu są dostępne na kartach i w drawerze.
+
 Dostępne standardowe przejścia:
 
 | Z obecnego statusu | Możliwe następne statusy |
@@ -55,10 +57,10 @@ Skutki statusów:
 
 - `PRZYJĘTY` tworzy prowizje oczekujące i wysyła email o akceptacji projektu.
 - `W_REALIZACJI` oznacza projekt jako aktywnie prowadzony.
-- `ZAKOŃCZONY` finalizuje prowizję i nalicza cashback.
+- `ZAKOŃCZONY` oznacza, że projekt i kwoty zostały zweryfikowane; finalizuje prowizję, nalicza cashback i zapisuje kto zakończył projekt.
 - `NIEZREALIZOWANY` usuwa oczekujące prowizje dla projektu.
 
-Przed zmianą na `ZAKOŃCZONY` sprawdź architekta, klienta, pozycje produktowe i kwoty netto. Jeśli potrzebna jest korekta finansowa, przekaż sprawę do ADMINA.
+Przed zmianą na `ZAKOŃCZONY` sprawdź architekta, klienta, pozycje produktowe, kwoty netto, fakturę lub numer zamówienia oraz płatność pozycji. Drawer pokazuje podsumowanie kwot przed finalizacją. Jeśli potrzebna jest korekta finansowa, przekaż sprawę do ADMINA przed finalizacją.
 
 ## Czego STAFF nie może robić
 
@@ -68,7 +70,7 @@ STAFF nie może:
 - wykonywać wypłat zbiorczych;
 - zmieniać numerów faktur przy wnioskach wypłat;
 - rozliczać wniosków cashback ani wydawać kodów rabatowych;
-- korygować prowizji i cashbacku;
+- korygować wypłaconych prowizji i cashbacku;
 - usuwać architektów;
 - zmieniać tierów architektów;
 - tworzyć kont `ADMIN` lub `STAFF` i zmieniać ról zespołu;

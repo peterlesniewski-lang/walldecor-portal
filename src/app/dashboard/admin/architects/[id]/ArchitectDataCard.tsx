@@ -56,7 +56,7 @@ export default function ArchitectDataCard({ architect, isAdmin }: Props) {
         setDeletePhase('loading');
         try {
             await deleteArchitect(architect.id);
-            router.push('/dashboard/admin/settings');
+            router.push('/dashboard/admin/architects');
         } catch (err: any) {
             setError(err.message || 'Błąd podczas usuwania konta');
             setDeletePhase('idle');
@@ -142,7 +142,7 @@ export default function ArchitectDataCard({ architect, isAdmin }: Props) {
                                         <p className="text-[10px] font-black uppercase tracking-widest">Potwierdź usunięcie</p>
                                     </div>
                                     <p className="text-xs text-red-700 font-bold leading-relaxed">
-                                        Konto architekta zostanie trwale usunięte. Projekty i historia finansowa pozostaną w systemie.
+                                        Konto architekta zostanie trwale usunięte. Usunięcie jest możliwe tylko dla kont bez projektów i rozliczeń.
                                     </p>
                                     <div className="flex gap-2">
                                         <button

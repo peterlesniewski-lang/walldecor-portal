@@ -20,12 +20,26 @@ Link resetujący jest jednorazowy i ograniczony czasowo. Jeśli wygasł, wygener
 
 ## Zgłoszenie projektu
 
-1. Wejdź do panelu i dodaj nowy projekt.
+1. Wejdź do panelu i wybierz dodanie projektu albo przejdź do listy projektów.
 2. Uzupełnij nazwę projektu oraz etykietę klienta.
 3. Dodaj pozycje produktowe z wartościami netto w PLN.
 4. Zapisz zgłoszenie.
 
 Prowizja i cashback są naliczane od pozycji produktowych. Po wysłaniu projekt trafia do weryfikacji WallDecor.
+
+## Panel główny
+
+Panel architekta pokazuje najważniejsze informacje w jednym miejscu:
+
+- `Prowizja dostępna` - kwota gotowa do wypłaty po spełnieniu minimum;
+- `Cashback` - środki możliwe do wymiany na kartę lub kod rabatowy;
+- `Aktywne projekty` - liczba projektów w procesie;
+- `Twoje projekty` - pipeline w pięciu kolumnach statusów;
+- `Historia portfela` - ostatnie projekty z prowizją i status rozliczenia;
+- `Następne kroki` - linki do profilu, portfela, projektów i pomocy;
+- `Poziomy prowizji` - aktualny poziom, brakująca kwota do następnego poziomu, progi Silver, Gold i Platinum oraz informacja o cashbacku 2%.
+
+Kliknięcie karty projektu w pipeline otwiera szczegóły projektu.
 
 ## Statusy projektów
 
@@ -70,7 +84,7 @@ Statusy wypłaty:
 
 ## Cashback i karty rabatowe
 
-Cashback nalicza się po zakończeniu projektu. Nie jest wypłacany przelewem; można go wymienić na kartę lub kod rabatowy.
+Cashback nalicza się po zakończeniu projektu jako 2% wartości netto pozycji produktowych. Nie jest wypłacany przelewem; można go wymienić na kartę lub kod rabatowy.
 
 1. Wejdź w `Portfel`.
 2. Sprawdź saldo cashback.

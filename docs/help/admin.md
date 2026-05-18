@@ -10,10 +10,12 @@ STAFF może obsługiwać projekty i rejestrować architektów, ale nie powinien 
 
 Do codziennej kontroli używaj dashboardu admina:
 
-- ostatnia aktywność pokazuje zmiany statusów, wnioski o wypłatę, cashback i operacje administracyjne;
-- pipeline pokazuje projekty według statusów i opiekunów;
+- górne kafle pokazują wypłaty: `Do wypłaty`, `W trakcie płatności`, `Wstrzymane (HOLD)` i `Wypłacone (30 dni)`;
+- jeśli istnieją aktywne wnioski wypłat, kolejka wypłat pojawia się nad pipeline;
+- pipeline jest głównym widokiem operacyjnym projektów i pokazuje kolumny `ZGŁOSZONY`, `PRZYJĘTY`, `W_REALIZACJI`, `ZAKOŃCZONY`, `NIEZREALIZOWANY`;
+- kliknięcie karty projektu otwiera drawer z podglądem danych, kwot, opiekuna i linkiem do pełnej strony projektu;
 - widok architekta pokazuje dane firmy, projekty, prowizje, cashback i historię rozliczeń;
-- kolejka wypłat pokazuje wnioski wymagające decyzji ADMINA.
+- prawa kolumna pokazuje pomoc kontekstową, kompaktowe liczniki partnerów Silver/Gold/Platinum oraz sygnały operacyjne.
 
 Najważniejszy obszar operacyjny przed startem z użytkownikami to ostatnia faza rozliczenia: poprawne przejście wypłat do `PAID` po realnym przelewie.
 
@@ -38,12 +40,24 @@ Zespół administracyjny jest zarządzany w ustawieniach. ADMIN może tworzyć k
 | `ZGŁOSZONY` | Nowy projekt czeka na weryfikację. | Trafia do pipeline. |
 | `PRZYJĘTY` | Projekt zaakceptowany. | Tworzy prowizje oczekujące i wysyła email akceptacji. |
 | `W_REALIZACJI` | Projekt jest aktywnie prowadzony. | Pozostaje w pipeline i prowizjach oczekujących. |
-| `ZAKOŃCZONY` | Projekt rozliczony. | Finalizuje prowizję i nalicza cashback 2%. |
+| `ZAKOŃCZONY` | Projekt rozliczony i zweryfikowany. | Finalizuje prowizję, nalicza cashback 2% i zapisuje kto zakończył projekt. |
 | `NIEZREALIZOWANY` | Projekt odrzucony lub anulowany. | Usuwa prowizje oczekujące. |
 
 Standardowa ścieżka to `ZGŁOSZONY` -> `PRZYJĘTY` -> `W_REALIZACJI` -> `ZAKOŃCZONY`.
 
-Przed `ZAKOŃCZONY` sprawdź kwoty pozycji produktowych, numer zamówienia lub faktury, płatność pozycji oraz właściciela projektu. Ten status uruchamia naliczenia finansowe.
+Przed `ZAKOŃCZONY` sprawdź kwoty pozycji produktowych, numer zamówienia lub faktury, płatność pozycji oraz właściciela projektu. Ten status jest traktowany jako weryfikacja projektu i uruchamia naliczenia finansowe. Drawer projektu pokazuje podsumowanie kwot przed finalizacją.
+
+## Import historycznych rozliczeń
+
+Historyczne, już rozliczone transakcje powinny trafić do osobnego trybu importu, a nie do aktywnego pipeline operacyjnego.
+
+Zasady dla importu historycznego:
+
+- wpływa na obrót, tier partnera, statystyki i historię architekta;
+- jest oznaczony jako rozliczony historycznie;
+- nie trafia do kolejki wypłat;
+- nie nalicza cashbacku, bo cashback dotyczy tylko nowych transakcji po uruchomieniu programu;
+- nie wymaga akcji staff/admin w pipeline.
 
 ## Workflow wypłat prowizji
 

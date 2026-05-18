@@ -99,7 +99,7 @@ export async function createProject(data: {
     return { success: true, projectId };
 }
 
-export async function updateProjectStatus(projectId: string, status: string) {
+export async function updateProjectStatus(projectId: string, status: string, completionNote?: string) {
     const session = await getServerSession(authOptions);
     if (!session || !canManageOperationalProjects(session.user.role)) {
         throw new Error("Unauthorized");
@@ -178,8 +178,8 @@ export async function updateProjectStatus(projectId: string, status: string) {
             // --- Write phase (all in one transaction) ---
             await withTransaction(async (queryFn) => {
                 await queryFn(
-                    "UPDATE projects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    [status, projectId]
+                    "UPDATE projects SET status = ?, completed_by = ?, completed_at = CURRENT_TIMESTAMP, completion_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    [status, session.user.id, completionNote?.trim() || null, projectId]
                 );
 
                 const existingTrans = await queryFn<any>(

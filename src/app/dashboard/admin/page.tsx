@@ -3,31 +3,76 @@ import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getAdminMetrics } from "@/lib/services";
 import {
-    Users,
-    TrendingUp,
-    Clock,
-    ShieldCheck,
-    Wallet,
     AlertTriangle,
-    CreditCard,
-    Activity,
-    Timer,
-    FolderOpen,
-    CheckCircle2,
-    Send,
-    Wrench,
+    ArrowRight,
+    HelpCircle,
+    ShieldCheck,
+    Users,
+    Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import AddArchitectButton from "@/components/AddArchitectButton";
 import PayoutForecastDrilldown from "@/admin/components/PayoutForecastDrilldown";
-import ArchitectList from '@/components/ArchitectList';
 import AdminPayoutsQueue from '@/admin/components/AdminPayoutsQueue';
-import AdminProjectListItem from '@/components/AdminProjectListItem';
+import AdminProjectPipeline from '@/admin/components/AdminProjectPipeline';
 import AdminCharts from '@/admin/components/AdminCharts';
-import DashboardBottomTabs from '@/admin/components/DashboardBottomTabs';
 import { getPendingRedemptions } from "@/app/actions/cashback";
 import { formatPLN } from "@/lib/utils";
-import { walletBalanceSql } from "@/lib/walletSql";
+
+interface LeaderboardRow {
+    name: string;
+    total_turnover: number;
+    projects_count: number;
+}
+
+interface PayoutRequestRow {
+    id: string;
+    architect_id: string;
+    architect_name: string;
+    amount: number;
+    created_at: string;
+    status: 'PENDING' | 'IN_PAYMENT' | 'HOLD' | 'PAID' | 'APPROVED' | 'REJECTED' | string;
+    project_names?: string;
+    project_ids?: string;
+    invoice_url?: string;
+    invoice_number?: string | null;
+    bank_account?: string | null;
+    nip?: string | null;
+    address?: string | null;
+    studio_name?: string | null;
+    is_vat_payer?: number | null;
+}
+
+interface AdminProjectRow {
+    id: string;
+    name: string;
+    client_label?: string | null;
+    status: string;
+    created_at: string;
+    updated_at?: string | null;
+    staff_id?: string | null;
+    architect_name: string;
+    staff_name?: string | null;
+    product_value: number | string | null;
+    estimated_commission?: number | string | null;
+    earned_commission?: number | string | null;
+    payout_status?: string | null;
+}
+
+interface StaffMemberRow {
+    id: string;
+    name: string;
+}
+
+interface MonthlyTurnoverRow {
+    month: string;
+    total: number;
+}
+
+interface PaidPayoutSummaryRow {
+    total: number | string | null;
+    count: number;
+}
 
 export default async function AdminDashboard() {
     const session = await getServerSession(authOptions);
@@ -35,26 +80,10 @@ export default async function AdminDashboard() {
         return <div className="p-8">Brak uprawnień.</div>;
     }
 
-    // 1. Global financial metrics
     const metrics = await getAdminMetrics();
-
-    // 2. Architects list with tier data (balance excludes expired EARN entries)
-    const architects = await query<any>(`
-        SELECT
-            u.id, u.name, u.email,
-            COUNT(DISTINCT CASE WHEN p.status != 'NIEZREALIZOWANY' THEN p.id END) as projects_count,
-            (${walletBalanceSql('u.id')}) as balance
-        FROM users u
-        LEFT JOIN projects p ON u.id = p.owner_id
-        WHERE u.role = 'ARCHI'
-        GROUP BY u.id
-    `);
-
-    // Tier counts come from getAdminMetrics (turnover-based)
     const { silver: silverCount, gold: goldCount, platinum: platinumCount } = metrics.tiers;
 
-    // 3. Leaderboard by turnover (completed projects only)
-    const leaderboard = await query<any>(`
+    const leaderboard = await query<LeaderboardRow>(`
         SELECT
             u.name,
             COALESCE(SUM(i.amount_net), 0) as total_turnover,
@@ -68,18 +97,7 @@ export default async function AdminDashboard() {
         LIMIT 5
     `);
 
-    // 4. Projects pending approval (ZGŁOSZONY)
-    const pendingProjects = await query<any>(`
-        SELECT p.*, u.name as architect_name,
-               (SELECT COALESCE(SUM(amount_net), 0) FROM project_items WHERE project_id = p.id) as total_value
-        FROM projects p
-        JOIN users u ON p.owner_id = u.id
-        WHERE p.status = 'ZGŁOSZONY'
-        ORDER BY p.created_at DESC
-    `);
-
-    // 5. Payout requests queue
-    const payoutRequests = await query<any>(`
+    const payoutRequests = await query<PayoutRequestRow>(`
         SELECT pr.*, u.name as architect_name,
                u.bank_account, u.nip, u.address, u.studio_name, u.is_vat_payer,
                (SELECT GROUP_CONCAT(DISTINCT p.name)
@@ -96,27 +114,34 @@ export default async function AdminDashboard() {
         ORDER BY pr.created_at ASC
     `);
 
-    // 6. Full project pipeline (all statuses)
-    const allProjects = await query<any>(`
-        SELECT p.id, p.name, p.client_label, p.status, p.created_at, p.staff_id,
+    const paidPayouts = await query<PaidPayoutSummaryRow>(`
+        SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
+        FROM payout_requests
+        WHERE status = 'PAID'
+          AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    `);
+
+    const allProjects = await query<AdminProjectRow>(`
+        SELECT p.id, p.name, p.client_label, p.status, p.created_at, p.updated_at, p.staff_id,
                u.name as architect_name,
                s.name as staff_name,
-               COALESCE((SELECT SUM(i.amount_net) FROM project_items i WHERE i.project_id = p.id AND i.type = 'PRODUCT'), 0) as product_value
+               COALESCE((SELECT SUM(i.amount_net) FROM project_items i WHERE i.project_id = p.id AND i.type = 'PRODUCT'), 0) as product_value,
+               COALESCE((SELECT SUM(c.amount_net) FROM commissions c WHERE c.project_id = p.id AND c.status = 'PENDING'), 0) as estimated_commission,
+               COALESCE((SELECT SUM(c.amount_net) FROM commissions c WHERE c.project_id = p.id AND c.status IN ('EARNED', 'IN_PAYMENT', 'PAID')), 0) as earned_commission,
+               (SELECT GROUP_CONCAT(DISTINCT pr.status)
+                FROM commissions c
+                JOIN payout_requests pr ON pr.id = c.payout_id
+                WHERE c.project_id = p.id) as payout_status
         FROM projects p
         JOIN users u ON p.owner_id = u.id
         LEFT JOIN users s ON p.staff_id = s.id
         ORDER BY p.created_at DESC
     `);
 
-    // 7. Get staff list for assignment
-    const staffMembers = await query<any>("SELECT id, name FROM users WHERE role IN ('ADMIN', 'STAFF') ORDER BY name ASC");
-
-
-    // 7. Pending cashback redemptions
+    const staffMembers = await query<StaffMemberRow>("SELECT id, name FROM users WHERE role IN ('ADMIN', 'STAFF') ORDER BY name ASC");
     const redemptions = await getPendingRedemptions();
 
-    // 8. Monthly turnover for chart (last 12 months of ZAKOŃCZONY projects)
-    const monthlyTurnover = await query<any>(`
+    const monthlyTurnover = await query<MonthlyTurnoverRow>(`
         SELECT substr(p.updated_at, 1, 7) as month,
                COALESCE(SUM(i.amount_net), 0) as total
         FROM projects p
@@ -127,346 +152,233 @@ export default async function AdminDashboard() {
         LIMIT 12
     `);
 
-    // Derived counts
-    const totalPayoutQueued = payoutRequests.reduce((acc: number, r: any) => acc + Number(r.amount), 0);
+    const pendingPayouts = payoutRequests.filter((r) => r.status === 'PENDING');
+    const inPaymentPayouts = payoutRequests.filter((r) => r.status === 'IN_PAYMENT');
+    const holdPayouts = payoutRequests.filter((r) => r.status === 'HOLD');
+    const sumPayouts = (items: PayoutRequestRow[]) => items.reduce((acc, r) => acc + Number(r.amount), 0);
+    const paidPayoutSummary = paidPayouts[0] || { total: 0, count: 0 };
+    const canRegisterArchitects = session.user.role === 'ADMIN' || session.user.role === 'STAFF';
+    const canManageProjects = session.user.role === 'ADMIN' || session.user.role === 'STAFF';
+
+    const payoutCards = [
+        {
+            label: 'Do wypłaty',
+            value: sumPayouts(pendingPayouts),
+            count: pendingPayouts.length,
+            tone: 'border-brand-primary/40 bg-brand-primary/5 text-stone-950',
+        },
+        {
+            label: 'W trakcie płatności',
+            value: sumPayouts(inPaymentPayouts),
+            count: inPaymentPayouts.length,
+            tone: 'border-sky-100 bg-sky-50 text-sky-900',
+        },
+        {
+            label: 'Wstrzymane (HOLD)',
+            value: sumPayouts(holdPayouts),
+            count: holdPayouts.length,
+            tone: 'border-amber-100 bg-amber-50 text-amber-800',
+        },
+        {
+            label: 'Wypłacone (30 dni)',
+            value: Number(paidPayoutSummary.total),
+            count: Number(paidPayoutSummary.count),
+            tone: 'border-emerald-100 bg-emerald-50 text-emerald-800',
+        },
+    ];
 
     return (
-        <div className="space-y-10 pb-20">
-
-            {/* ── Row 1: Global Financial KPIs ── */}
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
-                {[
-                    {
-                        label: 'Obrót (12m)',
-                        value: `${formatPLN(metrics.turnover12m)} PLN`,
-                        icon: TrendingUp,
-                        iconColor: 'text-brand-primary',
-                        bg: 'bg-brand-primary/10',
-                        sub: 'Tylko projekty ZAKOŃCZONY'
-                    },
-                    {
-                        label: 'W realizacji',
-                        value: `${formatPLN(metrics.pipeline.inProgressValue)} PLN`,
-                        icon: Wrench,
-                        iconColor: 'text-amber-600',
-                        bg: 'bg-amber-50',
-                        sub: 'Wartość projektów W_REALIZACJI'
-                    },
-                    {
-                        label: 'Zgłoszone',
-                        value: `${formatPLN(metrics.pipeline.submittedValue)} PLN`,
-                        icon: Send,
-                        iconColor: 'text-blue-600',
-                        bg: 'bg-blue-50',
-                        sub: 'Wartość projektów ZGŁOSZONY'
-                    },
-                    {
-                        label: 'Prowizje zarobione',
-                        value: `${formatPLN(metrics.commissions.earned)} PLN`,
-                        icon: CreditCard,
-                        iconColor: 'text-emerald-600',
-                        bg: 'bg-emerald-50',
-                        sub: 'Zarobione / Zapłacone'
-                    },
-                    {
-                        label: 'Prowizje w toku',
-                        value: `${formatPLN(metrics.commissions.pendingApproval)} PLN`,
-                        icon: Clock,
-                        iconColor: 'text-amber-600',
-                        bg: 'bg-amber-50',
-                        sub: 'Finalizacja przy ZAKOŃCZONY'
-                    },
-                    {
-                        label: 'Portfel łącznie',
-                        value: `${formatPLN(metrics.wallet.totalAvailable)} PLN`,
-                        icon: Wallet,
-                        iconColor: 'text-sky-600',
-                        bg: 'bg-sky-50',
-                        sub: 'Aktywne, bez wygasłych'
-                    },
-                    {
-                        label: 'Wygasa w 30 dni',
-                        value: `${formatPLN(metrics.wallet.expiring30d)} PLN`,
-                        icon: Timer,
-                        iconColor: 'text-red-600',
-                        bg: 'bg-red-50',
-                        sub: 'Cashback do wygaśnięcia'
-                    },
-                ].map((kpi, i) => (
-                    <div key={i} className="stat-card bg-card py-6 border border-black/5">
-                        <div className={`w-10 h-10 rounded-xl ${kpi.bg} flex items-center justify-center ${kpi.iconColor} border border-black/5 mb-4`}>
-                            <kpi.icon size={20} />
+        <div className="grid grid-cols-1 gap-6 pb-20 xl:grid-cols-[minmax(0,1fr)_21rem]">
+            <main className="space-y-6">
+                <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                    {payoutCards.map((card) => (
+                        <div key={card.label} className={`rounded-lg border p-5 shadow-sm ${card.tone}`}>
+                            <p className="text-sm font-semibold text-stone-700">{card.label}</p>
+                            <p className="mt-2 text-2xl font-black">{formatPLN(card.value)} zł</p>
+                            <p className="mt-1 text-xs font-medium text-stone-500">{card.count} pozycji</p>
                         </div>
-                        <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">{kpi.label}</p>
-                        <p className="text-xl font-black text-stone-900 leading-tight">{kpi.value}</p>
-                        <p className="text-[9px] text-stone-600 mt-1">{kpi.sub}</p>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </section>
 
-            {/* ── Row 2: Tier + Alert Counts ── */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 gap-4">
-                {[
-                    { label: 'Partnerzy Silver', value: silverCount, icon: ShieldCheck, iconColor: 'text-stone-400', bg: 'bg-black/5', href: '/dashboard/admin/architects?tier=silver' },
-                    { label: 'Partnerzy Gold', value: goldCount, icon: ShieldCheck, iconColor: 'text-brand-primary', bg: 'bg-brand-primary/10', href: '/dashboard/admin/architects?tier=gold' },
-                    { label: 'Partnerzy Platinum', value: platinumCount, icon: ShieldCheck, iconColor: 'text-indigo-600', bg: 'bg-indigo-50', href: '/dashboard/admin/architects?tier=platinum' },
-                    { label: 'Do Akceptacji', value: pendingProjects.length, icon: Clock, iconColor: 'text-red-600', bg: 'bg-red-50', href: '#pending-projects' },
-                    { label: 'Zgłoszone', value: metrics.projects.submitted, icon: Send, iconColor: 'text-blue-600', bg: 'bg-blue-50', href: '#project-pipeline' },
-                    { label: 'W realizacji', value: metrics.projects.inProgress, icon: Wrench, iconColor: 'text-amber-600', bg: 'bg-amber-50', href: '#project-pipeline' },
-                    { label: 'Brak Opiekuna', value: metrics.alerts.withoutCaretaker, icon: AlertTriangle, iconColor: 'text-orange-600', bg: 'bg-orange-50', href: '#project-pipeline' },
-                    { label: 'Nieaktywne (14d)', value: metrics.alerts.staleProjects, icon: Activity, iconColor: 'text-rose-600', bg: 'bg-rose-50', href: '#project-pipeline' },
-                ].map((stat, i) => (
-                    <Link key={i} href={stat.href} className="stat-card bg-card py-6 border border-black/5 hover:border-black/10 transition-all group">
-                        <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center ${stat.iconColor} border border-black/5 group-hover:scale-110 transition-transform`}>
-                                <stat.icon size={18} />
-                            </div>
+                {payoutRequests.length > 0 && (
+                    <section className="space-y-4 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+                        <div className="flex items-center justify-between gap-4">
                             <div>
-                                <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-0.5 group-hover:text-stone-400 transition-colors">{stat.label}</p>
-                                <p className="text-2xl font-black text-stone-900">{stat.value}</p>
+                                <h2 className="text-xl font-black text-stone-950">Do wypłaty</h2>
+                                <p className="text-sm font-medium text-stone-500">Pozycje wymagające pracy admina nad płatnością.</p>
                             </div>
-                        </div>
-                    </Link>
-                ))}
-            </div>
-
-            {/* ── Pipeline Health ── */}
-            {(() => {
-                const p = metrics.projects;
-                const active = p.total - p.rejected;
-                const pct = (n: number) => active > 0 ? Math.round(n / p.total * 100) : 0;
-                const cr = p.conversionRate;
-                const crColor = cr >= 70
-                    ? { bg: 'bg-emerald-500/5', border: 'border-emerald-500/20', text: 'text-emerald-600', bar: 'bg-emerald-500' }
-                    : cr >= 50
-                        ? { bg: 'bg-amber-500/5', border: 'border-amber-500/20', text: 'text-amber-600', bar: 'bg-amber-500' }
-                        : { bg: 'bg-red-500/5', border: 'border-red-500/20', text: 'text-red-600', bar: 'bg-red-500' };
-                return (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {/* Tile 1: Zgłoszone */}
-                        <div className="stat-card bg-card py-6 border border-black/5">
-                            <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center text-sky-600 border border-black/5 mb-4">
-                                <FolderOpen size={20} />
-                            </div>
-                            <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">Projekty zgłoszone</p>
-                            <p className="text-3xl font-black text-stone-900 leading-tight">{active}</p>
-                            <p className="text-[9px] text-stone-600 mt-1">Łącznie aktywne (bez odrzuconych)</p>
-                        </div>
-
-                        {/* Tile 2: Zrealizowane */}
-                        <div className="stat-card bg-card py-6 border border-black/5">
-                            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 border border-black/5 mb-4">
-                                <CheckCircle2 size={20} />
-                            </div>
-                            <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">Projekty zrealizowane</p>
-                            <p className="text-3xl font-black text-stone-900 leading-tight">{p.completed}</p>
-                            <p className="text-[9px] text-stone-600 mt-1">Status ZAKOŃCZONY</p>
-                        </div>
-
-                        {/* Tile 3: Konwersja + stacked bar */}
-                        <div className={`stat-card py-6 border ${crColor.bg} ${crColor.border}`}>
-                            <div className="flex items-start justify-between mb-3">
-                                <div>
-                                    <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">Wskaźnik konwersji</p>
-                                    <p className={`text-3xl font-black leading-tight ${crColor.text}`}>{cr}%</p>
-                                    <p className="text-[9px] text-stone-600 mt-1">Zakończone / aktywne</p>
-                                </div>
-                            </div>
-                            {/* Stacked bar */}
-                            <div className="w-full h-2 rounded-full overflow-hidden flex mt-4 mb-3">
-                                <div className="bg-blue-400"   style={{ width: `${pct(p.submitted)}%` }} title={`Zgłoszone: ${p.submitted}`} />
-                                <div className="bg-emerald-400" style={{ width: `${pct(p.accepted)}%` }} title={`Przyjęte: ${p.accepted}`} />
-                                <div className="bg-amber-400"  style={{ width: `${pct(p.inProgress)}%` }} title={`W realizacji: ${p.inProgress}`} />
-                                <div className="bg-stone-400"  style={{ width: `${pct(p.completed)}%` }} title={`Zakończone: ${p.completed}`} />
-                                <div className="bg-red-400"    style={{ width: `${pct(p.rejected)}%` }} title={`Odrzucone: ${p.rejected}`} />
-                            </div>
-                            {/* Legend */}
-                            <div className="flex flex-wrap gap-x-3 gap-y-1">
-                                {[
-                                    { label: 'Zgłoszone', count: p.submitted, color: 'bg-blue-400' },
-                                    { label: 'Przyjęte', count: p.accepted, color: 'bg-emerald-400' },
-                                    { label: 'Realizacja', count: p.inProgress, color: 'bg-amber-400' },
-                                    { label: 'Zakończone', count: p.completed, color: 'bg-stone-400' },
-                                    { label: 'Odrzucone', count: p.rejected, color: 'bg-red-400' },
-                                ].map(s => (
-                                    <div key={s.label} className="flex items-center gap-1">
-                                        <div className={`w-2 h-2 rounded-full ${s.color}`} />
-                                        <span className="text-[9px] text-stone-500 font-bold">{s.label}: {s.count}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                );
-            })()}
-
-            {/* ── Charts ── */}
-            <AdminCharts
-                monthlyTurnover={monthlyTurnover}
-                tiers={{
-                    beginner: metrics.tiers.beginner,
-                    silver: silverCount,
-                    gold: goldCount,
-                    platinum: platinumCount,
-                }}
-            />
-
-            {/* ── Main Grid: 2/3 + 1/3 ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-
-                {/* Left column */}
-                <div className="lg:col-span-2 space-y-14">
-
-                    {/* Pending submissions */}
-                    <div id="pending-projects" className="space-y-6 scroll-mt-24">
-                        <h3 className="text-xs font-black text-stone-500 uppercase tracking-[0.3em] flex items-center gap-3">
-                            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                            Pilne: Zgłoszenia do Akceptacji
-                            <span className="bg-red-50 text-red-600 text-[10px] px-3 py-1 rounded-full font-black ml-2 border border-red-800/30">
-                                {pendingProjects.length}
+                            <span className="rounded-full bg-brand-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-brand-primary">
+                                {payoutRequests.length} wniosków
                             </span>
-                        </h3>
-                        <div className="space-y-4">
-                            {pendingProjects.length > 0 ? pendingProjects.map((project: any) => (
-                                <AdminProjectListItem key={project.id} project={project} />
-                            )) : (
-                                <div className="stat-card bg-card py-16 text-center border-dashed border-black/5">
-                                    <Clock size={40} className="mx-auto mb-4 text-stone-700 opacity-50" />
-                                    <h4 className="text-stone-900 font-black text-base mb-1">Czysta karta</h4>
-                                    <p className="text-stone-500 font-medium text-sm">Wszystkie zgłoszenia zostały przetworzone.</p>
-                                </div>
-                            )}
                         </div>
-                    </div>
-
-                    {/* Payout queue */}
-                    <div className="space-y-6">
-                        <h3 className="text-xs font-black text-stone-500 uppercase tracking-[0.3em] flex items-center gap-3">
-                            <CreditCard size={16} className="text-brand-primary" />
-                            Kolejka Wypłat
-                            {payoutRequests.length > 0 && (
-                                <span className="bg-brand-primary/10 text-brand-primary text-[10px] px-3 py-1 rounded-full font-black border border-brand-primary/20">
-                                    {payoutRequests.length} wniosków · {formatPLN(totalPayoutQueued)} PLN
-                                </span>
-                            )}
-                        </h3>
                         <AdminPayoutsQueue
                             initialPayouts={payoutRequests}
                             isAdmin={session.user.role === 'ADMIN'}
                         />
+                    </section>
+                )}
+
+                <AdminProjectPipeline
+                    projects={allProjects}
+                    canManageProjects={canManageProjects}
+                    staffMembers={staffMembers}
+                />
+
+                <section className="space-y-5 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">Analityka i partnerzy</p>
+                        <h2 className="mt-1 text-xl font-black text-stone-950">Kontekst po operacjach</h2>
                     </div>
 
-                    {/* Leaderboard */}
-                    <div className="space-y-6">
-                        <h3 className="text-xs font-black text-stone-500 uppercase tracking-[0.3em] flex items-center gap-3">
-                            <TrendingUp size={16} className="text-emerald-500" />
-                            Best Archi – Ranking Obrotów
-                        </h3>
-                        <div className="stat-card bg-card p-0 overflow-hidden border border-black/5">
+                    <AdminCharts
+                        monthlyTurnover={monthlyTurnover}
+                        tiers={{
+                            beginner: metrics.tiers.beginner,
+                            silver: silverCount,
+                            gold: goldCount,
+                            platinum: platinumCount,
+                        }}
+                    />
+
+                    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+                        <div className="overflow-hidden rounded-lg border border-black/10">
                             <table className="w-full text-left">
                                 <thead>
-                                    <tr className="bg-black/5">
-                                        <th className="px-8 py-5 text-[10px] font-black text-stone-500 uppercase tracking-widest">#</th>
-                                        <th className="px-8 py-5 text-[10px] font-black text-stone-500 uppercase tracking-widest">Architekt / Biuro</th>
-                                        <th className="px-8 py-5 text-[10px] font-black text-stone-500 uppercase tracking-widest text-right">Projekty</th>
-                                        <th className="px-8 py-5 text-[10px] font-black text-stone-500 uppercase tracking-widest text-right">Obrót Netto</th>
+                                    <tr className="bg-stone-50">
+                                        <th className="px-5 py-4 text-[10px] font-black uppercase tracking-widest text-stone-500">Architekt / Biuro</th>
+                                        <th className="px-5 py-4 text-right text-[10px] font-black uppercase tracking-widest text-stone-500">Projekty</th>
+                                        <th className="px-5 py-4 text-right text-[10px] font-black uppercase tracking-widest text-stone-500">Obrót netto</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-black/5">
-                                    {leaderboard.map((item: any, i: number) => (
-                                        <tr key={i} className="hover:bg-black/[0.02] transition-colors group">
-                                            <td className="px-8 py-5">
-                                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black ${i === 0 ? 'bg-brand-primary text-black shadow-[0_0_20px_rgba(212,175,55,0.3)]' :
-                                                    i === 1 ? 'bg-stone-200 text-stone-900' :
-                                                        i === 2 ? 'bg-amber-100 text-amber-500' :
-                                                            'bg-black/5 text-stone-500'
-                                                    }`}>
-                                                    {i + 1}
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-5">
-                                                <span className="font-black text-stone-900 group-hover:gold-text transition-all cursor-default">
-                                                    {item.name}
-                                                </span>
-                                            </td>
-                                            <td className="px-8 py-5 text-right font-black text-stone-400">
-                                                {item.projects_count}
-                                            </td>
-                                            <td className="px-8 py-5 text-right font-black">
-                                                <span className="gold-text text-lg">
-                                                    {formatPLN(item.total_turnover)} <span className="text-[10px]">PLN</span>
-                                                </span>
-                                            </td>
+                                    {leaderboard.map((item) => (
+                                        <tr key={item.name} className="hover:bg-stone-50/70">
+                                            <td className="px-5 py-4 text-sm font-black text-stone-900">{item.name}</td>
+                                            <td className="px-5 py-4 text-right text-sm font-bold text-stone-500">{item.projects_count}</td>
+                                            <td className="px-5 py-4 text-right text-sm font-black text-brand-primary">{formatPLN(item.total_turnover)} PLN</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
-                    </div>
 
-                    {/* Activity + Cashback + Pipeline (tabbed) */}
-                    <DashboardBottomTabs
-                        projects={allProjects}
-                        isAdmin={session.user.role === 'ADMIN'}
-                        canManageProjects={session.user.role === 'ADMIN' || session.user.role === 'STAFF'}
-                        staffMembers={staffMembers}
-                        redemptions={redemptions}
-                        projectCount={allProjects.length}
-                    />
-                </div>
-
-                {/* Right column */}
-                <div className="space-y-10">
-
-                    {/* Payout Forecast */}
-                    <div className="stat-card bg-card p-8 border border-black/5 space-y-6">
-                        <h3 className="text-xs font-black text-stone-500 uppercase tracking-[0.3em] flex items-center gap-3">
-                            <Wallet size={16} className="text-sky-600" />
-                            Prognoza Wypłat
-                        </h3>
-                        <div className="space-y-4">
-                            <div className="py-4 border-b border-black/5">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1">Gotowi do wypłaty</p>
-                                        <p className="text-[9px] text-stone-600">Portfel ≥ 300 PLN, brak wniosku</p>
-                                    </div>
-                                    <p className="text-2xl font-black text-stone-900">{metrics.payoutForecast.eligibleCount}</p>
+                        <div className="rounded-lg border border-black/10 bg-stone-50 p-5">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h3 className="font-black text-stone-950">Baza architektów</h3>
+                                    <p className="mt-1 text-xs font-medium text-stone-500">Pełna lista, edycja kont i usuwanie pustych kont.</p>
                                 </div>
-                                <PayoutForecastDrilldown items={metrics.payoutForecast.eligible} label="Gotowi do wypłaty" />
+                                <Users size={18} className="text-brand-primary" />
                             </div>
-                            <div className="py-4 border-b border-black/5">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Prawie gotowi</p>
-                                        <p className="text-[9px] text-stone-600">Portfel 150–299 PLN</p>
-                                    </div>
-                                    <p className="text-2xl font-black text-stone-900">{metrics.payoutForecast.nearEligibleCount}</p>
-                                </div>
-                                <PayoutForecastDrilldown items={metrics.payoutForecast.nearEligible} label="Prawie gotowi" />
-                            </div>
-                            <div className="flex items-center justify-between pt-2">
-                                <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest">Prognoza łączna</p>
-                                <p className="text-xl font-black gold-text">
-                                    {formatPLN(metrics.payoutForecast.forecastTotal)} <span className="text-[10px]">PLN</span>
-                                </p>
+                            <div className="mt-5 flex flex-col gap-3">
+                                <Link
+                                    href="/dashboard/admin/architects"
+                                    className="inline-flex items-center justify-between rounded-lg border border-black/10 bg-white px-4 py-2 text-xs font-black uppercase tracking-widest text-stone-700 hover:border-brand-primary/40 hover:text-brand-primary"
+                                >
+                                    Otwórz listę
+                                    <ArrowRight size={14} />
+                                </Link>
+                                <AddArchitectButton canRegisterArchitects={canRegisterArchitects} />
                             </div>
                         </div>
                     </div>
+                </section>
+            </main>
 
-                    {/* Architect List */}
-                    <div className="space-y-6">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-xs font-black text-stone-500 uppercase tracking-[0.3em] flex items-center gap-3">
-                                <Users size={16} className="text-brand-primary" />
-                                Baza Architektów
-                            </h3>
-                            <AddArchitectButton canRegisterArchitects={session.user.role === 'ADMIN' || session.user.role === 'STAFF'} />
+            <aside className="space-y-5 xl:sticky xl:top-6 xl:h-fit">
+                <div className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <h2 className="font-black text-stone-950">Pomoc kontekstowa</h2>
+                            <p className="mt-1 text-xs font-medium text-stone-500">Statusy wypłat i następne działania.</p>
                         </div>
-                        <ArchitectList architects={architects} isAdmin={session.user.role === 'ADMIN'} />
+                        <HelpCircle size={18} className="text-brand-primary" />
+                    </div>
+                    <div className="mt-5 space-y-4">
+                        {[
+                            { status: 'PENDING', text: 'Wypłata czeka na decyzję admina.' },
+                            { status: 'IN_PAYMENT', text: 'Admin rozpoczął proces płatności.' },
+                            { status: 'HOLD', text: 'Wstrzymane do wyjaśnienia danych lub faktury.' },
+                            { status: 'PAID', text: 'Finalny status po realnym przelewie.' },
+                        ].map((item) => (
+                            <div key={item.status} className="grid grid-cols-[6.5rem_1fr] gap-3">
+                                <span className="rounded-md bg-stone-100 px-2 py-1 text-center text-[10px] font-black text-stone-700">{item.status}</span>
+                                <p className="text-xs font-medium leading-relaxed text-stone-600">{item.text}</p>
+                            </div>
+                        ))}
                     </div>
                 </div>
-            </div>
+
+                <div className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                        <h2 className="font-black text-stone-950">Partnerzy</h2>
+                        <ShieldCheck size={18} className="text-brand-primary" />
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                        {[
+                            { label: 'Silver', value: silverCount },
+                            { label: 'Gold', value: goldCount },
+                            { label: 'Platinum', value: platinumCount },
+                        ].map((tier) => (
+                            <Link
+                                key={tier.label}
+                                href={`/dashboard/admin/architects?tier=${tier.label.toLowerCase()}`}
+                                className="rounded-lg border border-black/10 bg-stone-50 p-3 text-center hover:border-brand-primary/40"
+                            >
+                                <p className="text-[9px] font-black uppercase tracking-widest text-stone-500">{tier.label}</p>
+                                <p className="mt-1 text-xl font-black text-stone-950">{tier.value}</p>
+                            </Link>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                        <h2 className="font-black text-stone-950">Sygnały</h2>
+                        <AlertTriangle size={18} className="text-amber-600" />
+                    </div>
+                    <div className="mt-4 space-y-3">
+                        {[
+                            { label: 'Do akceptacji', value: metrics.projects.submitted, href: '#project-pipeline' },
+                            { label: 'Brak opiekuna', value: metrics.alerts.withoutCaretaker, href: '#project-pipeline' },
+                            { label: 'Nieaktywne 14d', value: metrics.alerts.staleProjects, href: '#project-pipeline' },
+                            { label: 'Cashback do decyzji', value: redemptions.length, href: '#analytics' },
+                        ].map((signal) => (
+                            <Link key={signal.label} href={signal.href} className="flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2 hover:bg-stone-100">
+                                <span className="text-xs font-bold text-stone-600">{signal.label}</span>
+                                <span className="text-sm font-black text-stone-950">{signal.value}</span>
+                            </Link>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+                    <div className="flex items-center gap-2">
+                        <Wallet size={16} className="text-sky-600" />
+                        <h2 className="font-black text-stone-950">Prognoza wypłat</h2>
+                    </div>
+                    <div className="mt-4 space-y-4">
+                        <div>
+                            <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Gotowi</p>
+                                <p className="text-xl font-black text-stone-950">{metrics.payoutForecast.eligibleCount}</p>
+                            </div>
+                            <PayoutForecastDrilldown items={metrics.payoutForecast.eligible} label="Gotowi do wypłaty" />
+                        </div>
+                        <div>
+                            <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Prawie gotowi</p>
+                                <p className="text-xl font-black text-stone-950">{metrics.payoutForecast.nearEligibleCount}</p>
+                            </div>
+                            <PayoutForecastDrilldown items={metrics.payoutForecast.nearEligible} label="Prawie gotowi" />
+                        </div>
+                        <div className="border-t border-black/5 pt-3">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Prognoza łączna</p>
+                            <p className="mt-1 text-xl font-black text-brand-primary">{formatPLN(metrics.payoutForecast.forecastTotal)} PLN</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
         </div>
     );
 }

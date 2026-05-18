@@ -41,3 +41,15 @@ test('server setup generated env includes explicit email and google configuratio
     assert.match(source, /EMAIL_PORT=587/);
     assert.match(source, /EMAIL_FROM=/);
 });
+
+test('production start checks the incremental MySQL schema before serving traffic', async () => {
+    const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8');
+    const schemaScript = await readFile(new URL('../scripts/ensure-production-schema.mjs', import.meta.url), 'utf8');
+
+    assert.match(packageJson, /scripts\/ensure-production-schema\.mjs && next start/);
+    assert.match(schemaScript, /information_schema\.COLUMNS/);
+    assert.match(schemaScript, /completed_by/);
+    assert.match(schemaScript, /completed_at/);
+    assert.match(schemaScript, /completion_note/);
+    assert.match(schemaScript, /DB_TYPE !== 'mysql'/);
+});

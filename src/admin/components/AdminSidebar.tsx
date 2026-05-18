@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
     LayoutDashboard,
@@ -12,7 +13,12 @@ import {
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 
-export default function AdminSidebar({ user }: { user: any }) {
+interface AdminSidebarUser {
+    name?: string | null;
+    role?: string | null;
+}
+
+export default function AdminSidebar({ user }: { user: AdminSidebarUser }) {
     const pathname = usePathname();
 
     const menuItems = [
@@ -24,10 +30,10 @@ export default function AdminSidebar({ user }: { user: any }) {
     ];
 
     return (
-        <aside className="w-72 bg-background border-r border-black/5 flex flex-col p-8 sticky top-0 h-screen z-50">
-            <div className="mb-12 px-4">
-                <div className="flex flex-col gap-2">
-                    <img src="/walldecor-logo.jpg" alt="WallDecor" className="h-20 w-auto object-contain" />
+        <aside className="w-72 bg-[#231f20] text-white border-r border-white/10 flex flex-col p-8 sticky top-0 h-screen z-50">
+            <div className="mb-12 px-2">
+                <div className="flex flex-col items-center gap-3">
+                    <Image src="/walldecor-logo.jpg" alt="WallDecor" width={144} height={145} priority className="h-auto w-36 object-contain" />
                     <div className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">
                         P o r t a l   A r c h i t e k t a
                     </div>
@@ -44,23 +50,23 @@ export default function AdminSidebar({ user }: { user: any }) {
                             href={link.href}
                             className={isActive ? 'sidebar-link-active' : 'sidebar-link'}
                         >
-                            <Icon size={20} className={isActive ? 'text-black' : 'text-stone-400'} />
+                            <Icon size={20} className={isActive ? 'text-brand-primary' : 'text-stone-400'} />
                             <span className="text-sm font-semibold">{link.label}</span>
                         </Link>
                     );
                 })}
             </nav>
 
-            <div className="mt-auto space-y-6 pt-8 border-t border-black/5">
+            <div className="mt-auto space-y-6 pt-8 border-t border-white/10">
                 <div className="px-4">
                     <div className="flex items-center gap-4">
                         <div className="relative">
-                            <div className="w-12 h-12 rounded-2xl bg-black/5 border border-black/10 flex items-center justify-center text-stone-900 font-bold text-lg overflow-hidden">
+                            <div className="w-12 h-12 rounded-lg bg-white/10 border border-white/10 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
                                 {user.name?.charAt(0)}
                             </div>
                         </div>
                         <div>
-                            <div className="text-sm font-bold text-stone-900 truncate w-32">
+                            <div className="text-sm font-bold text-white truncate w-32">
                                 {user.name}
                             </div>
                             <div className="text-[10px] text-brand-primary font-bold uppercase tracking-widest mt-0.5">
@@ -72,7 +78,7 @@ export default function AdminSidebar({ user }: { user: any }) {
 
                 <button
                     onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-                    className="flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 text-stone-500 hover:text-stone-900 hover:bg-black/5 w-full"
+                    className="flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-300 text-stone-400 hover:text-white hover:bg-white/10 w-full"
                 >
                     <LogOut size={20} />
                     <span className="text-sm font-semibold">Wyloguj się</span>

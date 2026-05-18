@@ -9,14 +9,11 @@ import {
     ShieldCheck,
     Wallet,
     ArrowLeft,
-    Plus,
     CreditCard
 } from 'lucide-react';
 import Link from 'next/link';
 import ArchitectList from '@/components/ArchitectList';
 import AddArchitectButton from "@/components/AddArchitectButton";
-import { getAdminMetrics } from "@/lib/services";
-import { getPendingRedemptions } from "@/app/actions/cashback";
 import { formatPLN } from "@/lib/utils";
 import { walletBalanceSql } from "@/lib/walletSql";
 
@@ -37,6 +34,14 @@ export default async function AdminArchitectsPage({
         SELECT 
             u.id, u.name, u.email, u.studio_name, u.tier_override,
             COUNT(DISTINCT CASE WHEN p.status != 'NIEZREALIZOWANY' THEN p.id END) as projects_count,
+            (SELECT COUNT(*) FROM projects projectCount WHERE projectCount.owner_id = u.id) as projectCount,
+            (SELECT COUNT(*) FROM commissions commissionCount WHERE commissionCount.architect_id = u.id) as commissionCount,
+            CASE
+                WHEN (SELECT COUNT(*) FROM projects projectCount WHERE projectCount.owner_id = u.id) > 0
+                    OR (SELECT COUNT(*) FROM commissions commissionCount WHERE commissionCount.architect_id = u.id) > 0
+                THEN 1
+                ELSE 0
+            END as has_business_history,
             COALESCE((
                 SELECT SUM(i.amount_net)
                 FROM project_items i
