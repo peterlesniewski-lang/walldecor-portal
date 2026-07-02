@@ -6,6 +6,7 @@ import { query } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import bcrypt from 'bcrypt';
 import { sendEmail } from "@/lib/email";
+import { logActivity } from "@/lib/services";
 
 export async function updateArchitectAdminFields(
     architectId: string,
@@ -16,14 +17,24 @@ export async function updateArchitectAdminFields(
         throw new Error("Unauthorized");
     }
 
-    const VALID_TIER_OVERRIDES = [null, 'SILVER', 'GOLD', 'PLATINUM'];
+    const VALID_TIER_OVERRIDES = [null, 'PARTNER', 'PARTNER_PLUS', 'PARTNER_PREMIUM'];
     if (!VALID_TIER_OVERRIDES.includes(data.tier_override)) {
-        throw new Error("Nieprawidłowa wartość tier. Dozwolone: SILVER, GOLD, PLATINUM lub brak (Auto).");
+        throw new Error("Nieprawidłowa wartość statusu. Dozwolone: PARTNER, PARTNER_PLUS, PARTNER_PREMIUM lub brak (Auto).");
     }
+
+    const prevRes = await query<any>("SELECT tier_override FROM users WHERE id = ?", [architectId]);
+    const previous = prevRes[0]?.tier_override ?? null;
 
     await query(
         "UPDATE users SET tier_override = ? WHERE id = ?",
         [data.tier_override, architectId]
+    );
+
+    await logActivity(
+        session.user.id,
+        'ARCHITECT_STATUS_OVERRIDE',
+        `Zmieniono override statusu architekta ${architectId}: ${previous ?? 'AUTO'} → ${data.tier_override ?? 'AUTO'}`,
+        { architectId, previous, next: data.tier_override }
     );
 
     revalidatePath(`/dashboard/admin/architects/${architectId}`);
@@ -155,14 +166,15 @@ export async function resetArchitectPassword(architectId: string, newPassword: s
         throw new Error("Unauthorized");
     }
 
-    if (newPassword.length < 6) {
-        throw new Error("Hasło musi mieć co najmniej 6 znaków");
+    if (newPassword.length < 8) {
+        throw new Error("Hasło musi mieć co najmniej 8 znaków");
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
+    // Hasło nadane przez admina jest tymczasowe — architekt musi je zmienić przy pierwszym logowaniu.
     await query(
-        "UPDATE users SET password = ? WHERE id = ?",
+        "UPDATE users SET password = ?, must_change_password = 1 WHERE id = ?",
         [hashedPassword, architectId]
     );
 

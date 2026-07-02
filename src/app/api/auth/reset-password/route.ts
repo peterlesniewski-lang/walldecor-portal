@@ -34,8 +34,9 @@ export async function POST(req: NextRequest) {
 
             const resetToken = tokens[0];
 
+            // Hasło ustawione samodzielnie przez użytkownika — nie jest tymczasowe.
             await queryFn(
-                "UPDATE users SET password = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
+                "UPDATE users SET password = ?, must_change_password = 0, password_changed_at = CURRENT_TIMESTAMP, last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
                 [hashedPassword, resetToken.user_id]
             );
 

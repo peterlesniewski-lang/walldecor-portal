@@ -11,6 +11,27 @@ const transporter = nodemailer.createTransport({
     },
 });
 
+// Obrazki wklejone do edytora szablonów jako data-URI (np. zrzuty ekranu typu "Prtnsc")
+// są przez klientów pocztowych pokazywane jako załączniki — usuwamy je z treści maila.
+function stripEmbeddedImages(html: string): string {
+    return html.replace(/<img[^>]*src=["']data:[^>]*>/gi, '');
+}
+
+// Plain-text fallback dla klientów bez HTML.
+function htmlToPlainText(html: string): string {
+    return html
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|li|ul|ol|h[1-6])>/gi, '\n')
+        .replace(/<li[^>]*>/gi, '- ')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
 export async function sendEmail(slug: string, to: string, placeholders: Record<string, string>) {
     try {
         // 1. Fetch template
@@ -35,12 +56,15 @@ export async function sendEmail(slug: string, to: string, placeholders: Record<s
             content = content.replace(regex, placeholders[key] || '');
         });
 
+        content = stripEmbeddedImages(content);
+
         // 3. Send email
         const mailOptions = {
             from: process.env.EMAIL_FROM || '"WallDecor - Portal Architekta" <no-reply@walldecor.pl>',
             to,
             subject,
             html: content,
+            text: htmlToPlainText(content),
         };
 
         if (process.env.NODE_ENV === 'development' && !process.env.EMAIL_HOST) {

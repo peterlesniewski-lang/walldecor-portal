@@ -1,0 +1,9 @@
+-- 017: Nowa treść maila powitalnego (brief testera) — bez załączników, z informacją
+--      o wymuszonej zmianie hasła. Aktualizuje tylko nieedytowany szablon (stary temat),
+--      żeby nie nadpisać ręcznych zmian admina.
+UPDATE email_templates
+SET
+    subject = 'Dostęp do Panelu Architekta WallDecor',
+    content = '<p>Dzień dobry,</p><p>utworzyliśmy dla Ciebie konto w <strong>Panelu Architekta WallDecor</strong>.</p><p>Panel ułatwi bieżącą współpracę z nami i zapewni szybki dostęp do najważniejszych informacji dotyczących projektów, zamówień oraz rozliczeń prowizyjnych.</p><p>Po zalogowaniu możesz:</p><ul><li>sprawdzać status aktualnych projektów i zamówień,</li><li>śledzić etap realizacji poszczególnych zgłoszeń,</li><li>kontrolować aktualną wartość prowizji dostępnej do wypłaty,</li><li>sprawdzać historię rozliczeń,</li><li>korzystać z dostępnych środków cashback,</li><li>dodawać faktury PDF potrzebne do wypłaty prowizji,</li><li>sprawdzać swój aktualny poziom prowizyjny.</li></ul><p style="background:#f8f7f5;border-radius:12px;padding:20px;margin:24px 0;"><strong>Dane do logowania:</strong><br><br>Adres panelu: <a href="{{portal_url}}">{{portal_url}}</a><br>Login: <strong>{{email}}</strong><br>Hasło tymczasowe: <strong style="font-family:monospace;font-size:16px;letter-spacing:2px;">{{password}}</strong></p><p>Po pierwszym zalogowaniu system poprosi Cię o ustawienie własnego hasła.</p><p>Mamy nadzieję, że Panel Architekta usprawni naszą współpracę i pozwoli wygodniej zarządzać projektami realizowanymi wspólnie z WallDecor.</p><p>W razie pytań lub problemów z logowaniem pozostajemy oczywiście do dyspozycji.</p><p>Pozdrawiamy serdecznie,<br><strong>Zespół WallDecor</strong></p>'
+WHERE slug = 'ARCHITECT_REGISTERED'
+  AND subject = 'Twoje konto w Portalu WallDecor jest gotowe';

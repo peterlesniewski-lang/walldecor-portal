@@ -13,7 +13,8 @@ test('architect dashboard follows the P2B operational layout', async () => {
     assert.match(source, /Historia portfela/);
     assert.match(source, /Następne kroki/);
     assert.match(source, /Poziomy prowizji/);
-    assert.match(source, /Twój poziom/);
+    assert.match(source, /Twój status/);
+    assert.match(source, /Aktualna prowizja/);
     assert.match(source, /tierProgressLabel/);
     assert.match(source, /Cashback 2%/);
 });

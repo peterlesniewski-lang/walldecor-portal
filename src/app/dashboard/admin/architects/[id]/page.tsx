@@ -21,6 +21,7 @@ import AdminRedemptionQueue from '@/admin/components/AdminRedemptionQueue';
 import AdminPayoutsQueue from '@/admin/components/AdminPayoutsQueue';
 import { getArchitectRedemptions } from "@/app/actions/cashback";
 import { walletBalanceSql } from "@/lib/walletSql";
+import { getPartnerStatusInfo } from "@/lib/partnerProgram";
 
 export default async function ArchitectProfilePage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -97,16 +98,18 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
         LIMIT 10
     `, [id]);
 
-    // 8. Calculated tier
-    const autoTier = turnover >= 120000 ? 'PLATINUM' : turnover >= 50000 ? 'GOLD' : turnover >= 10000 ? 'SILVER' : 'BEGINNER';
-    const displayTier = architect.tier_override || autoTier;
+    // 8. Status partnerski (program 10/12/15%)
+    const autoStatus = getPartnerStatusInfo(turnover, null);
+    const effectiveStatus = getPartnerStatusInfo(turnover, architect.tier_override);
+    const autoTier = autoStatus.label;
+    const displayTier = `${effectiveStatus.label} (${Math.round(effectiveStatus.rate * 100)}%)`;
 
     const tierColors: Record<string, string> = {
-        BEGINNER: 'text-stone-400',
-        SILVER: 'text-stone-400',
-        GOLD: 'text-brand-primary',
-        PLATINUM: 'text-indigo-600',
+        PARTNER: 'text-stone-400',
+        PARTNER_PLUS: 'text-brand-primary',
+        PARTNER_PREMIUM: 'text-indigo-600',
     };
+    const displayTierColor = tierColors[effectiveStatus.status] ?? 'text-stone-400';
 
     const statusColors: Record<string, string> = {
         ZGŁOSZONY: 'bg-blue-900/30 text-blue-600 border-blue-800/30',
@@ -156,7 +159,7 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
                             <p className="text-sm text-stone-300 font-bold mb-2">{architect.studio_name}</p>
                         )}
                         <div className="flex items-center gap-3">
-                            <span className={`text-xs font-black uppercase tracking-widest ${tierColors[displayTier]}`}>
+                            <span className={`text-xs font-black uppercase tracking-widest ${displayTierColor}`}>
                                 {displayTier}
                                 {architect.tier_override && (
                                     <span className="ml-1 text-[9px] text-stone-600 font-bold">(ręcznie)</span>
@@ -210,9 +213,9 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
                         <div className="stat-card bg-card border border-black/5">
                             <div className="flex items-center gap-3 mb-4">
                                 <ShieldCheck size={16} className="text-brand-primary" />
-                                <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Tier</h3>
+                                <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Status partnerski</h3>
                             </div>
-                            <p className={`text-2xl font-black uppercase ${tierColors[displayTier]}`}>{displayTier}</p>
+                            <p className={`text-2xl font-black uppercase ${displayTierColor}`}>{displayTier}</p>
                             <p className="text-[10px] text-stone-600 mt-2">Obrót: {formatPLN(turnover)} PLN</p>
                         </div>
                     )}

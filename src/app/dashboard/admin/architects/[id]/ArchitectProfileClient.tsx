@@ -55,28 +55,31 @@ export default function ArchitectProfileClient({ architectId, currentTierOverrid
         <div className="stat-card bg-card border border-black/5 space-y-6">
             <div className="flex items-center gap-3">
                 <ShieldCheck size={16} className="text-brand-primary" />
-                <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Zarządzanie Tier</h3>
+                <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Status partnerski</h3>
             </div>
 
-            {/* Auto tier display */}
+            {/* Auto status display */}
             <div className="bg-black/[0.02] rounded-2xl px-4 py-3 border border-black/5">
-                <p className="text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1">Tier automatyczny (obrót)</p>
+                <p className="text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1">Status automatyczny (z obrotu)</p>
                 <p className="text-sm font-black text-stone-900 uppercase">{autoTier}</p>
             </div>
 
-            {/* Tier override */}
+            {/* Status override — wpływa na stawkę prowizji przy kolejnych rozliczeniach */}
             <div className="space-y-2">
-                <label className="text-[9px] font-black text-stone-500 uppercase tracking-widest">Override Tier</label>
+                <label className="text-[9px] font-black text-stone-500 uppercase tracking-widest">Ręczny override statusu</label>
                 <select
                     value={tierOverride}
                     onChange={(e) => setTierOverride(e.target.value)}
                     className="w-full bg-black/5 border border-black/10 rounded-2xl px-4 py-3 text-sm font-black text-stone-900 uppercase focus:outline-none focus:border-brand-primary/50 transition-all appearance-none"
                 >
                     <option value="AUTO">Auto (z obrotu)</option>
-                    <option value="SILVER">SILVER</option>
-                    <option value="GOLD">GOLD</option>
-                    <option value="PLATINUM">PLATINUM</option>
+                    <option value="PARTNER">Partner — 10%</option>
+                    <option value="PARTNER_PLUS">Partner Plus — 12%</option>
+                    <option value="PARTNER_PREMIUM">Partner Premium — 15%</option>
                 </select>
+                <p className="text-[9px] font-bold text-stone-400 leading-snug">
+                    Override blokuje automatyczne przeliczanie statusu i decyduje o stawce nowych prowizji. Historyczne prowizje nie zmieniają się.
+                </p>
             </div>
 
             <button

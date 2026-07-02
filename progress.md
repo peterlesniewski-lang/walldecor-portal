@@ -309,13 +309,30 @@ migrations/
 
 ---
 
+### Faza 10 — Nowy program partnerski + uwagi testera (sesja 6, 2026-07-02)
+
+- **Program partnerski 10/12/15%**: `src/lib/partnerProgram.ts` — jedyne źródło stawek; Partner 10% (0–30k), Partner Plus 12% (30–50k), Partner Premium 15% (50k+); zastąpił brackety 7/10/14 i zaszyte `rate = 7`
+- **Stawka na prowizji**: kolumna `commissions.rate` (migracja 016) — historyczne prowizje nie zmieniają się po awansie; stawka projektu liczona z obrotu PRZED projektem (awans od kolejnego projektu)
+- **tier_override** (PARTNER/PARTNER_PLUS/PARTNER_PREMIUM; stare wartości mapowane) wpływa teraz na stawkę, nie tylko wyświetlanie; zmiana logowana w activity_logs
+- **Formularz architekta**: wartość netto opcjonalna („szacunkowy budżet"); pozycje z kwotą 0 zapisywane do wyceny przez staff/admin
+- **Wymuszenie zmiany hasła**: `users.must_change_password` + `password_changed_at` (migracja 016); flaga ustawiana przy rejestracji/imporcie/resecie przez admina; redirect w `dashboard/layout.tsx` → `/auth/change-password` (server action `changeOwnPassword`, polityka: 8+ znaków, litera+cyfra)
+- **Mail powitalny**: nowa treść wg briefu (migracja 017 + `ensure-production-schema.mjs`, jednorazowo po starym temacie); `sendEmail` wycina obrazki data-URI (źródło załącznika „Prtnsc") i dodaje plain-text fallback
+- **Hasła tymczasowe**: zawsze generowane losowo (12 znaków); brak `Czubaszek123` w kodzie — było wpisywane ręcznie przez admina; reset hasła min. 8 znaków
+- **UI statusów**: dashboard architekta (status, % prowizji, progress), profil architekta, lista/filtry architektów, AdminCharts, regulamin §3/§4 — wszystko na nowych statusach
+- **Audyt**: logActivity dla zmian wartości pozycji, dodania/usunięcia pozycji i override statusu
+- **Wypłaty (uwaga testera)**: przyciski akceptacji są ADMIN-only (`handlePayoutRequest`); STAFF widzi komunikat read-only — tester logował się jako STAFF, brak zmiany logiki
+
+---
+
 ## Otwarte kwestie
 
 | # | Kwestia | Status |
 | - | ------- | ------ |
-| 1 | Stawka prowizji BEGINNER (0–9 999 PLN) | TBD — wymagana decyzja biznesowa |
+| 1 | ~~Stawka prowizji BEGINNER (0–9 999 PLN)~~ | Rozwiązane — nowy program: start = Partner 10% |
 | 2 | Drilldown Prognoza Wypłat — klikalne liczniki "Gotowi do wypłaty" / "Prawie gotowi" | Do implementacji |
 | 3 | Funkcjonalność modalu "Ustawienia Profilu" w panelu partnera | Do implementacji |
+| 4 | Okres przejściowy (legacyRate do 2026-12-31) z briefu | Nieimplementowane — nowe stawki są wyższe od starych na każdym poziomie, ochrona bez skutku praktycznego; edge case'y przez tier_override |
+| 5 | Tryby prowizji LIMITED/EXCLUDED per pozycja (brief §3) | Częściowo — INSTALLATION wyłączone z prowizji; pełne tryby do osobnej iteracji |
 
 ---
 

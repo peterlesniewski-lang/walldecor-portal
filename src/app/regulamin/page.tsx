@@ -146,36 +146,36 @@ export default function RegulaminPage() {
                     </div>
                 </Section>
 
-                <Section number="§3" title="Poziomy partnerskie (Tiery)">
+                <Section number="§3" title="Statusy partnerskie">
                     <P>
-                        Poziom Partnera wyznaczany jest automatycznie na podstawie obrotu
+                        Status Partnera wyznaczany jest automatycznie na podstawie obrotu
                         skumulowanego i aktualizuje się po zakończeniu każdego projektu:
                     </P>
                     <Table rows={[
-                        ['SILVER', '0 – 49 999 PLN', '7%'],
-                        ['GOLD', '50 000 – 119 999 PLN', '10%'],
-                        ['PLATINUM', '120 000 PLN i powyżej', '14%'],
+                        ['PARTNER', '0 – 29 999 PLN', '10%'],
+                        ['PARTNER PLUS', '30 000 – 49 999 PLN', '12%'],
+                        ['PARTNER PREMIUM', '50 000 PLN i powyżej', '15%'],
                     ]} />
                     <P>
-                        Organizator zastrzega sobie prawo do ręcznego przypisania poziomu
-                        w uzasadnionych przypadkach, bez wpływu na stawki prowizji.
+                        Nowy status obowiązuje od kolejnego projektu — prowizje naliczone
+                        wcześniej nie zmieniają się. Organizator zastrzega sobie prawo do
+                        ręcznego przypisania statusu w uzasadnionych przypadkach.
                     </P>
                 </Section>
 
                 <Section number="§4" title="System prowizji">
                     <Ol>
                         <Li>
-                            Prowizja naliczana jest progresywnie według przedziałów obrotu
-                            skumulowanego — każda złotówka nowego projektu rozliczana jest
-                            według stawki obowiązującej w danym przedziale.
+                            Prowizja naliczana jest od wartości netto pozycji PRODUKT projektu
+                            według stawki wynikającej ze statusu partnerskiego obowiązującego
+                            w chwili rozliczenia projektu.
                         </Li>
                         <Li>
-                            Przykład: Partner z obrotem 90 000 PLN realizuje projekt o wartości
-                            40 000 PLN:
+                            Przykład: Partner z obrotem 35 000 PLN (status Partner Plus)
+                            realizuje projekt o wartości 20 000 PLN:
                             <div className="mt-2 ml-4 p-4 bg-stone-50 rounded-xl border border-black/5 space-y-1 font-mono text-xs text-stone-700">
-                                <div>30 000 PLN × 10% =  3 000 PLN  <span className="text-stone-400">(do granicy PLATINUM)</span></div>
-                                <div>10 000 PLN × 14% =  1 400 PLN  <span className="text-stone-400">(powyżej 120 000 PLN)</span></div>
-                                <div className="pt-1 border-t border-black/5 font-black text-stone-900">Łącznie: 4 400 PLN</div>
+                                <div>20 000 PLN × 12% = 2 400 PLN</div>
+                                <div className="pt-1 border-t border-black/5 font-black text-stone-900">Po rozliczeniu obrót wynosi 55 000 PLN — kolejny projekt będzie liczony stawką 15% (Partner Premium).</div>
                             </div>
                         </Li>
                         <Li>

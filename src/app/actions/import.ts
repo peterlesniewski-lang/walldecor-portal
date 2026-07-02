@@ -113,7 +113,7 @@ export async function importProjectsFromCSV(rows: ImportRowInput[], importedAt?:
                 const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
                 await query(
-                    "INSERT INTO users (id, name, email, password, role, studio_name, nip, address) VALUES (?, ?, ?, ?, 'ARCHI', ?, ?, ?)",
+                    "INSERT INTO users (id, name, email, password, role, studio_name, nip, address, must_change_password) VALUES (?, ?, ?, ?, 'ARCHI', ?, ?, ?, 1)",
                     [newArchitectId, row.architectName.trim(), email, hashedPassword,
                      row.architectStudio?.trim() || null,
                      row.architectNip?.trim() || null,

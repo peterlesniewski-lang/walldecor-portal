@@ -19,10 +19,9 @@ interface MonthlyTurnover {
 }
 
 interface TierCounts {
-    beginner: number;
-    silver: number;
-    gold: number;
-    platinum: number;
+    partner: number;
+    partnerPlus: number;
+    partnerPremium: number;
 }
 
 interface Props {
@@ -31,10 +30,9 @@ interface Props {
 }
 
 const TIER_COLORS: Record<string, string> = {
-    Beginner: '#94a3b8',
-    Silver: '#cbd5e1',
-    Gold: '#D4AF37',
-    Platinum: '#6366f1',
+    'Partner (10%)': '#94a3b8',
+    'Partner Plus (12%)': '#D4AF37',
+    'Partner Premium (15%)': '#6366f1',
 };
 
 function formatMonthLabel(ym: string): string {
@@ -77,10 +75,9 @@ export default function AdminCharts({ monthlyTurnover, tiers }: Props) {
     }));
 
     const pieData = [
-        { name: 'Beginner', value: tiers.beginner },
-        { name: 'Silver', value: tiers.silver },
-        { name: 'Gold', value: tiers.gold },
-        { name: 'Platinum', value: tiers.platinum },
+        { name: 'Partner (10%)', value: tiers.partner },
+        { name: 'Partner Plus (12%)', value: tiers.partnerPlus },
+        { name: 'Partner Premium (15%)', value: tiers.partnerPremium },
     ].filter((d) => d.value > 0);
 
     return (
@@ -118,7 +115,7 @@ export default function AdminCharts({ monthlyTurnover, tiers }: Props) {
             {/* Tier distribution donut */}
             <div className="stat-card p-6 space-y-4">
                 <h3 className="text-xs font-black text-stone-400 uppercase tracking-[0.3em]">
-                    Rozkład Tierów
+                    Rozkład statusów partnerskich
                 </h3>
                 {pieData.length === 0 ? (
                     <p className="text-sm text-stone-400 py-8 text-center">Brak architektów</p>
