@@ -81,7 +81,7 @@ export default async function AdminDashboard() {
     }
 
     const metrics = await getAdminMetrics();
-    const { silver: silverCount, gold: goldCount, platinum: platinumCount } = metrics.tiers;
+    const { partner: partnerCount, partnerPlus: partnerPlusCount, partnerPremium: partnerPremiumCount } = metrics.tiers;
 
     const leaderboard = await query<LeaderboardRow>(`
         SELECT
@@ -233,10 +233,9 @@ export default async function AdminDashboard() {
                     <AdminCharts
                         monthlyTurnover={monthlyTurnover}
                         tiers={{
-                            beginner: metrics.tiers.beginner,
-                            silver: silverCount,
-                            gold: goldCount,
-                            platinum: platinumCount,
+                            partner: partnerCount,
+                            partnerPlus: partnerPlusCount,
+                            partnerPremium: partnerPremiumCount,
                         }}
                     />
 
@@ -316,13 +315,13 @@ export default async function AdminDashboard() {
                     </div>
                     <div className="mt-4 grid grid-cols-3 gap-2">
                         {[
-                            { label: 'Silver', value: silverCount },
-                            { label: 'Gold', value: goldCount },
-                            { label: 'Platinum', value: platinumCount },
+                            { label: 'Partner', slug: 'partner', value: partnerCount },
+                            { label: 'Plus', slug: 'partner_plus', value: partnerPlusCount },
+                            { label: 'Premium', slug: 'partner_premium', value: partnerPremiumCount },
                         ].map((tier) => (
                             <Link
                                 key={tier.label}
-                                href={`/dashboard/admin/architects?tier=${tier.label.toLowerCase()}`}
+                                href={`/dashboard/admin/architects?tier=${tier.slug}`}
                                 className="rounded-lg border border-black/10 bg-stone-50 p-3 text-center hover:border-brand-primary/40"
                             >
                                 <p className="text-[9px] font-black uppercase tracking-widest text-stone-500">{tier.label}</p>

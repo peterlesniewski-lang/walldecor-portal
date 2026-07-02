@@ -33,8 +33,9 @@ export async function createUser(data: {
     const hashed = await bcrypt.hash(data.password, 10);
     const userId = `u_${uuidv4().substring(0, 8)}`;
 
+    // Hasło nadane przez admina jest tymczasowe — użytkownik musi je zmienić przy pierwszym logowaniu.
     await query(
-        "INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO users (id, name, email, password, role, must_change_password) VALUES (?, ?, ?, ?, ?, 1)",
         [userId, data.name.trim(), data.email.toLowerCase().trim(), hashed, data.role]
     );
 
@@ -52,7 +53,7 @@ export async function resetUserPassword(userId: string, newPassword: string) {
     if (userRes.length === 0) throw new Error("Użytkownik nie istnieje.");
 
     const hashed = await bcrypt.hash(newPassword, 10);
-    await query("UPDATE users SET password = ? WHERE id = ?", [hashed, userId]);
+    await query("UPDATE users SET password = ?, must_change_password = 1 WHERE id = ?", [hashed, userId]);
 
     revalidatePath('/dashboard/admin/settings');
     return { success: true };

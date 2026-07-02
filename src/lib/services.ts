@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { v4 as uuidv4 } from 'uuid';
 import { walletBalanceSql } from "@/lib/walletSql";
+import { getPartnerStatusInfo } from "@/lib/partnerProgram";
 
 const IS_DEMO = process.env.DEMO_MODE === 'true';
 
@@ -12,9 +13,14 @@ export async function getArchitectStats(userId: string) {
             cashbackBalance: 840,
             activeProjects: 2,
             turnover: 15600,
-            tier: 'BEGINNER',
-            nextTier: 'SILVER',
-            turnoverToNext: 4400,
+            tier: 'PARTNER',
+            tierLabel: 'Partner',
+            commissionRate: 0.10,
+            tierIsOverride: false,
+            nextTier: 'PARTNER_PLUS',
+            nextTierLabel: 'Partner Plus',
+            turnoverToNext: 14400,
+            tierProgress: 15600 / 30000,
             expiringSoon: { amount: 200, expires_at: new Date(Date.now() + 86400000 * 10).toISOString() },
             earnedProjects: ['Apartament Powiśle', 'Dom w Konstancinie']
         };
@@ -57,28 +63,10 @@ export async function getArchitectStats(userId: string) {
     `, [userId]);
     const turnover = turnoverRes[0].total;
 
-    // 5. Tier Logic (turnover-based)
-    // Check for manual tier_override first
+    // 5. Status partnerski (program: Partner 10% / Partner Plus 12% / Partner Premium 15%)
+    // Ręczny override admina (tier_override) ma pierwszeństwo.
     const userRes = await query<any>("SELECT tier_override FROM users WHERE id = ?", [userId]);
-    const tierOverride = userRes[0]?.tier_override || null;
-
-    let tier: string;
-    let nextTier: string;
-    let turnoverToNext: number;
-
-    if (tierOverride) {
-        tier = tierOverride;
-        // Even with override, calculate progress for display
-        if (tierOverride === 'PLATINUM') { nextTier = 'MAX'; turnoverToNext = 0; }
-        else if (tierOverride === 'GOLD') { nextTier = 'PLATINUM'; turnoverToNext = Math.max(0, 120000 - Number(turnover)); }
-        else { nextTier = 'GOLD'; turnoverToNext = Math.max(0, 50000 - Number(turnover)); }
-    } else {
-        const t = Number(turnover);
-        if (t >= 120000) { tier = 'PLATINUM'; nextTier = 'MAX'; turnoverToNext = 0; }
-        else if (t >= 50000) { tier = 'GOLD'; nextTier = 'PLATINUM'; turnoverToNext = 120000 - t; }
-        else if (t >= 10000) { tier = 'SILVER'; nextTier = 'GOLD'; turnoverToNext = 50000 - t; }
-        else { tier = 'BEGINNER'; nextTier = 'SILVER'; turnoverToNext = 10000 - t; }
-    }
+    const partnerStatus = getPartnerStatusInfo(Number(turnover), userRes[0]?.tier_override);
 
     // 6. Expiring Cashback
     const expiringSoonRes = await query<any>(`
@@ -95,9 +83,14 @@ export async function getArchitectStats(userId: string) {
         cashbackBalance,
         activeProjects,
         turnover,
-        tier,
-        nextTier,
-        turnoverToNext,
+        tier: partnerStatus.status,
+        tierLabel: partnerStatus.label,
+        commissionRate: partnerStatus.rate,
+        tierIsOverride: partnerStatus.isOverride,
+        nextTier: partnerStatus.nextStatus,
+        nextTierLabel: partnerStatus.nextLabel,
+        turnoverToNext: partnerStatus.turnoverToNext,
+        tierProgress: partnerStatus.progress,
         expiringSoon: expiringSoonRes[0] || null,
         earnedProjects
     };
@@ -277,20 +270,13 @@ export async function getAdminMetrics() {
         WHERE u.role = 'ARCHI'
     `);
 
-    const getTier = (a: any): string => {
-        if (a.tier_override) return a.tier_override;
-        const t = Number(a.turnover);
-        if (t >= 120000) return 'PLATINUM';
-        if (t >= 50000) return 'GOLD';
-        if (t >= 10000) return 'SILVER';
-        return 'BEGINNER';
-    };
+    const getTier = (a: any): string =>
+        getPartnerStatusInfo(Number(a.turnover), a.tier_override).status;
 
     const tierCounts = {
-        beginner: architectsTurnoverRes.filter((a: any) => getTier(a) === 'BEGINNER').length,
-        silver: architectsTurnoverRes.filter((a: any) => getTier(a) === 'SILVER').length,
-        gold: architectsTurnoverRes.filter((a: any) => getTier(a) === 'GOLD').length,
-        platinum: architectsTurnoverRes.filter((a: any) => getTier(a) === 'PLATINUM').length,
+        partner: architectsTurnoverRes.filter((a: any) => getTier(a) === 'PARTNER').length,
+        partnerPlus: architectsTurnoverRes.filter((a: any) => getTier(a) === 'PARTNER_PLUS').length,
+        partnerPremium: architectsTurnoverRes.filter((a: any) => getTier(a) === 'PARTNER_PREMIUM').length,
     };
 
     // 5. Operational Alerts

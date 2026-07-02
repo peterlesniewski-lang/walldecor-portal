@@ -200,15 +200,23 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
                                                     </select>
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest ml-1">Wartość Netto (PLN)</label>
+                                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest ml-1">
+                                                        {isStaff ? 'Wartość Netto (PLN)' : 'Szacunkowy budżet netto (opcjonalnie)'}
+                                                    </label>
                                                     <input
-                                                        required
+                                                        required={isStaff}
                                                         type="number"
-                                                        placeholder="0.00"
+                                                        min="0"
+                                                        placeholder={isStaff ? '0.00' : 'np. 5000 — możesz zostawić puste'}
                                                         className="w-full px-4 py-3 bg-black/5 border border-black/10 rounded-xl text-stone-900 focus:outline-none focus:border-brand-primary/30 transition-all font-bold text-sm"
                                                         value={item.amount_net}
                                                         onChange={e => updateItem(index, 'amount_net', e.target.value)}
                                                     />
+                                                    {!isStaff && (
+                                                        <p className="text-[9px] font-bold text-stone-400 ml-1 leading-snug">
+                                                            Kwota orientacyjna — finalną wartość projektu potwierdza opiekun WallDecor po wycenie i dopiero ona jest podstawą prowizji.
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <div className="md:col-span-2 space-y-2">
                                                     <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest ml-1">Opis (opcjonalnie)</label>

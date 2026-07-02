@@ -16,6 +16,7 @@ import ArchitectList from '@/components/ArchitectList';
 import AddArchitectButton from "@/components/AddArchitectButton";
 import { formatPLN } from "@/lib/utils";
 import { walletBalanceSql } from "@/lib/walletSql";
+import { getPartnerStatusInfo } from "@/lib/partnerProgram";
 
 export default async function AdminArchitectsPage({
     searchParams
@@ -65,15 +66,8 @@ export default async function AdminArchitectsPage({
 
     let architects = await query<any>(sql, params);
 
-    // Dynamic Tier Calculation
-    const getTier = (a: any) => {
-        if (a.tier_override) return a.tier_override;
-        const t = Number(a.turnover);
-        if (t >= 120000) return 'PLATINUM';
-        if (t >= 50000) return 'GOLD';
-        if (t >= 10000) return 'SILVER';
-        return 'BEGINNER';
-    };
+    // Dynamic Tier Calculation — nowy program partnerski (10/12/15%)
+    const getTier = (a: any) => getPartnerStatusInfo(Number(a.turnover), a.tier_override).status;
 
     // 2. Client-side filtering (Tier/Status)
     if (tier) {
@@ -147,10 +141,9 @@ export default async function AdminArchitectsPage({
                 </p>
                 {[
                     { label: 'Wszyscy', href: '/dashboard/admin/architects', active: !tier && !status },
-                    { label: 'Beginner', href: '/dashboard/admin/architects?tier=beginner', active: tier === 'beginner' },
-                    { label: 'Silver', href: '/dashboard/admin/architects?tier=silver', active: tier === 'silver' },
-                    { label: 'Gold', href: '/dashboard/admin/architects?tier=gold', active: tier === 'gold' },
-                    { label: 'Platinum', href: '/dashboard/admin/architects?tier=platinum', active: tier === 'platinum' },
+                    { label: 'Partner', href: '/dashboard/admin/architects?tier=partner', active: tier === 'partner' },
+                    { label: 'Partner Plus', href: '/dashboard/admin/architects?tier=partner_plus', active: tier === 'partner_plus' },
+                    { label: 'Partner Premium', href: '/dashboard/admin/architects?tier=partner_premium', active: tier === 'partner_premium' },
                     { label: 'Oczekują na Kartę', href: '/dashboard/admin/architects?status=PENDING_CASHBACK', active: status === 'PENDING_CASHBACK', highlight: true },
                 ].map((pill, i) => (
                     <Link

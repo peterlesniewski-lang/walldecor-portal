@@ -37,22 +37,12 @@ export default async function DashboardPage() {
 
     if (!stats_db) return null;
 
-    const tierThresholds: Record<string, { from: number; to: number }> = {
-        BEGINNER: { from: 0, to: 10000 },
-        SILVER: { from: 10000, to: 50000 },
-        GOLD: { from: 50000, to: 120000 },
-        PLATINUM: { from: 120000, to: 120000 },
-    };
     const tierColors: Record<string, string> = {
-        BEGINNER: 'text-stone-500',
-        SILVER: 'text-stone-500',
-        GOLD: 'text-brand-primary',
-        PLATINUM: 'text-indigo-600',
+        PARTNER: 'text-stone-500',
+        PARTNER_PLUS: 'text-brand-primary',
+        PARTNER_PREMIUM: 'text-indigo-600',
     };
-    const { from: tierFrom, to: tierTo } = tierThresholds[stats_db.tier] ?? { from: 0, to: 10000 };
-    const tierProgress = stats_db.tier === 'PLATINUM'
-        ? 1
-        : Math.min((Number(stats_db.turnover) - tierFrom) / Math.max(tierTo - tierFrom, 1), 1);
+    const tierProgress = Number(stats_db.tierProgress ?? 0);
     const activeProjectRatio = Math.min(Number(stats_db.activeProjects) / 12, 1);
 
     const nextSteps = [
@@ -91,13 +81,13 @@ export default async function DashboardPage() {
         .slice(0, 5);
 
     const commissionTiers = [
-        { id: 'SILVER', name: 'Silver', rate: '7%', threshold: 'od 10 000 PLN', tone: 'border-stone-200 bg-stone-50 text-stone-700' },
-        { id: 'GOLD', name: 'Gold', rate: '10%', threshold: 'od 50 000 PLN', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
-        { id: 'PLATINUM', name: 'Platinum', rate: '14%', threshold: 'od 120 000 PLN', tone: 'border-indigo-200 bg-indigo-50 text-indigo-800' },
+        { id: 'PARTNER', name: 'Partner', rate: '10%', threshold: 'od startu (0 PLN)', tone: 'border-stone-200 bg-stone-50 text-stone-700' },
+        { id: 'PARTNER_PLUS', name: 'Partner Plus', rate: '12%', threshold: 'od 30 000 PLN', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+        { id: 'PARTNER_PREMIUM', name: 'Partner Premium', rate: '15%', threshold: 'od 50 000 PLN', tone: 'border-indigo-200 bg-indigo-50 text-indigo-800' },
     ];
-    const tierProgressLabel = stats_db.tier === 'PLATINUM'
+    const tierProgressLabel = !stats_db.nextTier
         ? 'Masz najwyższy poziom prowizji.'
-        : `${formatPLN(stats_db.turnoverToNext)} PLN do poziomu ${stats_db.nextTier}`;
+        : `${formatPLN(stats_db.turnoverToNext)} PLN do poziomu ${stats_db.nextTierLabel}`;
 
     return (
         <div data-testid="architect-dashboard" className="grid grid-cols-1 gap-8 pb-20 xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -249,8 +239,12 @@ export default async function DashboardPage() {
                     <div className="mb-4 rounded-lg border border-brand-primary/20 bg-brand-primary/5 p-3">
                         <div className="flex items-start justify-between gap-3">
                             <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Twój poziom</p>
-                                <p className={`mt-1 text-xl font-black uppercase ${tierColors[stats_db.tier] ?? 'text-stone-700'}`}>{stats_db.tier}</p>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Twój status</p>
+                                <p className={`mt-1 text-xl font-black uppercase ${tierColors[stats_db.tier] ?? 'text-stone-700'}`}>{stats_db.tierLabel ?? stats_db.tier}</p>
+                                <p className="mt-1 text-xs font-bold text-stone-600">
+                                    Aktualna prowizja: {Math.round(Number(stats_db.commissionRate ?? 0.10) * 100)}%
+                                    · Obrót: {formatPLN(stats_db.turnover)} PLN
+                                </p>
                             </div>
                             <p className="max-w-[8.5rem] text-right text-xs font-bold leading-snug text-stone-700">{tierProgressLabel}</p>
                         </div>
