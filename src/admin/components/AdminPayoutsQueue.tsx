@@ -443,6 +443,7 @@ export default function AdminPayoutsQueue({ initialPayouts, isAdmin }: { initial
                                     <>
                                         {p.status !== 'IN_PAYMENT' && (
                                             <button
+                                                data-testid={`payout-queue-in-payment-${p.id}`}
                                                 onClick={(e) => { e.stopPropagation(); onIndividualAction(p.id, 'IN_PAYMENT'); }}
                                                 className="px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-all font-black text-[9px] uppercase tracking-widest flex items-center gap-1.5"
                                                 title="Przekaż do płatności"
@@ -452,6 +453,7 @@ export default function AdminPayoutsQueue({ initialPayouts, isAdmin }: { initial
                                             </button>
                                         )}
                                         <button
+                                            data-testid={`payout-queue-paid-${p.id}`}
                                             onClick={(e) => { e.stopPropagation(); onIndividualAction(p.id, 'PAID'); }}
                                             className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition-all font-black text-[9px] uppercase tracking-widest flex items-center gap-1.5"
                                             title="Oznacz jako zapłacona"

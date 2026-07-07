@@ -47,10 +47,11 @@ interface Props {
 
 // ─── Password input with show/hide + copy ─────────────────────────────────
 
-function PasswordInput({ value, onChange, placeholder }: {
+function PasswordInput({ value, onChange, placeholder, testId }: {
     value: string;
     onChange: (v: string) => void;
     placeholder?: string;
+    testId?: string;
 }) {
     const [show, setShow] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -64,6 +65,7 @@ function PasswordInput({ value, onChange, placeholder }: {
     return (
         <div className="relative flex items-center">
             <input
+                data-testid={testId}
                 type={show ? 'text' : 'password'}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
@@ -293,6 +295,7 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
                             {teamMembers.length} {teamMembers.length === 1 ? 'użytkownik' : 'użytkowników'} z dostępem administracyjnym
                         </p>
                         <button
+                            data-testid="settings-add-user-open"
                             onClick={() => setShowAddForm(!showAddForm)}
                             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-primary hover:bg-brand-secondary text-black text-[10px] font-black uppercase tracking-widest transition-all shadow-[0_4px_16px_rgba(212,175,55,0.2)]"
                         >
@@ -309,6 +312,7 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
                                 <div className="space-y-1.5">
                                     <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Imię i nazwisko</label>
                                     <input
+                                        data-testid="settings-new-user-name"
                                         type="text"
                                         value={newName}
                                         onChange={(e) => setNewName(e.target.value)}
@@ -319,6 +323,7 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
                                 <div className="space-y-1.5">
                                     <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Email</label>
                                     <input
+                                        data-testid="settings-new-user-email"
                                         type="email"
                                         value={newEmail}
                                         onChange={(e) => setNewEmail(e.target.value)}
@@ -330,7 +335,7 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
                                     <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Hasło</label>
                                     <div className="flex items-center gap-2">
                                         <div className="flex-1">
-                                            <PasswordInput value={newPassword} onChange={setNewPassword} />
+                                            <PasswordInput value={newPassword} onChange={setNewPassword} testId="settings-new-user-password" />
                                         </div>
                                         <button
                                             type="button"
@@ -347,6 +352,7 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
                                     <div className="flex gap-2">
                                         {(['STAFF', 'ADMIN'] as const).map((r) => (
                                             <button
+                                                data-testid={`settings-new-user-role-${r.toLowerCase()}`}
                                                 key={r}
                                                 type="button"
                                                 onClick={() => setNewRole(r)}
@@ -366,6 +372,7 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
 
                             <div className="flex items-center gap-3 pt-2">
                                 <button
+                                    data-testid="settings-new-user-submit"
                                     onClick={submitCreate}
                                     disabled={addSaving || !newName || !newEmail || newPassword.length < 8}
                                     className="px-6 py-2.5 bg-brand-primary hover:bg-brand-secondary text-black rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-50 transition-all"

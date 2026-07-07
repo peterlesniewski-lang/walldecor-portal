@@ -42,6 +42,21 @@ async function ensureColumn(connection, databaseName, column) {
     return true;
 }
 
+async function backfillHistoricalCommissionRates(connection) {
+    const [result] = await connection.execute(`
+        UPDATE commissions c
+        JOIN project_items i ON i.id = c.project_item_id
+        SET c.rate = ROUND(c.amount_net / i.amount_net, 4)
+        WHERE c.rate IS NULL
+          AND i.amount_net > 0
+          AND c.status IN ('EARNED', 'IN_PAYMENT', 'PAID')
+    `);
+
+    if (result.affectedRows > 0) {
+        console.log(`[schema] Backfilled historical commission rates: ${result.affectedRows}`);
+    }
+}
+
 async function main() {
     if (process.env.DB_TYPE !== 'mysql') {
         console.log('[schema] DB_TYPE is not mysql; skipping production schema checks.');
@@ -81,6 +96,8 @@ async function main() {
         if (result.affectedRows > 0) {
             console.log('[schema] Updated ARCHITECT_REGISTERED email template to the new welcome copy.');
         }
+
+        await backfillHistoricalCommissionRates(connection);
     } finally {
         await connection.end();
     }

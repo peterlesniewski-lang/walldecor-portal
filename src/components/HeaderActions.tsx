@@ -26,6 +26,7 @@ export default function HeaderActions({ userRole }: HeaderActionsProps) {
                 <>
                     {(userRole === 'ADMIN' || userRole === 'STAFF') && (
                         <button
+                            data-testid="open-register-architect"
                             onClick={() => setIsArchiModalOpen(true)}
                             className="bg-black/5 border border-black/5 text-stone-400 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/10 hover:text-stone-900 transition-all flex items-center gap-2"
                         >
@@ -33,6 +34,7 @@ export default function HeaderActions({ userRole }: HeaderActionsProps) {
                         </button>
                     )}
                     <button
+                        data-testid="open-admin-project-modal"
                         onClick={() => setIsProjectModalOpen(true)}
                         className="gold-gradient text-black px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:shadow-[0_10px_20px_rgba(212,175,55,0.2)] transition-all"
                     >
@@ -41,6 +43,7 @@ export default function HeaderActions({ userRole }: HeaderActionsProps) {
                 </>
             ) : (
                 <button
+                    data-testid="open-project-modal"
                     onClick={() => setIsProjectModalOpen(true)}
                     className="gold-gradient text-black px-10 py-4 rounded-[2rem] text-[10px] font-black uppercase tracking-widest hover:shadow-[0_20px_40px_rgba(212,175,55,0.2)] transition-all flex items-center gap-3"
                 >

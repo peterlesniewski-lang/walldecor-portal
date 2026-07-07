@@ -124,6 +124,7 @@ export default function SignIn() {
                             <div className="relative group">
                                 <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-600 group-focus-within:text-brand-primary transition-colors" size={18} />
                                 <input
+                                    data-testid="signin-email"
                                     type="email"
                                     required
                                     className="w-full pl-14 pr-6 py-4 rounded-2xl bg-background border border-black/5 text-stone-900 placeholder:text-stone-400 placeholder:font-normal focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-bold"
@@ -149,6 +150,7 @@ export default function SignIn() {
                             <div className="relative group">
                                 <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-600 group-focus-within:text-brand-primary transition-colors" size={18} />
                                 <input
+                                    data-testid="signin-password"
                                     type="password"
                                     required
                                     className="w-full pl-14 pr-6 py-4 rounded-2xl bg-background border border-black/5 text-stone-900 placeholder:text-stone-400 placeholder:font-normal focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-bold"
@@ -160,6 +162,7 @@ export default function SignIn() {
                         </div>
 
                         <button
+                            data-testid="signin-submit"
                             type="submit"
                             disabled={loading || googleLoading}
                             className="w-full gold-gradient text-black font-black py-5 rounded-[2rem] shadow-[0_20px_40px_rgba(212,175,55,0.2)] hover:shadow-[0_25px_50px_rgba(212,175,55,0.3)] transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-xs disabled:opacity-50"

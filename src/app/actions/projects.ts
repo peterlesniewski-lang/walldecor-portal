@@ -677,10 +677,10 @@ export async function updateProjectItem(itemId: string, amount_net: number, note
     await query("UPDATE project_items SET amount_net = ? WHERE id = ?", [amount_net, itemId]);
 
     // 2. Handle commissions/cashback based on status
-    if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
+    if ((status === 'PRZYJĘTY' || status === 'W_REALIZACJI') && item.type === 'PRODUCT') {
         // Zachowaj stawkę zapisaną na prowizji PENDING; dla starych rekordów bez stawki użyj bieżącej.
         const pendingRes = await query<any>(
-            "SELECT rate FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
+            "SELECT id, rate FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
             [itemId]
         );
         const rate = pendingRes.length > 0 && pendingRes[0].rate != null
@@ -688,10 +688,17 @@ export async function updateProjectItem(itemId: string, amount_net: number, note
             : await getArchitectCommissionRate(ownerId);
         const newCommAmount = amount_net * rate;
 
-        await query(
-            "UPDATE commissions SET amount_net = ?, rate = ?, note = ? WHERE project_item_id = ? AND status = 'PENDING'",
-            [newCommAmount, rate, note || 'Korekta kwoty', itemId]
-        );
+        if (pendingRes.length > 0) {
+            await query(
+                "UPDATE commissions SET amount_net = ?, rate = ?, note = ? WHERE project_item_id = ? AND status = 'PENDING'",
+                [newCommAmount, rate, note || 'Korekta kwoty', itemId]
+            );
+        } else if (newCommAmount > 0) {
+            await query(
+                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)",
+                [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, ownerId, newCommAmount, rate, note || 'Wycena pozycji po akceptacji']
+            );
+        }
     } else if (status === 'ZAKOŃCZONY' && item.type === 'PRODUCT') {
         // Korekta pozycji rozliczonego projektu: prowizja liczona płaską stawką historyczną
         // projektu (zapisaną przy rozliczeniu) — zmiana statusu architekta nie zmienia stawki wstecz.
