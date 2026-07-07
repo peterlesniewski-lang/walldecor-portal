@@ -156,6 +156,7 @@ export default function CommissionPayoutModal({ isOpen, onClose, amount, project
                                     }`}
                             >
                                 <input
+                                    data-testid="commission-payout-invoice"
                                     type="file"
                                     ref={fileInputRef}
                                     onChange={handleFileChange}
@@ -190,6 +191,7 @@ export default function CommissionPayoutModal({ isOpen, onClose, amount, project
                             )}
 
                             <button
+                                data-testid="commission-payout-submit"
                                 onClick={handleSubmit}
                                 disabled={loading || !file}
                                 className={`w-full py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 ${loading || !file

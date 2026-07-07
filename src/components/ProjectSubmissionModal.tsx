@@ -126,6 +126,7 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
                                     <div className="md:col-span-2 space-y-2">
                                         <label className="text-[10px] font-black text-stone-500 uppercase tracking-widest ml-1">Współpracownik (Architekt)</label>
                                         <select
+                                            data-testid="project-owner"
                                             required
                                             className="w-full px-6 py-4 bg-black/5 border border-black/10 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-semibold appearance-none"
                                             value={formData.ownerId}
@@ -142,6 +143,7 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-stone-500 uppercase tracking-widest ml-1">Nazwa Obiektu</label>
                                     <input
+                                        data-testid="project-name"
                                         required
                                         type="text"
                                         placeholder="np. Apartament Gdańsk"
@@ -154,6 +156,7 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-stone-500 uppercase tracking-widest ml-1">Etykieta Klienta</label>
                                     <input
+                                        data-testid="project-client"
                                         required
                                         type="text"
                                         placeholder="np. Nowak / P12"
@@ -204,6 +207,7 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
                                                         {isStaff ? 'Wartość Netto (PLN)' : 'Szacunkowy budżet netto (opcjonalnie)'}
                                                     </label>
                                                     <input
+                                                        data-testid={`project-item-amount-${index}`}
                                                         required={isStaff}
                                                         type="number"
                                                         min="0"
@@ -221,6 +225,7 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
                                                 <div className="md:col-span-2 space-y-2">
                                                     <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest ml-1">Opis (opcjonalnie)</label>
                                                     <input
+                                                        data-testid={`project-item-description-${index}`}
                                                         type="text"
                                                         placeholder="np. Wykończenie ścian w salonie"
                                                         className="w-full px-4 py-3 bg-black/5 border border-black/10 rounded-xl text-stone-900 focus:outline-none focus:border-brand-primary/30 transition-all font-bold text-sm"
@@ -242,6 +247,7 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
                             )}
 
                             <button
+                                data-testid="project-submit"
                                 disabled={loading}
                                 type="submit"
                                 className="w-full py-5 gold-gradient text-black rounded-[2rem] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:shadow-[0_20px_40px_rgba(212,175,55,0.2)] transition-all disabled:opacity-50"

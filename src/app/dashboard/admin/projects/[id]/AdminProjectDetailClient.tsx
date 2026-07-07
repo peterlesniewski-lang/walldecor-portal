@@ -302,6 +302,7 @@ function ItemRow({
                         <div className="flex flex-col items-end gap-2">
                             <div className="flex items-center gap-2">
                                 <input
+                                    data-testid={`item-amount-input-${item.id}`}
                                     type="number"
                                     value={amount}
                                     onChange={(e) => setAmount(e.target.value)}
@@ -310,6 +311,7 @@ function ItemRow({
                                     onKeyDown={(e) => { if (e.key === 'Enter') saveAmount(); if (e.key === 'Escape') { setEditingAmount(false); setAmount(String(item.amount_net)); } }}
                                 />
                                 <button
+                                    data-testid={`save-item-amount-${item.id}`}
                                     onClick={saveAmount}
                                     disabled={saving}
                                     className="px-3 py-1.5 bg-brand-primary hover:bg-brand-secondary text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
@@ -342,6 +344,7 @@ function ItemRow({
                         <>
                             {!isFinalized && (
                                 <button
+                                    data-testid={`edit-item-amount-${item.id}`}
                                     onClick={() => setEditingAmount(true)}
                                     className="p-2 text-stone-600 hover:text-stone-900 hover:bg-black/5 rounded-xl transition-all border border-transparent hover:border-black/5"
                                     title="Edytuj kwotę"
@@ -917,6 +920,7 @@ function PayoutStatusActions({ payoutId, currentStatus, isAdmin }: { payoutId: s
     return (
         <div className="grid grid-cols-1 gap-2">
             <button
+                data-testid="payout-mark-in-payment"
                 disabled={!!loading || currentStatus === 'IN_PAYMENT'}
                 onClick={() => updateStatus('IN_PAYMENT')}
                 className={`w-full py-3 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all border ${currentStatus === 'IN_PAYMENT'
@@ -928,6 +932,7 @@ function PayoutStatusActions({ payoutId, currentStatus, isAdmin }: { payoutId: s
                 Przekaż do płatności
             </button>
             <button
+                data-testid="payout-mark-paid"
                 disabled={!!loading}
                 onClick={() => updateStatus('PAID')}
                 className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-[0_4px_24px_rgba(16,185,129,0.2)] disabled:opacity-50"

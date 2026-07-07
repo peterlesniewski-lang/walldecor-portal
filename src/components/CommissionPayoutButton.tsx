@@ -16,6 +16,7 @@ export default function CommissionPayoutButton({ isEligible, amount, projectName
     return (
         <>
             <button
+                data-testid="open-commission-payout"
                 onClick={() => isModalOpen || setIsModalOpen(true)}
                 disabled={!isEligible}
                 className={`w-full py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 ${isEligible

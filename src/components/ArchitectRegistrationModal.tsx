@@ -112,6 +112,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Imię</label>
                                     <input
+                                        data-testid="register-first-name"
                                         required
                                         type="text"
                                         className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
@@ -122,6 +123,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Nazwisko</label>
                                     <input
+                                        data-testid="register-last-name"
                                         required
                                         type="text"
                                         className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
@@ -132,6 +134,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Email</label>
                                     <input
+                                        data-testid="register-email"
                                         required
                                         type="email"
                                         className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
@@ -142,6 +145,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Hasło</label>
                                     <input
+                                        data-testid="register-password"
                                         required
                                         type="password"
                                         placeholder="Min. 6 znaków"
@@ -158,6 +162,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Nazwa Pracowni</label>
                                     <input
+                                        data-testid="register-studio"
                                         type="text"
                                         placeholder="Opcjonalnie"
                                         className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
@@ -168,6 +173,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">NIP</label>
                                     <input
+                                        data-testid="register-nip"
                                         type="text"
                                         placeholder="Opcjonalnie (Freelancer)"
                                         className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
@@ -178,6 +184,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Adres</label>
                                     <textarea
+                                        data-testid="register-address"
                                         rows={1}
                                         className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
                                         value={formData.address}
@@ -187,6 +194,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Numer Konta</label>
                                     <input
+                                        data-testid="register-bank-account"
                                         type="text"
                                         placeholder="Opcjonalnie"
                                         className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
@@ -214,6 +222,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                 )}
 
                                 <button
+                                    data-testid="register-architect-submit"
                                     disabled={loading}
                                     type="submit"
                                     className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black shadow-xl shadow-slate-200 transition-all disabled:opacity-50"

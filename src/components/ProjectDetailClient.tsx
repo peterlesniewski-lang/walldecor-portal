@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { formatPLN } from "@/lib/utils";
 import ProjectFilesSection, { ProjectFile } from "@/components/ProjectFilesSection";
+import { getProjectCommissionTotal, getProjectItemCommissionSummary } from "@/lib/projectCommissions";
 
 interface ProjectDetailClientProps {
     project: any;
@@ -102,7 +103,7 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
     };
 
     const totalNet = project.items?.reduce((acc: number, item: any) => acc + (Number(item.amount_net) || 0), 0) || 0;
-    const totalCommission = project.items?.reduce((acc: number, item: any) => acc + ((Number(item.amount_net) || 0) * (item.commission_rate || 0.15)), 0) || 0;
+    const totalCommission = getProjectCommissionTotal(project.commissions || []);
 
     const timeline = buildTimeline(project);
 
@@ -154,6 +155,12 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                         {project.items && project.items.length > 0 ? (
                             project.items.map((item: any) => {
                                 const Icon = categoryIcons[item.category] || Package;
+                                const commission = getProjectItemCommissionSummary(item.id, project.commissions || []);
+                                const commissionLabel = commission.hasCommission
+                                    ? commission.rate !== null
+                                        ? `Prowizja ${(commission.rate * 100).toFixed(0)}%`
+                                        : 'Prowizja'
+                                    : 'Prowizja po rozliczeniu';
                                 return (
                                     <div key={item.id} className="stat-card bg-card p-6 group hover:bg-stone-50 transition-all">
                                         <div className="flex items-start gap-6">
@@ -172,10 +179,10 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                                                 <div className="mt-4 pt-4 border-t border-black/5 flex items-center justify-between">
                                                     <div className="flex items-center gap-2">
                                                         <div className="w-1.5 h-1.5 bg-brand-primary rounded-full"></div>
-                                                        <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Prowizja {(item.commission_rate * 100).toFixed(0)}%</span>
+                                                        <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest">{commissionLabel}</span>
                                                     </div>
                                                     <p className="text-sm font-black text-brand-primary">
-                                                        {formatPLN(Number(item.amount_net) * item.commission_rate)} PLN
+                                                        {formatPLN(commission.amount)} PLN
                                                     </p>
                                                 </div>
                                             </div>
