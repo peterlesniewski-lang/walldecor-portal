@@ -2,18 +2,43 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
+import { createRateLimiter } from '@/lib/rateLimit';
+
+// Per-process limiters (single PM2 instance); reset on restart.
+const ipLimiter = createRateLimiter({ max: 10, windowMs: 15 * 60 * 1000 });
+const emailLimiter = createRateLimiter({ max: 3, windowMs: 15 * 60 * 1000 });
+
+function getClientIp(req: NextRequest): string {
+    const forwarded = req.headers.get('x-forwarded-for');
+    if (forwarded) {
+        const first = forwarded.split(',')[0]?.trim();
+        if (first) return first;
+    }
+    return req.headers.get('x-real-ip')?.trim() || 'unknown';
+}
 
 export async function POST(req: NextRequest) {
     try {
+        if (!ipLimiter.check(getClientIp(req))) {
+            return NextResponse.json({ error: 'Zbyt wiele prób. Spróbuj ponownie później.' }, { status: 429 });
+        }
+
         const { email } = await req.json();
 
         if (!email || typeof email !== 'string') {
             return NextResponse.json({ error: 'Podaj adres email.' }, { status: 400 });
         }
 
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Over the per-email limit: silently pretend success (anti-enumeration), send nothing
+        if (!emailLimiter.check(normalizedEmail)) {
+            return NextResponse.json({ ok: true });
+        }
+
         const users = await query<any>(
-            "SELECT id, email, provider FROM users WHERE email = ?",
-            [email.toLowerCase().trim()]
+            "SELECT id, email, provider FROM users WHERE LOWER(email) = ?",
+            [normalizedEmail]
         );
 
         // Always return success to avoid email enumeration

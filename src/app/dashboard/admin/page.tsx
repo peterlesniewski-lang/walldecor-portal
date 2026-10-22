@@ -142,14 +142,14 @@ export default async function AdminDashboard() {
     const redemptions = await getPendingRedemptions();
 
     const monthlyTurnover = await query<MonthlyTurnoverRow>(`
-        SELECT substr(p.updated_at, 1, 7) as month,
+        SELECT substr(COALESCE(p.completed_at, p.updated_at, p.created_at), 1, 7) as month,
                COALESCE(SUM(i.amount_net), 0) as total
         FROM projects p
         JOIN project_items i ON p.id = i.project_id AND i.type = 'PRODUCT'
         WHERE p.status = 'ZAKOŃCZONY'
-        GROUP BY substr(p.updated_at, 1, 7)
+          AND COALESCE(p.completed_at, p.updated_at, p.created_at) >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+        GROUP BY substr(COALESCE(p.completed_at, p.updated_at, p.created_at), 1, 7)
         ORDER BY month ASC
-        LIMIT 12
     `);
 
     const pendingPayouts = payoutRequests.filter((r) => r.status === 'PENDING');
@@ -354,7 +354,7 @@ export default async function AdminDashboard() {
                 <div className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
                     <div className="flex items-center gap-2">
                         <Wallet size={16} className="text-sky-600" />
-                        <h2 className="font-black text-stone-950">Prognoza wypłat</h2>
+                        <h2 className="font-black text-stone-950">Prognoza wypłat prowizji</h2>
                     </div>
                     <div className="mt-4 space-y-4">
                         <div>

@@ -212,6 +212,7 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
     const [newRole, setNewRole] = useState<'STAFF' | 'ADMIN'>('STAFF');
     const [addSaving, setAddSaving] = useState(false);
     const [addFeedback, setAddFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+    const [roleFeedback, setRoleFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
     const generateForNew = () => {
         const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
@@ -236,11 +237,12 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
     };
 
     const changeRole = async (userId: string, role: 'STAFF' | 'ADMIN') => {
+        setRoleFeedback(null);
         try {
             await updateUserRole(userId, role);
             router.refresh();
         } catch (e: any) {
-            alert(e.message);
+            setRoleFeedback({ type: 'error', msg: e.message || 'Nie udało się zmienić roli.' });
         }
     };
 
@@ -300,6 +302,8 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
                             Dodaj użytkownika
                         </button>
                     </div>
+
+                    {roleFeedback && <Feedback type={roleFeedback.type} msg={roleFeedback.msg} />}
 
                     {/* Add user form */}
                     {showAddForm && (

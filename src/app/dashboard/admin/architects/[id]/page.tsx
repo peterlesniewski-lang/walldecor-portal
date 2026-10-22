@@ -37,14 +37,22 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
     if (userRes.length === 0) notFound();
     const architect = userRes[0];
 
-    // 2. Cumulative turnover (PRODUCT items, non-rejected projects)
+    // 2. Qualified turnover (PRODUCT items, completed projects only) + pipeline (accepted / in progress)
     const turnoverRes = await query<any>(`
         SELECT COALESCE(SUM(i.amount_net), 0) as total
         FROM project_items i
         JOIN projects p ON i.project_id = p.id
-        WHERE p.owner_id = ? AND i.type = 'PRODUCT' AND p.status != 'NIEZREALIZOWANY'
+        WHERE p.owner_id = ? AND i.type = 'PRODUCT' AND p.status = 'ZAKOŃCZONY'
     `, [id]);
     const turnover = Number(turnoverRes[0]?.total || 0);
+
+    const pipelineRes = await query<any>(`
+        SELECT COALESCE(SUM(i.amount_net), 0) as total
+        FROM project_items i
+        JOIN projects p ON i.project_id = p.id
+        WHERE p.owner_id = ? AND i.type = 'PRODUCT' AND p.status IN ('PRZYJĘTY', 'W_REALIZACJI')
+    `, [id]);
+    const pipelineTurnover = Number(pipelineRes[0]?.total || 0);
 
     // 3. Commissions
     const commissionsRes = await query<any>(`
@@ -173,9 +181,10 @@ export default async function ArchitectProfilePage({ params }: { params: Promise
             </div>
 
             {/* Financial KPIs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
                 {[
-                    { label: 'Obrót łącznie', value: `${formatPLN(turnover)} PLN`, icon: TrendingUp, color: 'text-brand-primary', bg: 'bg-brand-primary/10' },
+                    { label: 'Obrót kwalifikowany (ZAKOŃCZONE)', value: `${formatPLN(turnover)} PLN`, icon: TrendingUp, color: 'text-brand-primary', bg: 'bg-brand-primary/10' },
+                    { label: 'Pipeline (w toku)', value: `${formatPLN(pipelineTurnover)} PLN`, icon: TrendingUp, color: 'text-stone-600', bg: 'bg-stone-100' },
                     { label: 'Prowizje zarobione', value: `${formatPLN(commissions.earned)} PLN`, icon: Receipt, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                     { label: 'Prowizje w toku', value: `${formatPLN(commissions.pending)} PLN`, icon: CreditCard, color: 'text-amber-600', bg: 'bg-amber-50' },
                     { label: 'Portfel cashback', value: `${formatPLN(walletBalance)} PLN`, icon: Wallet, color: 'text-sky-600', bg: 'bg-sky-50' },

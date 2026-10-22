@@ -5,3 +5,5 @@ export function validatePasswordStrength(password: string): string | null {
     if (!/[0-9]/.test(password)) return "Hasło musi zawierać co najmniej jedną cyfrę.";
     return null;
 }
+
+export const PASSWORD_POLICY_HINT = 'Min. 8 znaków, co najmniej jedna litera i jedna cyfra.';

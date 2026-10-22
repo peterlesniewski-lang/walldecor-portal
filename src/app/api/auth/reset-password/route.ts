@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { withTransaction } from '@/lib/db';
+import { validatePasswordStrength } from '@/lib/passwordPolicy';
 
 export async function POST(req: NextRequest) {
     try {
@@ -10,8 +11,13 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Nieprawidłowy link resetujący.' }, { status: 400 });
         }
 
-        if (!password || typeof password !== 'string' || password.length < 8) {
-            return NextResponse.json({ error: 'Hasło musi mieć co najmniej 8 znaków.' }, { status: 400 });
+        if (!password || typeof password !== 'string') {
+            return NextResponse.json({ error: 'Hasło jest wymagane.' }, { status: 400 });
+        }
+
+        const passwordError = validatePasswordStrength(password);
+        if (passwordError) {
+            return NextResponse.json({ error: passwordError }, { status: 400 });
         }
 
         const hashedPassword = await bcrypt.hash(password, 12);

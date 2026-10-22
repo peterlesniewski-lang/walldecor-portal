@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import bcrypt from 'bcrypt';
 import { sendEmail } from "@/lib/email";
 import { logActivity } from "@/lib/services";
+import { validatePasswordStrength } from "@/lib/passwordPolicy";
 
 export async function updateArchitectAdminFields(
     architectId: string,
@@ -166,9 +167,8 @@ export async function resetArchitectPassword(architectId: string, newPassword: s
         throw new Error("Unauthorized");
     }
 
-    if (newPassword.length < 8) {
-        throw new Error("Hasło musi mieć co najmniej 8 znaków");
-    }
+    const passwordError = validatePasswordStrength(newPassword ?? '');
+    if (passwordError) throw new Error(passwordError);
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 

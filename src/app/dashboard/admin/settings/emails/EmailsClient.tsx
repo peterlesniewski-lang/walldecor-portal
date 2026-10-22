@@ -51,7 +51,8 @@ export default function EmailsClient({ initialTemplates }: { initialTemplates: E
 
     const handleTest = async (id: string) => {
         if (!testEmail) {
-            alert('Wprowadź adres email do testu');
+            setMsg({ type: 'error', text: 'Wprowadź adres email do testu.' });
+            setTimeout(() => setMsg(null), 5000);
             return;
         }
         try {

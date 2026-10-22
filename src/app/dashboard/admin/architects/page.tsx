@@ -47,7 +47,7 @@ export default async function AdminArchitectsPage({
                 SELECT SUM(i.amount_net)
                 FROM project_items i
                 JOIN projects p ON i.project_id = p.id
-                WHERE p.owner_id = u.id AND i.type = 'PRODUCT' AND p.status != 'NIEZREALIZOWANY'
+                WHERE p.owner_id = u.id AND i.type = 'PRODUCT' AND p.status = 'ZAKOŃCZONY'
             ), 0) as turnover,
             (${walletBalanceSql('u.id')}) as balance,
             (SELECT COUNT(*) FROM cashback_redemptions WHERE user_id = u.id AND status = 'PENDING') as pending_redemptions

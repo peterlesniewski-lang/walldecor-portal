@@ -33,15 +33,15 @@ export default async function DashboardLayout({
         : 'Projekty, prowizje i cashback bez zbędnego szumu.';
 
     return (
-        <div className="flex min-h-screen bg-background">
+        <div className="flex flex-col lg:flex-row min-h-screen bg-background">
             {/* Sidebar */}
             <Sidebar user={session.user} />
 
             {/* Main Content */}
-            <main className="flex-1 p-10 overflow-y-auto">
-                <header className="flex justify-between items-center mb-12">
+            <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-10 overflow-y-auto">
+                <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8 lg:mb-12">
                     <div>
-                        <h1 className="text-3xl font-black text-foreground tracking-tight">
+                        <h1 className="text-2xl lg:text-3xl font-black text-foreground tracking-tight">
                             {title}
                         </h1>
                         <p className="text-stone-500 mt-1 font-medium">{subtitle}</p>

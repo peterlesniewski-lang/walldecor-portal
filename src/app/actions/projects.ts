@@ -17,6 +17,7 @@ import { canManageFinancialOperations, canManageOperationalProjects, canRegister
 import { assertFullCommissionPayoutAmount } from "@/lib/payoutWorkflow";
 import { formatSqlDateTime } from "@/lib/dbDate";
 import { getCommissionRateForTurnover, CASHBACK_RATE } from "@/lib/partnerProgram";
+import { validatePasswordStrength } from "@/lib/passwordPolicy";
 
 // Obrót netto kwalifikowany architekta (PRODUCT w projektach ZAKOŃCZONYCH),
 // opcjonalnie z wyłączeniem wskazanego projektu — status awansuje "od kolejnego projektu".
@@ -60,6 +61,16 @@ function generateTempPassword(): string {
 }
 
 const VALID_PROJECT_STATUSES = ['ZGŁOSZONY', 'PRZYJĘTY', 'W_REALIZACJI', 'ZAKOŃCZONY', 'NIEZREALIZOWANY'];
+
+// Dozwolone przejścia statusów projektu. ZAKOŃCZONY jest stanem końcowym (rozliczenie prowizji i cashbacku
+// jest jednorazowe — korekty robi się na pozycjach), NIEZREALIZOWANY można tylko ponownie zgłosić.
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+    'ZGŁOSZONY': ['PRZYJĘTY', 'NIEZREALIZOWANY'],
+    'PRZYJĘTY': ['W_REALIZACJI', 'ZAKOŃCZONY', 'NIEZREALIZOWANY'],
+    'W_REALIZACJI': ['ZAKOŃCZONY', 'NIEZREALIZOWANY', 'PRZYJĘTY'],
+    'ZAKOŃCZONY': [],
+    'NIEZREALIZOWANY': ['ZGŁOSZONY'],
+};
 
 export async function createProject(data: {
     name: string,
@@ -146,6 +157,21 @@ export async function updateProjectStatus(projectId: string, status: string, com
         throw new Error("Nieprawidłowy status projektu.");
     }
 
+    // Aktualny status — walidacja przejścia oraz warunek wysyłki maila PROJECT_ACCEPTED (tylko przy faktycznym przejściu na PRZYJĘTY).
+    const currentStatusRes = await query<any>("SELECT status FROM projects WHERE id = ?", [projectId]);
+    if (currentStatusRes.length === 0) {
+        throw new Error("Projekt nie istnieje.");
+    }
+    const previousStatus: string = currentStatusRes[0].status;
+
+    if (previousStatus === status) {
+        return { success: true, unchanged: true };
+    }
+
+    if (!(ALLOWED_TRANSITIONS[previousStatus] ?? []).includes(status)) {
+        throw new Error(`Niedozwolona zmiana statusu: ${previousStatus} → ${status}.`);
+    }
+
     // ZAKOŃCZONY: finalize commissions using progressive bracket system, credit wallet cashback
     if (status === 'ZAKOŃCZONY') {
         const projectData = await query<any>(
@@ -210,8 +236,15 @@ export async function updateProjectStatus(projectId: string, status: string, com
                     [projectId]
                 );
 
-                if (existingTrans.length > 0) {
-                    console.log(`Project ${projectId} already processed for cashback. Skipping.`);
+                // Guard ponownej finalizacji: pomijamy naliczenia także gdy projekt ma już rozliczoną prowizję
+                // (np. import historyczny tworzy od razu PAID bez cashbacku). Status projektu i tak jest zaktualizowany.
+                const existingSettledComm = await queryFn<any>(
+                    "SELECT id FROM commissions WHERE project_id = ? AND status IN ('EARNED', 'IN_PAYMENT', 'PAID') LIMIT 1",
+                    [projectId]
+                );
+
+                if (existingTrans.length > 0 || existingSettledComm.length > 0) {
+                    console.log(`Project ${projectId} already processed for commissions/cashback. Skipping.`);
                     return;
                 }
 
@@ -260,44 +293,46 @@ export async function updateProjectStatus(projectId: string, status: string, com
 
     // PRZYJĘTY / W_REALIZACJI: create PENDING commission entries so admin KPI shows in-progress commissions
     if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
-        const existingComm = await query<any>(
-            "SELECT id FROM commissions WHERE project_id = ? LIMIT 1",
-            [projectId]
-        );
-        if (existingComm.length === 0) {
-            const projectData = await query<any>(`
-                SELECT p.owner_id, u.email, u.name, p.name as project_name
-                FROM projects p
-                JOIN users u ON p.owner_id = u.id
-                WHERE p.id = ?
-            `, [projectId]);
+        const projectData = await query<any>(`
+            SELECT p.owner_id, u.email, u.name, p.name as project_name
+            FROM projects p
+            JOIN users u ON p.owner_id = u.id
+            WHERE p.id = ?
+        `, [projectId]);
 
-            if (projectData.length > 0) {
-                const { owner_id, email, name, project_name } = projectData[0];
+        if (projectData.length > 0) {
+            const { owner_id, email, name, project_name } = projectData[0];
 
-                // Email notification for acceptance
-                if (status === 'PRZYJĘTY') {
-                    await sendEmail('PROJECT_ACCEPTED', email, {
-                        user_name: name,
-                        project_name: project_name
-                    }).catch(err => console.error("Email notification failed:", err));
-                }
+            // Email notification for acceptance — tylko przy przejściu na PRZYJĘTY (nie przy ponownym zapisie / cofnięciu z W_REALIZACJI)
+            const alreadyAccepted = previousStatus === 'PRZYJĘTY' || previousStatus === 'W_REALIZACJI' || previousStatus === 'ZAKOŃCZONY';
+            if (status === 'PRZYJĘTY' && !alreadyAccepted) {
+                await sendEmail('PROJECT_ACCEPTED', email, {
+                    user_name: name,
+                    project_name: project_name
+                }).catch(err => console.error("Email notification failed:", err));
+            }
 
-                const items = await query<any>(
-                    "SELECT id, amount_net FROM project_items WHERE project_id = ? AND type = 'PRODUCT'",
-                    [projectId]
+            const items = await query<any>(
+                "SELECT id, amount_net FROM project_items WHERE project_id = ? AND type = 'PRODUCT'",
+                [projectId]
+            );
+
+            // Stawka wg aktualnego statusu partnerskiego architekta (domyślnie Partner 10%)
+            const rate = await getArchitectCommissionRate(owner_id);
+            for (const item of items) {
+                // Per pozycja: pomijamy pozycje, które mają już jakąkolwiek prowizję (np. dodane później przez admina).
+                const existingItemComm = await query<any>(
+                    "SELECT id FROM commissions WHERE project_item_id = ? LIMIT 1",
+                    [item.id]
                 );
+                if (existingItemComm.length > 0) continue;
 
-                // Stawka wg aktualnego statusu partnerskiego architekta (domyślnie Partner 10%)
-                const rate = await getArchitectCommissionRate(owner_id);
-                for (const item of items) {
-                    const commAmount = Number(item.amount_net) * rate;
-                    if (commAmount > 0) {
-                        await query(
-                            "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate) VALUES (?, ?, ?, ?, ?, 'PENDING', ?)",
-                            [`c_${uuidv4().substring(0, 8)}`, projectId, item.id, owner_id, commAmount, rate]
-                        );
-                    }
+                const commAmount = Number(item.amount_net) * rate;
+                if (commAmount > 0) {
+                    await query(
+                        "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate) VALUES (?, ?, ?, ?, ?, 'PENDING', ?)",
+                        [`c_${uuidv4().substring(0, 8)}`, projectId, item.id, owner_id, commAmount, rate]
+                    );
                 }
             }
         }
@@ -344,13 +379,30 @@ export async function registerArchitect(data: {
         throw new Error("Unauthorized");
     }
 
+    const firstName = (data.first_name ?? '').trim();
+    const lastName = (data.last_name ?? '').trim();
+    if (!firstName) throw new Error("Imię jest wymagane.");
+    if (!lastName) throw new Error("Nazwisko jest wymagane.");
+
+    const email = (data.email ?? '').trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(data.email)) {
+    if (!emailRegex.test(email)) {
         throw new Error("Nieprawidłowy format adresu email.");
     }
 
+    const existingUser = await query<any>("SELECT id FROM users WHERE LOWER(email) = ?", [email]);
+    if (existingUser.length > 0) {
+        throw new Error("Użytkownik z tym adresem email już istnieje.");
+    }
+
+    // Hasło podane ręcznie przez admina musi spełniać politykę haseł (generowane hasło ją spełnia z założenia).
+    if (data.password) {
+        const passwordError = validatePasswordStrength(data.password);
+        if (passwordError) throw new Error(passwordError);
+    }
+
     const userId = uuidv4();
-    const fullName = `${data.first_name} ${data.last_name}`;
+    const fullName = `${firstName} ${lastName}`;
 
     // Hash password (provided or auto-generated)
     const generatedPassword = data.password ? undefined : generateTempPassword();
@@ -365,9 +417,9 @@ export async function registerArchitect(data: {
         [
             userId,
             fullName,
-            data.first_name,
-            data.last_name,
-            data.email,
+            firstName,
+            lastName,
+            email,
             hashedPassword,
             'ARCHI',
             data.studio_name || null,
@@ -385,10 +437,10 @@ export async function registerArchitect(data: {
         const portalUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
         const result = await sendEmail(
             'ARCHITECT_REGISTERED',
-            data.email,
+            email,
             buildArchitectRegisteredPlaceholders({
                 userName: fullName,
-                email: data.email,
+                email,
                 password: passwordToHash,
                 portalUrl,
             })
@@ -434,7 +486,25 @@ export async function updateArchitect(id: string, data: {
         throw new Error("Unauthorized");
     }
 
-    const fullName = `${data.first_name} ${data.last_name}`;
+    const firstName = (data.first_name ?? '').trim();
+    const lastName = (data.last_name ?? '').trim();
+    if (!firstName) throw new Error("Imię jest wymagane.");
+    if (!lastName) throw new Error("Nazwisko jest wymagane.");
+
+    const email = (data.email ?? '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error("Nieprawidłowy format adresu email.");
+    }
+
+    const duplicate = await query<any>(
+        "SELECT id FROM users WHERE LOWER(email) = ? AND id != ?",
+        [email, id]
+    );
+    if (duplicate.length > 0) {
+        throw new Error("Użytkownik z tym adresem email już istnieje.");
+    }
+
+    const fullName = `${firstName} ${lastName}`;
 
     await query(
         `UPDATE users SET 
@@ -443,9 +513,9 @@ export async function updateArchitect(id: string, data: {
         WHERE id = ?`,
         [
             fullName,
-            data.first_name,
-            data.last_name,
-            data.email,
+            firstName,
+            lastName,
+            email,
             data.studio_name || null,
             data.nip || null,
             data.address || null,
@@ -494,6 +564,10 @@ export async function requestCommissionPayout(formData: FormData) {
     );
     const earnedTotal = Number(earnedRes[0]?.total || 0);
 
+    if (earnedTotal < 100) {
+        throw new Error("Minimalna kwota wypłaty prowizji to 100 PLN");
+    }
+
     if (amount > earnedTotal) {
         throw new Error("Niewystarczająca ilość zarobionej prowizji.");
     }
@@ -517,21 +591,18 @@ export async function requestCommissionPayout(formData: FormData) {
 
     const invoiceUrl = `/api/invoices/${fileName}`;
 
-    // 3. FIFO: select only the commissions needed to cover the requested amount
+    // 3. Wniosek zawsze obejmuje pełną kwotę (assertFullCommissionPayoutAmount), więc blokujemy
+    // WSZYSTKIE rekordy EARNED architekta — również ujemne korekty — a nie "pętlę do pokrycia kwoty".
     const earnedComms = await query<any>(
         "SELECT id, amount_net FROM commissions WHERE architect_id = ? AND status = 'EARNED' ORDER BY created_at ASC",
         [session.user.id]
     );
 
-    const toLock: string[] = [];
-    let accumulated = 0;
-    for (const comm of earnedComms) {
-        if (accumulated >= amount) break;
-        toLock.push(comm.id);
-        accumulated += Number(comm.amount_net);
-    }
+    const toLock: string[] = earnedComms.map((comm: any) => comm.id);
+    const lockedTotal = earnedComms.reduce((sum: number, comm: any) => sum + Number(comm.amount_net), 0);
 
-    if (toLock.length === 0 || accumulated < amount) {
+    // Stan rekordów mógł się zmienić między sumą a listą — suma blokowanych wierszy musi równać się kwocie wniosku.
+    if (toLock.length === 0 || Math.round(lockedTotal * 100) !== Math.round(amount * 100)) {
         await unlink(filePath).catch(() => { });
         throw new Error("Niewystarczająca ilość zarobionej prowizji.");
     }
@@ -673,62 +744,117 @@ export async function updateProjectItem(itemId: string, amount_net: number, note
     const status = item.status;
     const ownerId = item.owner_id;
 
-    // 1. Update the item itself
-    await query("UPDATE project_items SET amount_net = ? WHERE id = ?", [amount_net, itemId]);
-
-    // 2. Handle commissions/cashback based on status
+    // Odczyty stawek (poza transakcją) — nie zmieniają się w trakcie korekty.
+    let pendingRate = 0;
+    let projectRate = 0;
     if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
         // Zachowaj stawkę zapisaną na prowizji PENDING; dla starych rekordów bez stawki użyj bieżącej.
         const pendingRes = await query<any>(
             "SELECT rate FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
             [itemId]
         );
-        const rate = pendingRes.length > 0 && pendingRes[0].rate != null
+        pendingRate = pendingRes.length > 0 && pendingRes[0].rate != null
             ? Number(pendingRes[0].rate)
             : await getArchitectCommissionRate(ownerId);
-        const newCommAmount = amount_net * rate;
-
-        await query(
-            "UPDATE commissions SET amount_net = ?, rate = ?, note = ? WHERE project_item_id = ? AND status = 'PENDING'",
-            [newCommAmount, rate, note || 'Korekta kwoty', itemId]
-        );
     } else if (status === 'ZAKOŃCZONY' && item.type === 'PRODUCT') {
         // Korekta pozycji rozliczonego projektu: prowizja liczona płaską stawką historyczną
         // projektu (zapisaną przy rozliczeniu) — zmiana statusu architekta nie zmienia stawki wstecz.
-        const projectRate = await getProjectCommissionRate(projectId, ownerId);
+        projectRate = await getProjectCommissionRate(projectId, ownerId);
+    }
 
-        const targetComm = amount_net * projectRate;
+    // Korekta cashbacku w dół, której nie da się pokryć (architekt już wydał środki) — logowana po transakcji.
+    let uncoveredCashback = 0;
 
-        // Sum of all existing EARNED commission records for this item (initial + any prior adjustments)
-        const existingCommRes = await query<any>(
-            "SELECT COALESCE(SUM(amount_net), 0) as total FROM commissions WHERE project_item_id = ? AND status = 'EARNED'",
-            [itemId]
+    // 1 + 2. Aktualizacja pozycji oraz prowizji/cashbacku — atomowo w jednej transakcji.
+    await withTransaction(async (queryFn) => {
+        await queryFn("UPDATE project_items SET amount_net = ? WHERE id = ?", [amount_net, itemId]);
+
+        if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
+            // Prowizja planowana (PENDING) dotyczy wyłącznie pozycji PRODUCT; INSTALLATION nie generuje prowizji.
+            if (item.type === 'PRODUCT') {
+                const newCommAmount = amount_net * pendingRate;
+                const pendingExisting = await queryFn<any>(
+                    "SELECT id FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
+                    [itemId]
+                );
+
+                if (pendingExisting.length === 0) {
+                    // Pozycja zgłoszona bez kwoty (0) — prowizja planowana powstaje dopiero przy wycenie.
+                    if (newCommAmount > 0) {
+                        await queryFn(
+                            "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)",
+                            [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, ownerId, newCommAmount, pendingRate, 'Wycena pozycji po akceptacji']
+                        );
+                    }
+                } else if (newCommAmount > 0) {
+                    await queryFn(
+                        "UPDATE commissions SET amount_net = ?, rate = ?, note = ? WHERE project_item_id = ? AND status = 'PENDING'",
+                        [newCommAmount, pendingRate, note || 'Korekta kwoty', itemId]
+                    );
+                } else {
+                    // Nowa kwota = 0 — usuwamy prowizję planowaną tej pozycji.
+                    await queryFn(
+                        "DELETE FROM commissions WHERE project_item_id = ? AND status = 'PENDING'",
+                        [itemId]
+                    );
+                }
+            }
+        } else if (status === 'ZAKOŃCZONY' && item.type === 'PRODUCT') {
+            const targetComm = amount_net * projectRate;
+
+            // Suma WSZYSTKICH istniejących (rozliczonych) rekordów prowizji pozycji: EARNED + IN_PAYMENT + PAID
+            // (rekord początkowy + dotychczasowe korekty). PENDING wykluczony. Bez IN_PAYMENT/PAID suma byłaby 0
+            // po wypłacie i korekta wstawiłaby drugą pełną prowizję (podwójna wypłata).
+            const existingCommRes = await queryFn<any>(
+                "SELECT COALESCE(SUM(amount_net), 0) as total FROM commissions WHERE project_item_id = ? AND status IN ('EARNED', 'IN_PAYMENT', 'PAID')",
+                [itemId]
+            );
+            const existingComm = Number(existingCommRes[0]?.total || 0);
+            const diffComm = targetComm - existingComm;
+
+            if (Math.abs(diffComm) > 0.001) {
+                await queryFn(
+                    "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'EARNED', ?, ?)",
+                    [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, ownerId, diffComm, projectRate, note || 'Korekta kwoty (przeliczenie pozycji)']
+                );
+            }
+
+            // Cashback: flat 2% delta for the edited item only
+            const oldCashback = oldAmount * CASHBACK_RATE;
+            const newCashback = amount_net * CASHBACK_RATE;
+            const diffCashback = newCashback - oldCashback;
+
+            if (diffCashback > 0.01) {
+                const expiresAt = new Date();
+                expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+
+                await queryFn(
+                    "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [`t_${uuidv4().substring(0, 8)}`, ownerId, 'EARN', diffCashback, itemId, note || 'Korekta: zwiększenie kwoty', formatSqlDateTime(expiresAt)]
+                );
+            } else if (diffCashback < -0.01) {
+                // SPEND musi wskazywać na ID transakcji EARN (nie pozycji projektu) — robi to FIFO spendCashback.
+                try {
+                    await spendCashback(ownerId, Math.abs(diffCashback), note || 'Korekta: pomniejszenie kwoty pozycji', itemId, queryFn);
+                } catch (err) {
+                    // Architekt już wydał cashback — nie przerywamy korekty, zgłaszamy niepokrytą różnicę.
+                    if (err instanceof Error && err.message.includes('Insufficient cashback balance')) {
+                        uncoveredCashback = Math.abs(diffCashback);
+                    } else {
+                        throw err;
+                    }
+                }
+            }
+        }
+    });
+
+    if (uncoveredCashback > 0) {
+        await logActivity(
+            session.user.id,
+            'CASHBACK_CORRECTION_UNCOVERED',
+            `Korekta pozycji ${itemId}: brak środków cashback na pokrycie pomniejszenia o ${uncoveredCashback} PLN (architekt wydał już cashback)`,
+            { projectId, itemId, amount: uncoveredCashback }
         );
-        const existingComm = Number(existingCommRes[0]?.total || 0);
-        const diffComm = targetComm - existingComm;
-
-        if (Math.abs(diffComm) > 0.001) {
-            await query(
-                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'EARNED', ?, ?)",
-                [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, ownerId, diffComm, projectRate, note || 'Korekta kwoty (przeliczenie pozycji)']
-            );
-        }
-
-        // Cashback: flat 2% delta for the edited item only
-        const oldCashback = oldAmount * CASHBACK_RATE;
-        const newCashback = amount_net * CASHBACK_RATE;
-        const diffCashback = newCashback - oldCashback;
-
-        if (Math.abs(diffCashback) > 0.01) {
-            const transType = diffCashback > 0 ? 'EARN' : 'SPEND';
-            const expiresAt = new Date();
-            expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-
-            await query(
-                "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [`t_${uuidv4().substring(0, 8)}`, ownerId, transType, Math.abs(diffCashback), itemId, note || (diffCashback > 0 ? 'Korekta: zwiększenie kwoty' : 'Korekta: zwrot/pomniejszenie kwoty'), diffCashback > 0 ? formatSqlDateTime(expiresAt) : null]
-            );
-        }
     }
 
     await logActivity(
@@ -757,49 +883,55 @@ export async function addProjectItem(projectId: string, data: {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
 
-    if (data.amount_net <= 0) throw new Error("Kwota musi być większa od 0");
+    if (!data.category || !data.category.trim()) throw new Error("Kategoria pozycji jest wymagana.");
+    if (typeof data.amount_net !== 'number' || !Number.isFinite(data.amount_net) || data.amount_net <= 0) {
+        throw new Error("Kwota musi być większa od 0");
+    }
+    if (data.type !== 'PRODUCT' && data.type !== 'INSTALLATION') throw new Error("Nieprawidłowy typ pozycji.");
+
+    const projRes = await query<any>("SELECT status, owner_id FROM projects WHERE id = ?", [projectId]);
+    if (projRes.length === 0) throw new Error("Projekt nie istnieje.");
+    const { status, owner_id } = projRes[0];
+
+    if (status === 'NIEZREALIZOWANY') {
+        throw new Error("Nie można dodawać pozycji do projektu niezrealizowanego.");
+    }
 
     const itemId = `i_${uuidv4().substring(0, 8)}`;
     await query(
         "INSERT INTO project_items (id, project_id, type, category, description, amount_net, order_number, invoice_number, is_paid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [itemId, projectId, data.type, data.category, data.description || null, data.amount_net, data.order_number || null, data.invoice_number || null, data.is_paid ? 1 : 0]
+        [itemId, projectId, data.type, data.category.trim(), data.description || null, data.amount_net, data.order_number || null, data.invoice_number || null, data.is_paid ? 1 : 0]
     );
 
-    // Get project status
-    const projRes = await query<any>("SELECT status, owner_id FROM projects WHERE id = ?", [projectId]);
-    if (projRes.length > 0) {
-        const { status, owner_id } = projRes[0];
+    if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
+        const rate = await getArchitectCommissionRate(owner_id);
+        const commAmount = data.amount_net * rate;
+        if (commAmount > 0) {
+            await query(
+                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)",
+                [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, owner_id, commAmount, rate, note || 'Nowa pozycja po akceptacji']
+            );
+        }
+    } else if (status === 'ZAKOŃCZONY' && data.type === 'PRODUCT') {
+        // Immediate EARNED commission (historyczna stawka projektu) and EARN cashback
+        const rate = await getProjectCommissionRate(projectId, owner_id);
+        const commAmount = data.amount_net * rate;
 
-        if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
-            const rate = await getArchitectCommissionRate(owner_id);
-            const commAmount = data.amount_net * rate;
-            if (commAmount > 0) {
-                await query(
-                    "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)",
-                    [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, owner_id, commAmount, rate, note || 'Nowa pozycja po akceptacji']
-                );
-            }
-        } else if (status === 'ZAKOŃCZONY' && data.type === 'PRODUCT') {
-            // Immediate EARNED commission (historyczna stawka projektu) and EARN cashback
-            const rate = await getProjectCommissionRate(projectId, owner_id);
-            const commAmount = data.amount_net * rate;
+        if (commAmount > 0) {
+            await query(
+                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'EARNED', ?, ?)",
+                [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, owner_id, commAmount, rate, note || 'Nowa pozycja po rozliczeniu']
+            );
+        }
 
-            if (commAmount > 0) {
-                await query(
-                    "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'EARNED', ?, ?)",
-                    [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, owner_id, commAmount, rate, note || 'Nowa pozycja po rozliczeniu']
-                );
-            }
-
-            const cashbackAmount = data.amount_net * CASHBACK_RATE;
-            if (cashbackAmount > 0) {
-                const expiresAt = new Date();
-                expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-                await query(
-                    "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, itemId, note || 'Cashback: nowa pozycja po rozliczeniu', formatSqlDateTime(expiresAt)]
-                );
-            }
+        const cashbackAmount = data.amount_net * CASHBACK_RATE;
+        if (cashbackAmount > 0) {
+            const expiresAt = new Date();
+            expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+            await query(
+                "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, itemId, note || 'Cashback: nowa pozycja po rozliczeniu', formatSqlDateTime(expiresAt)]
+            );
         }
     }
 
@@ -859,6 +991,14 @@ export async function assignProjectCaretaker(projectId: string, staffId: string 
     const session = await getServerSession(authOptions);
     if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
         throw new Error("Unauthorized");
+    }
+
+    const projectRes = await query<any>("SELECT id FROM projects WHERE id = ?", [projectId]);
+    if (projectRes.length === 0) throw new Error("Projekt nie istnieje.");
+
+    if (staffId !== null) {
+        const staffRes = await query<any>("SELECT id FROM users WHERE id = ? AND role IN ('ADMIN','STAFF')", [staffId]);
+        if (staffRes.length === 0) throw new Error("Opiekun musi być kontem STAFF lub ADMIN.");
     }
 
     await query("UPDATE projects SET staff_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [staffId, projectId]);

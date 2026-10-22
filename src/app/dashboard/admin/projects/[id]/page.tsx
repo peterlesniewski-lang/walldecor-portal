@@ -41,6 +41,46 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
     if (projRes.length === 0) notFound();
     const project = projRes[0];
 
+    // 1b. Architect (partner) data. Bank account is sent to the client only for ADMIN.
+    const architectRes = await query<any>(
+        "SELECT name, email, studio_name, nip, address, bank_account, is_vat_payer FROM users WHERE id = ?",
+        [project.owner_id]
+    );
+    const architectRow = architectRes[0] ?? null;
+    project.architect = architectRow
+        ? {
+            name: architectRow.name,
+            email: architectRow.email,
+            studio_name: architectRow.studio_name ?? null,
+            nip: architectRow.nip ?? null,
+            address: architectRow.address ?? null,
+            is_vat_payer: Boolean(architectRow.is_vat_payer),
+            bank_account: isAdmin ? (architectRow.bank_account ?? null) : null,
+        }
+        : null;
+
+    // 1c. Latest payout request linked to this project through its commissions
+    const payoutRes = await query<any>(`
+        SELECT pr.*
+        FROM payout_requests pr
+        JOIN commissions c ON pr.id = c.payout_id
+        WHERE c.project_id = ?
+        ORDER BY pr.created_at DESC
+        LIMIT 1
+    `, [id]);
+    const payoutRow = payoutRes[0] ?? null;
+    project.payout = payoutRow
+        ? {
+            id: payoutRow.id,
+            amount: Number(payoutRow.amount),
+            status: payoutRow.status,
+            invoice_url: payoutRow.invoice_url ?? null,
+            created_at: payoutRow.created_at instanceof Date
+                ? payoutRow.created_at.toISOString()
+                : String(payoutRow.created_at),
+        }
+        : null;
+
     // 2. Project items
     const items = await query<any>(
         "SELECT * FROM project_items WHERE project_id = ? ORDER BY type ASC",
@@ -150,6 +190,7 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
                 items={items}
                 commissions={commissionsRes}
                 isAdmin={isAdmin}
+                currentUserId={session.user.id}
                 canChangeStatus={canChangeStatus}
                 initialFiles={files}
             />

@@ -228,7 +228,7 @@ export default async function WalletPage() {
                                     </div>
                                     {t.expires_at && (
                                         <div className="text-[9px] text-stone-700 font-bold uppercase mt-1 italic">
-                                            Ważne do: {new Date(t.expires_at).toLocaleDateString()}
+                                            Ważne do: {new Date(t.expires_at).toLocaleDateString('pl-PL')}
                                         </div>
                                     )}
                                 </div>
@@ -256,7 +256,7 @@ export default async function WalletPage() {
                                     </div>
                                     <div>
                                         <p className="text-xs font-black text-stone-900 uppercase tracking-widest mb-1">Naliczenie</p>
-                                        <p className="text-[11px] text-stone-500 font-medium leading-relaxed">Prowizja naliczana jest automatycznie po opłaceniu zamówienia przez klienta.</p>
+                                        <p className="text-[11px] text-stone-500 font-medium leading-relaxed">Prowizja staje się dostępna, gdy WallDecor oznaczy projekt jako ZAKOŃCZONY.</p>
                                     </div>
                                 </div>
                                 <div className="flex gap-4">

@@ -30,18 +30,19 @@ interface Project {
     architect?: {
         name: string;
         email: string;
-        studio_name?: string;
-        nip?: string;
-        address?: string;
-        bank_account?: string;
-    };
+        studio_name?: string | null;
+        nip?: string | null;
+        address?: string | null;
+        bank_account?: string | null;
+        is_vat_payer?: boolean;
+    } | null;
     payout?: {
         id: string;
         amount: number;
         status: string;
-        invoice_url?: string;
+        invoice_url?: string | null;
         created_at: string;
-    };
+    } | null;
 }
 
 interface ProjectItem {
@@ -71,6 +72,7 @@ interface Props {
     items: ProjectItem[];
     commissions: Commission[];
     isAdmin: boolean;
+    currentUserId: string;
     canChangeStatus: boolean;
     initialFiles: ProjectFile[];
 }
@@ -99,6 +101,31 @@ const STATUS_COLORS: Record<string, string> = {
     ZAKOŃCZONY: 'bg-stone-200/30 text-stone-400 border-slate-600/30',
     NIEZREALIZOWANY: 'bg-red-50 text-red-600 border-red-800/30',
 };
+
+const PAYOUT_STATUS_LABELS: Record<string, string> = {
+    PENDING: 'Oczekuje',
+    IN_PAYMENT: 'W realizacji',
+    HOLD: 'Wstrzymana',
+    APPROVED: 'Zatwierdzona',
+    PAID: 'Zapłacona',
+    REJECTED: 'Odrzucona',
+};
+
+function payoutStatusClasses(status: string): string {
+    switch (status) {
+        case 'PAID':
+        case 'APPROVED':
+            return 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20';
+        case 'IN_PAYMENT':
+            return 'bg-blue-500/10 text-blue-600 border border-blue-500/20';
+        case 'HOLD':
+            return 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
+        case 'REJECTED':
+            return 'bg-red-50 text-red-600 border border-red-800/30';
+        default:
+            return 'bg-stone-200/30 text-stone-500 border border-black/10';
+    }
+}
 
 // ─── Inline feedback banner ──────────────────────────────────────────────────
 
@@ -646,7 +673,7 @@ function AddItemForm({ projectId }: { projectId: string }) {
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
-export default function AdminProjectDetailClient({ project, items, commissions, isAdmin, canChangeStatus, initialFiles }: Props) {
+export default function AdminProjectDetailClient({ project, items, commissions, isAdmin, currentUserId, canChangeStatus, initialFiles }: Props) {
     const isFinalized = project.status === 'ZAKOŃCZONY';
     const productItems = items.filter((i) => i.type === 'PRODUCT');
     const installationItems = items.filter((i) => i.type === 'INSTALLATION');
@@ -655,7 +682,7 @@ export default function AdminProjectDetailClient({ project, items, commissions, 
         <div className="space-y-8">
 
             {/* Partner Info and Payout Management */}
-            {isAdmin && project.architect && (
+            {project.architect && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Architect / Studio Info */}
                     <div className="lg:col-span-1 stat-card bg-card border border-black/5 space-y-6">
@@ -685,12 +712,22 @@ export default function AdminProjectDetailClient({ project, items, commissions, 
                                 <p className="text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1">Adres</p>
                                 <p className="text-xs font-medium text-stone-400 leading-relaxed">{project.architect.address || '—'}</p>
                             </div>
-                            <div>
-                                <p className="text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1">Konto Bankowe</p>
-                                <p className="text-[11px] font-mono text-brand-primary font-bold bg-brand-primary/5 p-2 rounded-lg border border-brand-primary/10 select-all">
-                                    {project.architect.bank_account || 'BRAK NUMERU KONTA'}
-                                </p>
-                            </div>
+                            {project.architect.is_vat_payer !== undefined && (
+                                <div>
+                                    <p className="text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1">VAT</p>
+                                    <p className="text-xs font-bold text-stone-400">
+                                        {project.architect.is_vat_payer ? 'Płatnik VAT' : 'Nie jest płatnikiem VAT'}
+                                    </p>
+                                </div>
+                            )}
+                            {isAdmin && (
+                                <div>
+                                    <p className="text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1">Konto Bankowe</p>
+                                    <p className="text-[11px] font-mono text-brand-primary font-bold bg-brand-primary/5 p-2 rounded-lg border border-brand-primary/10 select-all">
+                                        {project.architect.bank_account || 'BRAK NUMERU KONTA'}
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -705,11 +742,8 @@ export default function AdminProjectDetailClient({ project, items, commissions, 
                                     <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Rozliczenie Prowizji</h3>
                                 </div>
                                 {project.payout?.status && (
-                                    <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter ${project.payout.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
-                                        project.payout.status === 'IN_PAYMENT' ? 'bg-blue-500/10 text-blue-600 border border-blue-500/20' :
-                                            'bg-amber-500/10 text-amber-500 border border-amber-500/20'
-                                        }`}>
-                                        {project.payout.status}
+                                    <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter ${payoutStatusClasses(project.payout.status)}`}>
+                                        {PAYOUT_STATUS_LABELS[project.payout.status] ?? project.payout.status}
                                     </span>
                                 )}
                             </div>
@@ -873,7 +907,7 @@ export default function AdminProjectDetailClient({ project, items, commissions, 
 
             <ProjectFilesSection
                 projectId={project.id}
-                currentUserId={project.owner_id}
+                currentUserId={currentUserId}
                 initialFiles={initialFiles}
                 isAdmin={isAdmin}
             />
@@ -884,14 +918,16 @@ export default function AdminProjectDetailClient({ project, items, commissions, 
 function PayoutStatusActions({ payoutId, currentStatus, isAdmin }: { payoutId: string; currentStatus: string; isAdmin: boolean }) {
     const router = useRouter();
     const [loading, setLoading] = useState<string | null>(null);
+    const [error, setError] = useState('');
 
     const updateStatus = async (status: string) => {
         setLoading(status);
+        setError('');
         try {
             await updatePayoutStatus(payoutId, status);
             router.refresh();
-        } catch (error) {
-            console.error(error);
+        } catch (e: any) {
+            setError(e?.message || 'Nie udało się zmienić statusu wypłaty.');
         } finally {
             setLoading(null);
         }
@@ -906,6 +942,15 @@ function PayoutStatusActions({ payoutId, currentStatus, isAdmin }: { payoutId: s
         );
     }
 
+    if (currentStatus === 'REJECTED') {
+        return (
+            <div className="flex items-center gap-2 text-red-600 text-[10px] font-black uppercase tracking-widest bg-red-50 p-3 rounded-xl border border-red-800/30">
+                <XCircle size={16} className="shrink-0" />
+                Wniosek odrzucony — prowizja wróciła do dostępnych
+            </div>
+        );
+    }
+
     if (!isAdmin) {
         return (
             <div className="p-3 rounded-xl bg-black/5 border border-black/10 text-[10px] font-black uppercase tracking-widest text-stone-500">
@@ -916,6 +961,13 @@ function PayoutStatusActions({ payoutId, currentStatus, isAdmin }: { payoutId: s
 
     return (
         <div className="grid grid-cols-1 gap-2">
+            {currentStatus === 'HOLD' && (
+                <div className="flex items-center gap-2 text-amber-500 text-[10px] font-black uppercase tracking-widest bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                    <AlertTriangle size={14} className="shrink-0" />
+                    Wypłata wstrzymana — wyjaśnij dane lub fakturę
+                </div>
+            )}
+            {error && <FeedbackBanner msg={error} onDismiss={() => setError('')} />}
             <button
                 disabled={!!loading || currentStatus === 'IN_PAYMENT'}
                 onClick={() => updateStatus('IN_PAYMENT')}

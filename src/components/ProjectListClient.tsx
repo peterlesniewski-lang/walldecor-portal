@@ -67,7 +67,7 @@ export default function ProjectListClient({ initialProjects, userId, userRole }:
                             <h3 className="text-3xl font-black text-stone-900 leading-none">
                                 {formatPLN(initialProjects.reduce((acc, p) => acc + (Number(p.commission_amount) || 0), 0))} PLN
                             </h3>
-                            <span className="text-emerald-500 text-xs font-bold mb-1">↗ +5.2% vs m-c</span>
+                            <span className="text-stone-500 text-xs font-bold mb-1">ze wszystkich projektów</span>
                         </div>
                     </div>
                     <div className="stat-card bg-card py-6">
@@ -76,7 +76,6 @@ export default function ProjectListClient({ initialProjects, userId, userRole }:
                             <h3 className="text-3xl font-black text-stone-900 leading-none">
                                 {initialProjects.filter(p => p.status !== 'ZAKOŃCZONY' && p.status !== 'NIEZREALIZOWANY').length}
                             </h3>
-                            <span className="text-brand-primary text-xs font-bold mb-1">Status: W realizacji</span>
                         </div>
                     </div>
                 </div>

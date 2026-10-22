@@ -286,34 +286,37 @@ export async function getAdminMetrics() {
             (SELECT COUNT(*) FROM projects WHERE updated_at < DATE_SUB(NOW(), INTERVAL 14 DAY) AND status NOT IN ('ZAKOŃCZONY', 'NIEZREALIZOWANY')) as stale_projects
     `);
 
-    // 6. Payout Forecast — partners eligible or near-eligible with no pending payout request
+    // 6. Payout Forecast (prowizje) — partnerzy z saldem EARNED >= 100 PLN (próg wypłaty) lub 50-99 PLN (prawie gotowi),
+    // bez aktywnego wniosku o wypłatę. Cashback nie jest wypłacany gotówką, więc nie wchodzi do prognozy.
     const forecastRes = await query<any>(`
         SELECT
             u.name,
-            wt_summary.user_id,
-            wt_summary.wallet_balance
+            earned.architect_id as user_id,
+            earned.earned_total as wallet_balance
         FROM (
-            SELECT
-                u.id as user_id,
-                (${walletBalanceSql('u.id')}) as wallet_balance
-            FROM users u
-            WHERE u.role = 'ARCHI'
-        ) wt_summary
-        JOIN users u ON wt_summary.user_id = u.id
-        LEFT JOIN payout_requests pr
-            ON wt_summary.user_id = pr.architect_id AND pr.status = 'PENDING'
-        WHERE pr.id IS NULL
-          AND wt_summary.wallet_balance >= 150
+            SELECT architect_id, COALESCE(SUM(amount_net), 0) as earned_total
+            FROM commissions
+            WHERE status = 'EARNED'
+            GROUP BY architect_id
+        ) earned
+        JOIN users u ON earned.architect_id = u.id
+        WHERE u.role = 'ARCHI'
+          AND earned.earned_total >= 50
+          AND NOT EXISTS (
+              SELECT 1 FROM payout_requests pr
+              WHERE pr.architect_id = earned.architect_id
+                AND pr.status IN ('PENDING', 'IN_PAYMENT', 'HOLD')
+          )
     `);
 
+    const forecastEligible = forecastRes.filter((r: any) => Number(r.wallet_balance) >= 100);
+    const forecastNear = forecastRes.filter((r: any) => Number(r.wallet_balance) >= 50 && Number(r.wallet_balance) < 100);
     const payoutForecast = {
-        eligible: forecastRes.filter((r: any) => Number(r.wallet_balance) >= 300).map((r: any) => ({ name: r.name, balance: r.wallet_balance })),
-        nearEligible: forecastRes.filter((r: any) => Number(r.wallet_balance) >= 150 && Number(r.wallet_balance) < 300).map((r: any) => ({ name: r.name, balance: r.wallet_balance })),
-        eligibleCount: forecastRes.filter((r: any) => Number(r.wallet_balance) >= 300).length,
-        nearEligibleCount: forecastRes.filter((r: any) => Number(r.wallet_balance) >= 150 && Number(r.wallet_balance) < 300).length,
-        forecastTotal: forecastRes
-            .filter((r: any) => Number(r.wallet_balance) >= 300)
-            .reduce((acc: number, r: any) => acc + Number(r.wallet_balance), 0)
+        eligible: forecastEligible.map((r: any) => ({ name: r.name, balance: r.wallet_balance })),
+        nearEligible: forecastNear.map((r: any) => ({ name: r.name, balance: r.wallet_balance })),
+        eligibleCount: forecastEligible.length,
+        nearEligibleCount: forecastNear.length,
+        forecastTotal: forecastEligible.reduce((acc: number, r: any) => acc + Number(r.wallet_balance), 0)
     };
 
     // 7. Project pipeline stats

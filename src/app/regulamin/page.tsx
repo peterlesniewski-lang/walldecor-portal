@@ -72,12 +72,12 @@ export default function RegulaminPage() {
             <div className="border-b border-black/5 bg-white sticky top-0 z-10">
                 <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-lg gold-gradient flex items-center justify-center">
-                            <div className="w-3.5 h-3.5 bg-black rounded-sm transform rotate-45" />
+                        <div className="flex flex-col leading-none gap-1">
+                            <span className="font-black text-stone-900 tracking-tight">
+                                Wall<span className="gold-text">Decor</span>
+                            </span>
+                            <span className="text-xs font-bold text-stone-400">Portal Architekta</span>
                         </div>
-                        <span className="font-black text-stone-900 tracking-tight">
-                            ANTY<span className="gold-text">GRAVITY</span>
-                        </span>
                     </div>
                     <Link
                         href="/auth/signin"
@@ -102,7 +102,7 @@ export default function RegulaminPage() {
                         <span className="gold-text">Partnerskiego WallDecor</span>
                     </h1>
                     <p className="text-stone-400 text-sm">
-                        dla Architektów i Projektantów Wnętrz · Wersja 1.0 · obowiązuje od {EFFECTIVE_DATE}
+                        dla Architektów i Projektantów Wnętrz · Wersja 1.1 · obowiązuje od {EFFECTIVE_DATE}
                     </p>
                 </div>
 
@@ -203,7 +203,7 @@ export default function RegulaminPage() {
                         </Li>
                         <Li>
                             Cashback przeznaczony jest wyłącznie na zakupy produktów WallDecor
-                            i może być zrealizowany po złożeniu wniosku w Portalu.
+                            i może być zrealizowany po złożeniu wniosku w Portalu (realizacja w formie karty lub kodu rabatowego).
                         </Li>
                         <Li>
                             Cashback nie podlega wypłacie w gotówce i nie jest wymienialny
@@ -224,15 +224,15 @@ export default function RegulaminPage() {
                     <Ol>
                         <Li>
                             Minimalna kwota wniosku o wypłatę prowizji:{' '}
-                            <strong className="text-stone-900">300 PLN</strong>.
+                            <strong className="text-stone-900">100 PLN</strong>.
                         </Li>
                         <Li>
-                            Wniosek składany jest z poziomu Portalu (przycisk „Wypłata"
-                            w panelu Partnera).
+                            Wniosek składany jest z poziomu Portalu, w zakładce „Portfel",
+                            i obejmuje pełną aktualnie dostępną kwotę prowizji.
                         </Li>
                         <Li>
                             Do wniosku należy dołączyć fakturę VAT wystawioną na WallDecor
-                            na kwotę zarobionej prowizji.
+                            na kwotę zarobionej prowizji w formie pliku PDF załączonego do wniosku.
                         </Li>
                         <Li>
                             Organizator rozpatruje wniosek w terminie do{' '}
@@ -267,7 +267,7 @@ export default function RegulaminPage() {
                                 ))}
                             </div>
                             <div className="mt-1 text-stone-400 text-xs">
-                                lub: W REALIZACJI → NIEZREALIZOWANY (brak prowizji i cashbacku)
+                                Projekt może zostać oznaczony jako NIEZREALIZOWANY na każdym etapie przed zakończeniem (brak prowizji i cashbacku).
                             </div>
                         </Li>
                         <Li>
@@ -332,7 +332,7 @@ export default function RegulaminPage() {
                                 partner@walldecor.pl
                             </a>
                         </p>
-                        <p>Wersja 1.0 · {EFFECTIVE_DATE}</p>
+                        <p>Wersja 1.1 · {EFFECTIVE_DATE}</p>
                     </div>
                 </div>
             </main>

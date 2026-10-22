@@ -3,26 +3,21 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import bcrypt from 'bcrypt';
 import { query } from './db';
+import { createRateLimiter } from './rateLimit';
 
-// In-memory rate limiter: max 5 failed attempts per email per 5 minutes
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const MAX_ATTEMPTS = 5;
-const WINDOW_MS = 5 * 60 * 1000;
+// In-memory rate limiter: max 5 login attempts per email per 5 minutes (per process)
+const loginLimiter = createRateLimiter({ max: 5, windowMs: 5 * 60 * 1000 });
+
+function normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+}
 
 function checkRateLimit(email: string): boolean {
-    const now = Date.now();
-    const entry = loginAttempts.get(email);
-    if (!entry || now > entry.resetAt) {
-        loginAttempts.set(email, { count: 1, resetAt: now + WINDOW_MS });
-        return true;
-    }
-    if (entry.count >= MAX_ATTEMPTS) return false;
-    entry.count++;
-    return true;
+    return loginLimiter.check(normalizeEmail(email));
 }
 
 function resetRateLimit(email: string) {
-    loginAttempts.delete(email);
+    loginLimiter.reset(normalizeEmail(email));
 }
 
 const authProviders: NextAuthOptions['providers'] = [
@@ -49,8 +44,8 @@ const authProviders: NextAuthOptions['providers'] = [
             }
 
             const users = await query<any>(
-                'SELECT * FROM users WHERE email = ?',
-                [credentials.email]
+                'SELECT * FROM users WHERE LOWER(email) = ?',
+                [normalizeEmail(credentials.email)]
             );
 
             const user = users[0];

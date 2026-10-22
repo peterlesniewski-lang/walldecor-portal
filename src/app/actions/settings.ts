@@ -6,6 +6,7 @@ import { query } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
+import { validatePasswordStrength } from "@/lib/passwordPolicy";
 
 function requireAdmin(session: any) {
     if (!session || session.user.role !== 'ADMIN') {
@@ -24,7 +25,8 @@ export async function createUser(data: {
 
     if (!data.name.trim()) throw new Error("Imię jest wymagane.");
     if (!data.email.trim() || !data.email.includes('@')) throw new Error("Podaj poprawny adres email.");
-    if (data.password.length < 8) throw new Error("Hasło musi mieć co najmniej 8 znaków.");
+    const passwordError = validatePasswordStrength(data.password ?? '');
+    if (passwordError) throw new Error(passwordError);
     if (!['STAFF', 'ADMIN'].includes(data.role)) throw new Error("Nieprawidłowa rola.");
 
     const existing = await query<any>("SELECT id FROM users WHERE email = ?", [data.email.toLowerCase().trim()]);
@@ -47,7 +49,8 @@ export async function resetUserPassword(userId: string, newPassword: string) {
     const session = await getServerSession(authOptions);
     requireAdmin(session);
 
-    if (newPassword.length < 8) throw new Error("Hasło musi mieć co najmniej 8 znaków.");
+    const passwordError = validatePasswordStrength(newPassword ?? '');
+    if (passwordError) throw new Error(passwordError);
 
     const userRes = await query<any>("SELECT id FROM users WHERE id = ?", [userId]);
     if (userRes.length === 0) throw new Error("Użytkownik nie istnieje.");
