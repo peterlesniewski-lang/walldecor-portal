@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { CreditCard, Copy, Clock, CheckCircle2 } from 'lucide-react';
 import { formatPLN } from '@/lib/utils';
 
@@ -9,9 +9,16 @@ interface MyDiscountCardsProps {
 }
 
 export default function MyDiscountCards({ redemptions }: MyDiscountCardsProps) {
-    const handleCopy = (code: string) => {
-        navigator.clipboard.writeText(code);
-        alert("Kod skopiowany!");
+    const [copiedId, setCopiedId] = useState<string | null>(null);
+
+    const handleCopy = async (id: string, code: string) => {
+        try {
+            await navigator.clipboard.writeText(code);
+            setCopiedId(id);
+            setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 2000);
+        } catch {
+            // Schowek niedostępny — kod jest widoczny obok przycisku, można skopiować ręcznie
+        }
     };
 
     if (!redemptions || redemptions.length === 0) return null;
@@ -35,7 +42,7 @@ export default function MyDiscountCards({ redemptions }: MyDiscountCardsProps) {
                                     {r.status === 'PENDING' ? 'Wniosek w trakcie weryfikacji' : `Karta rabatowa: ${formatPLN(r.amount)} PLN`}
                                 </div>
                                 <div className="text-[9px] text-stone-500 font-bold uppercase tracking-widest mt-1">
-                                    Wniosek z dnia: {new Date(r.created_at).toLocaleDateString()}
+                                    Wniosek z dnia: {new Date(r.created_at).toLocaleDateString('pl-PL')}
                                 </div>
                             </div>
                         </div>
@@ -46,11 +53,15 @@ export default function MyDiscountCards({ redemptions }: MyDiscountCardsProps) {
                                     {r.code}
                                 </div>
                                 <button
-                                    onClick={() => handleCopy(r.code)}
-                                    className="p-3 bg-black/5 border border-black/10 rounded-xl text-stone-400 hover:text-stone-900 hover:bg-black/10 transition-all"
+                                    onClick={() => handleCopy(r.id, r.code)}
+                                    className="p-3 bg-black/5 border border-black/10 rounded-xl text-stone-400 hover:text-stone-900 hover:bg-black/10 transition-all flex items-center gap-2"
                                     title="Kopiuj kod"
                                 >
-                                    <Copy size={16} />
+                                    {copiedId === r.id ? (
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600" role="status">Skopiowano</span>
+                                    ) : (
+                                        <Copy size={16} />
+                                    )}
                                 </button>
                             </div>
                         ) : (

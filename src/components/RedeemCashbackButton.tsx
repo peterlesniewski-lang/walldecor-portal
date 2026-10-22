@@ -14,21 +14,23 @@ export default function RedeemCashbackButton({ balance }: RedeemCashbackButtonPr
     const [isLoading, setIsLoading] = useState(false);
     const [amount, setAmount] = useState<number>(100);
     const [isOpen, setIsOpen] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const router = useRouter();
 
     const handleRedeem = async () => {
         if (amount > balance) {
-            alert("Niewystarczające środki.");
+            setError('Niewystarczające środki.');
             return;
         }
 
+        setError(null);
         setIsLoading(true);
         try {
             await requestRedemption(amount);
             setIsOpen(false);
             router.refresh();
         } catch (error: any) {
-            alert(error.message);
+            setError(error?.message || 'Nie udało się złożyć wniosku.');
         } finally {
             setIsLoading(false);
         }
@@ -37,7 +39,7 @@ export default function RedeemCashbackButton({ balance }: RedeemCashbackButtonPr
     return (
         <div className="relative">
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={() => { setIsOpen(!isOpen); setError(null); }}
                 className="w-full py-4 bg-brand-primary text-black rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-white transition-all shadow-lg shadow-brand-primary/20 flex items-center justify-center gap-3"
             >
                 <CreditCard size={16} />
@@ -71,6 +73,12 @@ export default function RedeemCashbackButton({ balance }: RedeemCashbackButtonPr
                         >
                             Wypłać całość: {formatPLN(balance)} PLN
                         </button>
+
+                        {error && (
+                            <p role="alert" className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                                {error}
+                            </p>
+                        )}
                     </div>
 
                     <button

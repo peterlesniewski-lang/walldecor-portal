@@ -14,21 +14,23 @@ interface AdminRedemptionQueueProps {
 export default function AdminRedemptionQueue({ requests, isAdmin }: AdminRedemptionQueueProps) {
     const [processingId, setProcessingId] = useState<string | null>(null);
     const [codeInputs, setCodeInputs] = useState<Record<string, string>>({});
+    const [errors, setErrors] = useState<Record<string, string>>({});
     const router = useRouter();
 
     const handleIssue = async (id: string) => {
         const code = codeInputs[id];
         if (!code) {
-            alert("Podaj kod rabatowy.");
+            setErrors((prev) => ({ ...prev, [id]: 'Podaj kod rabatowy.' }));
             return;
         }
 
+        setErrors((prev) => { const { [id]: _removed, ...rest } = prev; return rest; });
         setProcessingId(id);
         try {
             await issueDiscountCode(id, code);
             router.refresh();
         } catch (error: any) {
-            alert(error.message);
+            setErrors((prev) => ({ ...prev, [id]: error?.message || 'Nie udało się wystawić kodu.' }));
         } finally {
             setProcessingId(null);
         }
@@ -58,13 +60,14 @@ export default function AdminRedemptionQueue({ requests, isAdmin }: AdminRedempt
                                     {req.architect_name}
                                 </div>
                                 <div className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mt-1">
-                                    Kwota: <span className="text-emerald-500">{formatPLN(req.amount)} PLN</span> • {new Date(req.created_at).toLocaleDateString()}
+                                    Kwota: <span className="text-emerald-500">{formatPLN(req.amount)} PLN</span> • {new Date(req.created_at).toLocaleDateString('pl-PL')}
                                 </div>
                             </div>
                         </div>
 
                         {isAdmin && (
-                            <div className="flex items-center gap-3">
+                            <div className="flex flex-col items-end gap-2">
+                              <div className="flex items-center gap-3">
                                 <input
                                     type="text"
                                     placeholder="Wpisz kod rabatowy..."
@@ -81,6 +84,10 @@ export default function AdminRedemptionQueue({ requests, isAdmin }: AdminRedempt
                                     {processingId === req.id ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                                     <span className="text-[10px] font-black uppercase tracking-widest px-1">Wyślij</span>
                                 </button>
+                              </div>
+                              {errors[req.id] && (
+                                <p role="alert" className="text-xs font-bold text-red-600">{errors[req.id]}</p>
+                              )}
                             </div>
                         )}
                     </div>

@@ -324,6 +324,28 @@ migrations/
 
 ---
 
+---
+
+### Audyt gotowości do wdrożenia (sesja 7, 2026-10-22)
+
+- Pełny przegląd kodu bez zmian w `src/`; raport w `AUDIT-2026-10-22.md` (9 blokerów P0, 9 punktów P1, lista P2)
+- Werdykt: nie wypuszczać do klientów przed naprawą P0 — głównie F-101/F-102/F-103 (podwójna prowizja przy korekcie i imporcie, cashback nieobniżany), F-104 (karta projektu liczy 15% dla wszystkich), F-105 (404 na „Wypłać środki"), F-106 (regulamin: obca marka, próg 300 vs 100 PLN), F-108 (brak wersji mobilnej)
+- Weryfikacja: testy 52/52, `next build` OK, ESLint baseline 244 błędów (`no-explicit-any`)
+- Zainstalowano `node_modules` z `--ignore-scripts` (better-sqlite3 nie buduje się lokalnie przez node-gyp) — wyłącznie do sprawdzenia builda
+
+### Naprawy po audycie (sesja 7 cd., 2026-10-22)
+
+- Wykonano wszystkie tickety z `PLAN-NAPRAWY-2026-10-22.md` (T1–T10) przez agentów Sonnet/Haiku; orkiestracja i weryfikacja: Fable
+- Finanse: korekty w ZAKOŃCZONYM sumują EARNED+IN_PAYMENT+PAID, SPEND cashbacku przez FIFO `spendCashback`, wszystko w `withTransaction`; wniosek o wypłatę blokuje wszystkie EARNED; guard ponownej finalizacji sprawdza też prowizje
+- Import CSV: „rozliczona = Tak” → projekt ZAKOŃCZONY + prowizja PAID (`c_<item>_import`), bez cashbacku, bez `updateProjectStatus`
+- PENDING per pozycja (także po wycenie pozycji z kwotą 0); obrót w panelu admina liczony tylko z ZAKOŃCZONY + KPI „Pipeline”; prognoza wypłat liczona z prowizji EARNED (progi 100/50 PLN); wykres miesięczny po `completed_at`
+- UI architekta: prowizje z tabeli `commissions` (bez martwego `commission_rate`), link do `/dashboard/wallet`, usunięta fałszywa statystyka; regulamin: marka WallDecor, próg 100 PLN, v1.1
+- Mobile: `MobileNav.tsx` (hamburger + drawer), sidebar `hidden lg:flex`, responsywny layout i header
+- Bezpieczeństwo: nagłówki w `next.config.ts`, `src/lib/rateLimit.ts` (login + forgot-password per IP/email), logowanie po `LOWER(email)`, jednolita polityka haseł (`validatePasswordStrength`), walidacja przejść statusów (`ALLOWED_TRANSITIONS`), walidacja opiekuna i pozycji
+- Porządki: usunięte 16 martwych plików (stary `/admin/*`, nieużywane komponenty i API), `/admin/*` → redirect, zero `alert()`/`confirm()` (test `noBrowserDialogs`), STAFF widzi wnioski cashback
+- Weryfikacja końcowa: 82/82 testów, `tsc` czysty w `src/`, `next build` OK
+- Otwarte: `deploy/nginx.conf` to wariant HTTPS — na serwerze najpierw certbot; odrzucone wnioski nie są widoczne na stronie projektu admina (`payout_id` zerowany przy REJECTED); korekta w dół po wypłacie może dać ujemną „prowizję dostępną”; brak testu w przeglądarce (mobile)
+
 ## Otwarte kwestie
 
 | # | Kwestia | Status |

@@ -26,14 +26,13 @@ export default function ArchitectList({ architects, isAdmin }: ArchitectListProp
     const router = useRouter();
     const [editId, setEditId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [confirmingId, setConfirmingId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const handleDelete = async (archi: ArchitectListItem) => {
         if (archi.has_business_history) return;
 
-        const confirmed = window.confirm(`Usunąć konto architekta ${archi.name}? Tej operacji nie można cofnąć.`);
-        if (!confirmed) return;
-
+        setConfirmingId(null);
         setError(null);
         setDeletingId(archi.id);
         try {
@@ -87,17 +86,35 @@ export default function ArchitectList({ architects, isAdmin }: ArchitectListProp
                                     >
                                         <Edit2 size={16} />
                                     </button>
-                                    <button
-                                        onClick={() => handleDelete(archi)}
-                                        disabled={Boolean(archi.has_business_history) || deletingId === archi.id}
-                                        title={archi.has_business_history
-                                            ? 'Nie można usunąć konta z historią projektów lub rozliczeń'
-                                            : 'Usuń konto architekta'
-                                        }
-                                        className="p-2.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100 disabled:cursor-not-allowed disabled:text-stone-300 disabled:hover:bg-transparent disabled:hover:border-transparent"
-                                    >
-                                        {deletingId === archi.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                                    </button>
+                                    {confirmingId === archi.id ? (
+                                        <div className="flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-1.5">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-red-700">Usunąć konto?</span>
+                                            <button
+                                                onClick={() => handleDelete(archi)}
+                                                className="rounded-lg bg-red-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:bg-red-700"
+                                            >
+                                                Tak, usuń
+                                            </button>
+                                            <button
+                                                onClick={() => setConfirmingId(null)}
+                                                className="rounded-lg bg-black/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-stone-700 transition-all hover:bg-black/10"
+                                            >
+                                                Anuluj
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => { setError(null); setConfirmingId(archi.id); }}
+                                            disabled={Boolean(archi.has_business_history) || deletingId === archi.id}
+                                            title={archi.has_business_history
+                                                ? 'Nie można usunąć konta z historią projektów lub rozliczeń'
+                                                : 'Usuń konto architekta'
+                                            }
+                                            className="p-2.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100 disabled:cursor-not-allowed disabled:text-stone-300 disabled:hover:bg-transparent disabled:hover:border-transparent"
+                                        >
+                                            {deletingId === archi.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                        </button>
+                                    )}
                                 </>
                             )}
                             <Link

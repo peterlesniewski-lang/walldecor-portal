@@ -62,6 +62,7 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
     const [importing, setImporting] = useState(false);
     const [results, setResults] = useState<{ successCount: number; skippedCount: number; errorCount: number; newAccountsCreated: number; results: ImportRowResult[] } | null>(null);
     const [importDate, setImportDate] = useState('');
+    const [fileError, setFileError] = useState<string | null>(null);
     const todayStr = new Date().toISOString().split('T')[0];
 
     // Fetch architect names on open
@@ -83,6 +84,7 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
         setResults(null);
         setDragging(false);
         setImportDate('');
+        setFileError(null);
     };
 
     const handleClose = () => {
@@ -92,8 +94,9 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
     };
 
     const processFile = (file: File) => {
+        setFileError(null);
         if (!file.name.endsWith('.csv') && file.type !== 'text/csv') {
-            alert('Wybierz plik CSV.');
+            setFileError('Wybierz plik CSV.');
             return;
         }
         setFileName(file.name);
@@ -101,7 +104,7 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
         reader.onload = (e) => {
             const text = e.target?.result as string;
             const rawRows = parseCSV(text);
-            if (rawRows.length === 0) { alert('Plik CSV jest pusty.'); return; }
+            if (rawRows.length === 0) { setFileError('Plik CSV jest pusty.'); return; }
 
             // Auto-detect header: if column H (index 7, Netto) of first row isn't a number → skip
             const firstRowAmount = parseAmount(rawRows[0]?.[7] || '');
@@ -138,7 +141,7 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
                 // Filter completely empty rows
                 .filter(r => r.architectName || r.clientLabel || r.orderNumber);
 
-            if (rows.length === 0) { alert('Brak danych do zaimportowania.'); return; }
+            if (rows.length === 0) { setFileError('Brak danych do zaimportowania.'); return; }
             setParsedRows(rows);
             setStep('preview');
         };
@@ -166,13 +169,14 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
             }));
 
         if (validRows.length === 0) return;
+        setFileError(null);
         setImporting(true);
         try {
             const result = await importProjectsFromCSV(validRows, importDate || null);
             setResults(result);
             setStep('results');
         } catch (err: any) {
-            alert(err.message || 'Błąd podczas importu.');
+            setFileError(err.message || 'Błąd podczas importu.');
         } finally {
             setImporting(false);
         }
@@ -181,6 +185,7 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
     const validCount = parsedRows.filter(r => r.isValid).length;
     const autoRegCount = parsedRows.filter(r => r.willAutoRegister && r.isValid).length;
     const invalidCount = parsedRows.length - validCount;
+    const settledCount = parsedRows.filter(r => r.isValid && r.prowizjaRozliczona).length;
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -230,7 +235,7 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
                                         ['H', 'Netto PLN ✓'],
                                         ['I', 'Zapłacone (Tak/Nie)'],
                                         ['J', 'Prowizja netto (pomijane)'],
-                                        ['K', 'Prowizja rozliczona (Tak/Nie)'],
+                                        ['K', 'Prowizja rozliczona (Tak = historia: projekt ZAKOŃCZONY, prowizja PAID, bez cashbacku)'],
                                         ['L', 'Nr dokumentu (arch.)'],
                                         ['M', 'Nazwa studia (opcjonalne)'],
                                         ['N', 'NIP (opcjonalne)'],
@@ -290,6 +295,13 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
                                 </p>
                             </div>
 
+                            {fileError && (
+                                <div role="alert" className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-2xl px-5 py-3 text-xs font-bold text-red-700">
+                                    <XCircle size={14} className="shrink-0 mt-0.5" />
+                                    <span>{fileError}</span>
+                                </div>
+                            )}
+
                             {architectsLoading && (
                                 <div className="flex items-center gap-2 text-stone-400 text-xs font-bold">
                                     <Loader2 size={13} className="animate-spin" />
@@ -321,6 +333,19 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
                                     </div>
                                 )}
                             </div>
+
+                            {fileError && (
+                                <div role="alert" className="mx-8 mt-4 flex items-start gap-2 bg-red-50 border border-red-100 rounded-2xl px-5 py-3 text-xs font-bold text-red-700">
+                                    <XCircle size={14} className="shrink-0 mt-0.5" />
+                                    <span>{fileError}</span>
+                                </div>
+                            )}
+
+                            {settledCount > 0 && (
+                                <p className="mx-8 mt-4 text-[10px] font-bold text-stone-500 bg-amber-50 border border-amber-100 rounded-2xl px-5 py-3">
+                                    „Rozliczone = Tak” ({settledCount} {settledCount === 1 ? 'wiersz' : 'wierszy'}): projekt trafi od razu do statusu ZAKOŃCZONY, a prowizja zostanie zapisana jako PAID (wypłacona poza portalem, nie trafi do wypłat). Cashback 2% NIE zostanie naliczony. Stawka prowizji wynika z obrotu architekta przed danym projektem.
+                                </p>
+                            )}
 
                             {/* Table */}
                             <div className="overflow-x-auto">

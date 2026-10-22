@@ -47,18 +47,18 @@ export default async function DashboardPage() {
 
     const nextSteps = [
         {
-            href: '/dashboard/wallet',
+            href: '#profil',
             icon: CheckCircle2,
             label: 'Uzupełnij profil',
-            text: 'Dane firmy i preferencje płatności.',
-            done: Boolean(user?.bank_account),
+            text: 'Dane firmy, NIP i numer konta do przelewu.',
+            done: Boolean(user?.bank_account && user?.nip),
         },
         {
             href: '/dashboard/wallet',
             icon: FileText,
             label: 'Dodaj fakturę PDF',
-            text: 'Wgraj fakturę przy wniosku wypłaty.',
-            done: Number(stats_db.earnedCommission) < 100,
+            text: 'Przy wniosku o wypłatę (od 100 PLN) załącz fakturę PDF.',
+            done: false,
         },
         {
             href: '/dashboard/projects',
@@ -167,7 +167,7 @@ export default async function DashboardPage() {
                             <p className="mt-2 text-2xl font-black text-amber-700">{formatPLN(stats_db.pendingCommission)} PLN</p>
                         </div>
                         <div className="p-5">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Obrót 12m</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Obrót łącznie</p>
                             <p className="mt-2 text-2xl font-black text-stone-900">{formatPLN(stats_db.turnover)} PLN</p>
                         </div>
                     </div>
@@ -226,7 +226,7 @@ export default async function DashboardPage() {
                         <h3 className="text-lg font-black text-stone-900">Jak to działa?</h3>
                     </div>
                     <p className="text-sm font-medium leading-relaxed text-stone-700">
-                        Projekty przechodzą przez kolejne etapy. Prowizję otrzymujesz po zakończeniu projektu i zaksięgowaniu płatności przez klienta.
+                        Projekty przechodzą przez kolejne etapy. Prowizję i cashback 2% naliczamy, gdy WallDecor oznaczy projekt jako ZAKOŃCZONY. Wypłata prowizji wymaga faktury PDF.
                     </p>
                     <p className="mt-4 text-sm font-bold text-stone-800">Minimalna kwota wypłaty prowizji to 100 PLN.</p>
                 </section>
@@ -277,7 +277,9 @@ export default async function DashboardPage() {
 
                 <div className="space-y-3">
                     <AddProjectButton userRole={session.user.role} />
-                    <ProfileSettingsWrapper user={user} />
+                    <div id="profil" className="scroll-mt-24">
+                        <ProfileSettingsWrapper user={user} />
+                    </div>
                 </div>
             </aside>
         </div>

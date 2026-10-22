@@ -13,6 +13,7 @@ import {
     CircleHelp
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
+import MobileNav from './MobileNav';
 
 interface SidebarUser {
     name?: string | null;
@@ -37,7 +38,9 @@ export default function Sidebar({ user }: { user: SidebarUser }) {
         ];
 
     return (
-        <aside className="w-72 bg-[#231f20] text-white border-r border-white/10 flex flex-col p-8 sticky top-0 h-screen z-50">
+        <>
+        <MobileNav user={user} links={links} />
+        <aside className="hidden lg:flex w-72 shrink-0 bg-[#231f20] text-white border-r border-white/10 flex-col p-8 sticky top-0 h-screen z-50">
             <div className="mb-12 px-2">
                 <div className="flex flex-col items-center gap-3">
                     <Image src="/walldecor-logo.jpg" alt="WallDecor" width={144} height={145} priority className="h-auto w-36 object-contain" />
@@ -92,5 +95,6 @@ export default function Sidebar({ user }: { user: SidebarUser }) {
                 </button>
             </div>
         </aside>
+        </>
     );
 }

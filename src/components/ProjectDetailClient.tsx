@@ -102,7 +102,20 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
     };
 
     const totalNet = project.items?.reduce((acc: number, item: any) => acc + (Number(item.amount_net) || 0), 0) || 0;
-    const totalCommission = project.items?.reduce((acc: number, item: any) => acc + ((Number(item.amount_net) || 0) * (item.commission_rate || 0.15)), 0) || 0;
+    const commissions: any[] = project.commissions ?? [];
+    const sumByStatus = (statuses: string[]) => commissions
+        .filter((c: any) => statuses.includes(c.status))
+        .reduce((acc: number, c: any) => acc + (Number(c.amount_net) || 0), 0);
+    const totalCommission = commissions.reduce((acc: number, c: any) => acc + (Number(c.amount_net) || 0), 0);
+    const pendingCommission = sumByStatus(['PENDING']);
+    const earnedCommission = sumByStatus(['EARNED']);
+    const settledCommission = sumByStatus(['IN_PAYMENT', 'PAID']);
+    const commissionStatusLabels: Record<string, string> = {
+        PENDING: 'PLANOWANA',
+        EARNED: 'ZAROBIONA',
+        IN_PAYMENT: 'W WYPŁACIE',
+        PAID: 'WYPŁACONA'
+    };
 
     const timeline = buildTimeline(project);
 
@@ -154,6 +167,9 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                         {project.items && project.items.length > 0 ? (
                             project.items.map((item: any) => {
                                 const Icon = categoryIcons[item.category] || Package;
+                                const isInstallation = item.type === 'INSTALLATION';
+                                const comm = commissions.find((c: any) => c.project_item_id === item.id);
+                                const commRate = comm?.rate != null && comm.rate !== '' ? Math.round(Number(comm.rate) * 100) : null;
                                 return (
                                     <div key={item.id} className="stat-card bg-card p-6 group hover:bg-stone-50 transition-all">
                                         <div className="flex items-start gap-6">
@@ -162,7 +178,12 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                                             </div>
                                             <div className="flex-1">
                                                 <div className="flex justify-between items-start mb-1">
-                                                    <h4 className="text-lg font-black text-stone-900">{item.category}</h4>
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <h4 className="text-lg font-black text-stone-900">{item.category}</h4>
+                                                        {isInstallation && (
+                                                            <span className="px-2 py-0.5 rounded-md bg-stone-100 border border-black/5 text-[9px] font-black text-stone-500 uppercase tracking-widest">Montaż — bez prowizji</span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-right">
                                                         <p className="text-sm font-black text-stone-900">{formatPLN(item.amount_net)} PLN</p>
                                                         <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Netto</p>
@@ -172,11 +193,21 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                                                 <div className="mt-4 pt-4 border-t border-black/5 flex items-center justify-between">
                                                     <div className="flex items-center gap-2">
                                                         <div className="w-1.5 h-1.5 bg-brand-primary rounded-full"></div>
-                                                        <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Prowizja {(item.commission_rate * 100).toFixed(0)}%</span>
+                                                        <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest">
+                                                            {comm
+                                                                ? `Prowizja${commRate !== null ? ` ${commRate}%` : ''} · ${commissionStatusLabels[comm.status] ?? comm.status}`
+                                                                : isInstallation
+                                                                    ? 'bez prowizji'
+                                                                    : project.status === 'ZGŁOSZONY'
+                                                                        ? 'Prowizja po akceptacji'
+                                                                        : 'bez prowizji'}
+                                                        </span>
                                                     </div>
-                                                    <p className="text-sm font-black text-brand-primary">
-                                                        {formatPLN(Number(item.amount_net) * item.commission_rate)} PLN
-                                                    </p>
+                                                    {comm && (
+                                                        <p className="text-sm font-black text-brand-primary">
+                                                            {formatPLN(comm.amount_net)} PLN
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -198,7 +229,6 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                         const isPaid = payoutStatus === 'PAID';
                         const isInPayment = payoutStatus === 'IN_PAYMENT';
                         const isPending = payoutStatus === 'PENDING';
-                        const hasNoRequest = !payoutStatus;
 
                         let subtitle = 'Netto do wypłaty';
                         if (project.status === 'NIEZREALIZOWANY') subtitle = 'Projekt niezrealizowany';
@@ -223,11 +253,29 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                                         <span className="text-[10px] font-black uppercase tracking-widest">Obrót Netto</span>
                                         <span className="font-black">{formatPLN(totalNet)} PLN</span>
                                     </div>
+                                    {pendingCommission > 0 && (
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-black uppercase tracking-widest">Planowana</span>
+                                            <span className="font-black">{formatPLN(pendingCommission)} PLN</span>
+                                        </div>
+                                    )}
+                                    {earnedCommission > 0 && (
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-black uppercase tracking-widest">Zarobiona</span>
+                                            <span className="font-black">{formatPLN(earnedCommission)} PLN</span>
+                                        </div>
+                                    )}
+                                    {settledCommission > 0 && (
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-black uppercase tracking-widest">Wypłacona / w wypłacie</span>
+                                            <span className="font-black">{formatPLN(settledCommission)} PLN</span>
+                                        </div>
+                                    )}
                                 </div>
 
-                                {hasNoRequest && project.status === 'ZAKOŃCZONY' && (
+                                {earnedCommission > 0 && (
                                     <Link
-                                        href="/dashboard/payouts"
+                                        href="/dashboard/wallet"
                                         className="w-full mt-8 py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black/90 transition-all flex items-center justify-center gap-2"
                                     >
                                         <CreditCard size={14} className="text-brand-primary" />

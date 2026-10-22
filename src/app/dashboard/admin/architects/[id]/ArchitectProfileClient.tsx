@@ -19,6 +19,7 @@ export default function ArchitectProfileClient({ architectId, currentTierOverrid
     const [saved, setSaved] = useState(false);
     const [resetPassword, setResetPassword] = useState('');
     const [resetSuccess, setResetSuccess] = useState(false);
+    const [resetError, setResetError] = useState<string | null>(null);
 
     const handleSave = async () => {
         setLoading(true);
@@ -39,13 +40,14 @@ export default function ArchitectProfileClient({ architectId, currentTierOverrid
     const handleResetPassword = async () => {
         if (!resetPassword) return;
         setResetLoading(true);
+        setResetError(null);
         try {
             await resetArchitectPassword(architectId, resetPassword);
             setResetSuccess(true);
             setResetPassword('');
             setTimeout(() => setResetSuccess(false), 3000);
         } catch (err: any) {
-            alert(err.message);
+            setResetError(err?.message || 'Nie udało się zresetować hasła.');
         } finally {
             setResetLoading(false);
         }
@@ -113,6 +115,9 @@ export default function ArchitectProfileClient({ architectId, currentTierOverrid
                     {resetLoading ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
                     {resetSuccess ? 'Hasło zresetowane!' : 'Zresetuj Hasło'}
                 </button>
+                {resetError && (
+                    <p role="alert" className="text-xs font-bold text-red-600">{resetError}</p>
+                )}
             </div>
         </div>
     );

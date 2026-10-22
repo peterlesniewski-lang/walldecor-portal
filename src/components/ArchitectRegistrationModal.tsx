@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { X, UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { registerArchitect } from '@/app/actions/projects';
+import { PASSWORD_POLICY_HINT } from '@/lib/passwordPolicy';
 
 interface ArchitectRegistrationModalProps {
     isOpen: boolean;
@@ -144,11 +145,15 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                                     <input
                                         required
                                         type="password"
-                                        placeholder="Min. 6 znaków"
+                                        placeholder="Min. 8 znaków, litera i cyfra"
+                                        minLength={8}
                                         className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
                                         value={formData.password}
                                         onChange={e => setFormData({ ...formData, password: e.target.value })}
                                     />
+                                    <p className="text-[11px] text-stone-400 ml-1">
+                                        {PASSWORD_POLICY_HINT} Hasło jest tymczasowe — architekt zmieni je przy pierwszym logowaniu.
+                                    </p>
                                 </div>
                             </div>
 
