@@ -1,18 +1,10 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
-import {
-    X,
-    Upload,
-    FileText,
-    CheckCircle2,
-    AlertCircle,
-    Info,
-    ChevronRight,
-    Loader2
-} from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { X, Upload, FileText, CheckCircle2 } from 'lucide-react';
 import { requestCommissionPayout } from '@/app/actions/projects';
-import { formatPLN } from '@/lib/utils';
+import { Banner, Button, cx, formatPLN } from '@/components/ui';
 
 interface CommissionPayoutModalProps {
     isOpen: boolean;
@@ -22,12 +14,31 @@ interface CommissionPayoutModalProps {
 }
 
 export default function CommissionPayoutModal({ isOpen, onClose, amount, projectNames }: CommissionPayoutModalProps) {
+    const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [confirmedAmount, setConfirmedAmount] = useState<number | null>(null);
     const [file, setFile] = useState<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleClose = () => {
+        const wasSuccess = success;
+        onClose();
+        if (wasSuccess) router.refresh();
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+                if (success) router.refresh();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isOpen, onClose, success, router]);
 
     if (!isOpen) return null;
 
@@ -37,7 +48,7 @@ export default function CommissionPayoutModal({ isOpen, onClose, amount, project
             setFile(selected);
             setError(null);
         } else if (selected) {
-            setError('Proszę załączyć plik w formacie PDF.');
+            setError('Załącz plik w formacie PDF.');
             setFile(null);
         }
     };
@@ -72,139 +83,113 @@ export default function CommissionPayoutModal({ isOpen, onClose, amount, project
     const projectListText = projectNames.join(', ');
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-            {/* Backdrop */}
-            <div
-                className="absolute inset-0 bg-black/80 backdrop-blur-md transition-opacity"
-                onClick={onClose}
-            />
+        <div className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4">
+            <div className="absolute inset-0 bg-ink/40" onClick={handleClose} aria-hidden="true" />
 
-            {/* Modal Content */}
-            <div className="relative w-full max-w-xl bg-white border border-black/10 rounded-[32px] overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-300">
-                <div className="absolute top-6 right-6 z-10">
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="payout-modal-title"
+                className="relative flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-t-lg bg-surface shadow-float sm:rounded-lg"
+            >
+                <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-5">
+                    <div>
+                        <h3 id="payout-modal-title" className="font-display text-2xl font-normal leading-tight text-ink">
+                            {success ? 'Wniosek złożony' : 'Wypłata prowizji'}
+                        </h3>
+                        {!success && <p className="mt-1 text-sm text-ink-2">Wypłacamy całą dostępną kwotę, na podstawie Twojej faktury.</p>}
+                    </div>
                     <button
-                        onClick={onClose}
-                        className="p-2 rounded-full bg-black/5 text-stone-400 hover:text-stone-900 hover:bg-black/10 transition-colors"
+                        type="button"
+                        onClick={handleClose}
+                        aria-label="Zamknij"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-sm text-ink-2 transition-colors hover:bg-ink/5 hover:text-ink"
                     >
-                        <X size={20} />
+                        <X size={18} aria-hidden="true" />
                     </button>
                 </div>
 
                 {success ? (
-                    <div className="p-12 text-center">
-                        <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/20 rounded-[24px] flex items-center justify-center text-emerald-500 mx-auto mb-8 animate-bounce">
-                            <CheckCircle2 size={40} />
+                    <div className="px-6 py-10 text-center" role="status">
+                        <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-full bg-success-soft text-success">
+                            <CheckCircle2 size={28} aria-hidden="true" />
                         </div>
-                        <h3 className="text-2xl font-black text-stone-900 mb-4 uppercase tracking-tight">Wniosek Złożony!</h3>
-                        <p className="text-stone-400 text-sm leading-relaxed mb-10 max-w-xs mx-auto">
-                            Twoja prośba o wypłatę {formatPLN(confirmedAmount || amount)} PLN została przekazana do weryfikacji przez administratora.
+                        <p className="mx-auto max-w-sm text-sm leading-relaxed text-ink-2">
+                            Twoja prośba o wypłatę <strong className="tnum text-ink">{formatPLN(confirmedAmount || amount)}</strong> została przekazana do weryfikacji przez administratora.
                         </p>
-                        <button
-                            onClick={onClose}
-                            className="w-full py-5 bg-emerald-500 text-black text-xs font-black uppercase tracking-widest rounded-2xl shadow-[0_8px_32px_rgba(16,185,129,0.2)] hover:bg-emerald-400 transition-all"
-                        >
-                            Zamknij
-                        </button>
+                        <div className="mt-6 flex justify-center">
+                            <Button onClick={handleClose}>Zamknij</Button>
+                        </div>
                     </div>
                 ) : (
-                    <div className="p-8 sm:p-10">
-                        <div className="flex items-center gap-4 mb-8">
-                            <div className="p-4 rounded-2xl bg-brand-primary/10 text-brand-primary border border-brand-primary/20">
-                                <FileText size={24} />
-                            </div>
-                            <div>
-                                <h3 className="text-xl font-black text-stone-900 uppercase tracking-tight">Wypłata Prowizji</h3>
-                                <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest mt-1">Zlecenie rozliczenia środków</p>
-                            </div>
-                        </div>
-
-                        <div className="space-y-6">
-                            {/* Tips Section */}
-                            <div className="p-6 rounded-2xl bg-black/5 border border-black/5 space-y-4">
-                                <div className="flex items-center gap-3 text-brand-primary">
-                                    <Info size={16} />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Wskazówki do faktury</span>
-                                </div>
-                                <div className="space-y-3">
-                                    <div className="flex justify-between items-center text-xs">
-                                        <span className="text-stone-500">Kwota (netto):</span>
-                                        <span className="text-stone-900 font-black">{formatPLN(amount)} PLN</span>
+                    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+                            <div className="rounded-md border border-border bg-surface-2 p-4">
+                                <p className="mb-3 text-sm font-semibold text-ink">Wskazówki do faktury</p>
+                                <dl className="space-y-3 text-sm">
+                                    <div className="flex items-baseline justify-between gap-4">
+                                        <dt className="text-ink-2">Kwota (netto)</dt>
+                                        <dd className="tnum font-semibold text-ink">{formatPLN(amount)}</dd>
                                     </div>
-                                    <div className="space-y-1.5">
-                                        <span className="text-[10px] text-stone-500 uppercase font-black block">Tytuł faktury:</span>
-                                        <div className="p-4 rounded-xl bg-brand-primary/[0.03] border border-brand-primary/20 text-[13px] font-bold text-stone-900 leading-relaxed italic">
+                                    <div>
+                                        <dt className="mb-1 text-ink-2">Tytuł faktury</dt>
+                                        <dd className="rounded-sm border border-border bg-surface px-3 py-2 text-[13px] font-medium text-ink">
                                             konsultacja projektowa + {projectListText}
-                                        </div>
+                                        </dd>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4 pt-2">
-                                        <div className="space-y-1">
-                                            <span className="text-[9px] text-stone-600 uppercase font-black block">Termin płatności:</span>
-                                            <span className="text-[11px] text-stone-900 font-bold">14 dni</span>
-                                        </div>
-                                        <div className="space-y-1 text-right">
-                                            <span className="text-[9px] text-stone-600 uppercase font-black block">Sposób płatności:</span>
-                                            <span className="text-[11px] text-stone-900 font-bold">Przelew bankowy</span>
-                                        </div>
+                                    <div className="flex items-baseline justify-between gap-4">
+                                        <dt className="text-ink-2">Termin płatności</dt>
+                                        <dd className="font-semibold text-ink">14 dni</dd>
                                     </div>
-                                </div>
+                                    <div className="flex items-baseline justify-between gap-4">
+                                        <dt className="text-ink-2">Sposób płatności</dt>
+                                        <dd className="font-semibold text-ink">Przelew bankowy</dd>
+                                    </div>
+                                </dl>
                             </div>
 
-                            {/* Upload Area */}
-                            <div
-                                onClick={() => fileInputRef.current?.click()}
-                                className={`group relative p-10 border-2 border-dashed rounded-[24px] transition-all cursor-pointer flex flex-col items-center justify-center text-center ${file ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-black/10 hover:border-brand-primary/50 hover:bg-black/5'
-                                    }`}
-                            >
+                            <div className="flex flex-col gap-1.5">
+                                <span className="text-[13px] font-semibold text-ink-2">Faktura (PDF)</span>
                                 <input
                                     type="file"
                                     ref={fileInputRef}
                                     onChange={handleFileChange}
                                     className="hidden"
                                     accept=".pdf"
+                                    aria-label="Wybierz plik faktury w formacie PDF"
                                 />
-
-                                {file ? (
-                                    <>
-                                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 mb-4">
-                                            <FileText size={24} />
-                                        </div>
-                                        <p className="text-sm font-bold text-stone-900 mb-1 truncate max-w-full px-4">{file.name}</p>
-                                        <p className="text-[10px] text-emerald-500/60 font-black uppercase tracking-widest">Kliknij aby zmienić</p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div className="w-14 h-14 rounded-2xl bg-black/5 flex items-center justify-center text-stone-400 group-hover:text-brand-primary group-hover:bg-brand-primary/10 transition-all mb-4">
-                                            <Upload size={24} />
-                                        </div>
-                                        <p className="text-sm font-bold text-stone-400 mb-1">Wgraj obraz faktury (PDF)</p>
-                                        <p className="text-[10px] text-stone-500 font-black uppercase tracking-widest">Przeciągnij lub kliknij tutaj</p>
-                                    </>
-                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className={cx(
+                                        'flex w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed px-4 py-7 text-center transition-colors',
+                                        file ? 'border-success bg-success-soft' : 'border-border-strong bg-surface hover:border-ink-3',
+                                    )}
+                                >
+                                    {file ? (
+                                        <>
+                                            <FileText size={22} className="text-success" aria-hidden="true" />
+                                            <span className="max-w-full truncate text-sm font-semibold text-ink">{file.name}</span>
+                                            <span className="text-xs text-ink-2">Kliknij, aby zmienić plik</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Upload size={22} className="text-ink-3" aria-hidden="true" />
+                                            <span className="text-sm font-semibold text-ink">Wybierz fakturę w formacie PDF</span>
+                                            <span className="text-xs text-ink-2">Kliknij, aby wskazać plik</span>
+                                        </>
+                                    )}
+                                </button>
                             </div>
 
-                            {error && (
-                                <div className="flex items-center gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-[10px] font-bold uppercase tracking-widest">
-                                    <AlertCircle size={14} />
-                                    {error}
-                                </div>
-                            )}
-
-                            <button
-                                onClick={handleSubmit}
-                                disabled={loading || !file}
-                                className={`w-full py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 ${loading || !file
-                                    ? 'bg-black/5 text-stone-600 cursor-not-allowed border border-black/5'
-                                    : 'gold-gradient text-black hover:shadow-[0_10px_30px_rgba(212,175,55,0.3)]'
-                                    }`}
-                            >
-                                {loading ? (
-                                    <Loader2 className="animate-spin" size={18} />
-                                ) : (
-                                    'Złóż wniosek o wypłatę'
-                                )}
-                            </button>
+                            {error && <Banner tone="danger" title="Nie można złożyć wniosku">{error}</Banner>}
                         </div>
-                    </div>
+
+                        <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
+                            <Button type="button" variant="ghost" onClick={handleClose}>Anuluj</Button>
+                            <Button type="submit" loading={loading} disabled={!file}>Złóż wniosek o wypłatę</Button>
+                        </div>
+                    </form>
                 )}
             </div>
         </div>

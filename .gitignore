@@ -54,3 +54,8 @@ next-env.d.ts
 # Uploaded files (invoice PDFs — local filesystem, never commit)
 private_uploads/
 public/uploads/
+
+# local sqlite (dev)
+dev.sqlite
+dev.sqlite-shm
+dev.sqlite-wal

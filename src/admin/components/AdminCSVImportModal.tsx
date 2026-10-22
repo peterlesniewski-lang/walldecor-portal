@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Upload, CheckCircle2, AlertTriangle, XCircle, Loader2, FileText, ArrowLeft } from 'lucide-react';
+import { X, Upload, FileText, ArrowLeft, Loader2 } from 'lucide-react';
 import { getAllArchitectNames } from '@/app/actions/architects';
 import { importProjectsFromCSV, ImportRowInput, ImportRowResult } from '@/app/actions/import';
+import { Banner, Button, KpiTile, StatusPill, formatDate, formatNumber } from '@/components/ui';
 
 // ─── CSV helpers ──────────────────────────────────────────────────────────────
 
@@ -53,6 +54,7 @@ type Step = 'upload' | 'preview' | 'results';
 
 export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const closeRef = useRef<() => void>(() => {});
     const [step, setStep] = useState<Step>('upload');
     const [architects, setArchitects] = useState<Set<string>>(new Set());
     const [architectsLoading, setArchitectsLoading] = useState(true);
@@ -75,6 +77,14 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
             .finally(() => setArchitectsLoading(false));
     }, [isOpen]);
 
+    // Esc zamyka okno
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isOpen]);
+
     if (!isOpen) return null;
 
     const reset = () => {
@@ -92,6 +102,8 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
         reset();
         onClose(didImport);
     };
+
+    closeRef.current = handleClose;
 
     const processFile = (file: File) => {
         setFileError(null);
@@ -187,30 +199,51 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
     const invalidCount = parsedRows.length - validCount;
     const settledCount = parsedRows.filter(r => r.isValid && r.prowizjaRozliczona).length;
 
+    const TH = 'label-caps px-4 py-3 text-left';
+    const resultsSummary = results ? [
+        { label: 'Zaimportowanych', value: results.successCount },
+        ...(results.newAccountsCreated > 0 ? [{ label: 'Nowych kont', value: results.newAccountsCreated }] : []),
+        { label: 'Pominiętych', value: results.skippedCount },
+        { label: 'Błędów', value: results.errorCount },
+    ] : [];
+
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={handleClose} />
+            <div className="absolute inset-0 bg-ink/40" onClick={handleClose} />
 
-            <div className="relative bg-white rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] flex flex-col">
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="csv-import-title"
+                className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-float"
+            >
 
                 {/* Header */}
-                <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
-                    <div className="flex items-center gap-4">
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-6">
+                    <div className="flex items-center gap-3">
                         {step === 'preview' && (
-                            <button onClick={() => { setStep('upload'); setParsedRows([]); }} className="p-2 rounded-xl hover:bg-black/5 text-stone-400 hover:text-stone-700 transition-all">
+                            <button
+                                onClick={() => { setStep('upload'); setParsedRows([]); }}
+                                aria-label="Wróć do wyboru pliku"
+                                className="rounded-sm p-2 text-ink-2 hover:bg-ink/5 hover:text-ink"
+                            >
                                 <ArrowLeft size={16} />
                             </button>
                         )}
                         <div>
-                            <h3 className="text-xl font-bold text-stone-900">Import z CSV</h3>
-                            <p className="text-sm text-stone-500 mt-0.5">
+                            <h3 id="csv-import-title" className="font-display text-xl text-ink">Import z CSV</h3>
+                            <p className="mt-0.5 text-sm text-ink-2">
                                 {step === 'upload' && 'Wgraj eksport z Google Sheets'}
-                                {step === 'preview' && `Podgląd — ${parsedRows.length} wierszy · ${importDate || 'data dzisiejsza'}`}
+                                {step === 'preview' && `Podgląd: ${parsedRows.length} wierszy · ${importDate ? formatDate(importDate) : 'data dzisiejsza'}`}
                                 {step === 'results' && 'Wyniki importu'}
                             </p>
                         </div>
                     </div>
-                    <button onClick={handleClose} className="p-2 hover:bg-white rounded-xl transition-all text-stone-400 hover:text-stone-600 border border-transparent hover:border-slate-100">
+                    <button
+                        onClick={handleClose}
+                        aria-label="Zamknij"
+                        className="rounded-sm p-2 text-ink-2 hover:bg-ink/5 hover:text-ink"
+                    >
                         <X size={20} />
                     </button>
                 </div>
@@ -219,11 +252,11 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
 
                     {/* ── Step 1: Upload ── */}
                     {step === 'upload' && (
-                        <div className="p-8 space-y-6">
+                        <div className="space-y-5 p-5 sm:p-6">
                             {/* Column mapping reference */}
-                            <div className="bg-black/[0.02] rounded-2xl p-5 border border-black/5">
-                                <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-3">Oczekiwany format kolumn (Google Sheets)</p>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] font-bold text-stone-600">
+                            <div className="rounded-md border border-border bg-surface-2 p-5">
+                                <p className="label-caps mb-3">Oczekiwany format kolumn (Google Sheets)</p>
+                                <div className="grid grid-cols-1 gap-x-4 gap-y-2 text-[13px] text-ink sm:grid-cols-2 md:grid-cols-3">
                                     {[
                                         ['A', 'Architekt'],
                                         ['B', 'Email architekta ✓'],
@@ -235,15 +268,15 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
                                         ['H', 'Netto PLN ✓'],
                                         ['I', 'Zapłacone (Tak/Nie)'],
                                         ['J', 'Prowizja netto (pomijane)'],
-                                        ['K', 'Prowizja rozliczona (Tak = historia: projekt ZAKOŃCZONY, prowizja PAID, bez cashbacku)'],
+                                        ['K', 'Prowizja rozliczona (Tak = historia: projekt zakończony, prowizja wypłacona, bez cashbacku)'],
                                         ['L', 'Nr dokumentu (arch.)'],
                                         ['M', 'Nazwa studia (opcjonalne)'],
                                         ['N', 'NIP (opcjonalne)'],
                                         ['O', 'Adres (opcjonalne)'],
                                     ].map(([col, label]) => (
-                                        <div key={col} className="flex items-center gap-1.5">
-                                            <span className="w-5 h-5 rounded bg-black/10 flex items-center justify-center text-[9px] font-black text-stone-700 shrink-0">{col}</span>
-                                            <span className={label.includes('pomijane') ? 'text-stone-400' : ''}>{label}</span>
+                                        <div key={col} className="flex items-start gap-2">
+                                            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-sm bg-ink/[0.06] font-mono text-[11px] font-medium text-ink">{col}</span>
+                                            <span className={label.includes('pomijane') ? 'text-ink-2' : ''}>{label}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -251,60 +284,57 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
 
                             {/* Drop zone */}
                             <div
+                                role="button"
+                                tabIndex={0}
+                                aria-label="Wybierz plik CSV lub przeciągnij go tutaj"
                                 onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
                                 onDragLeave={() => setDragging(false)}
                                 onDrop={handleFileDrop}
                                 onClick={() => fileInputRef.current?.click()}
-                                className={`border-2 border-dashed rounded-3xl p-16 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all ${dragging ? 'border-brand-primary bg-brand-primary/5' : 'border-black/10 hover:border-black/20 hover:bg-black/[0.01]'}`}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}
+                                className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-md border border-dashed px-6 py-12 text-center ${dragging ? 'border-brass-ink bg-brass-soft' : 'border-border-strong hover:bg-surface-2'}`}
                             >
-                                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${dragging ? 'bg-brand-primary/10' : 'bg-black/5'}`}>
-                                    <Upload size={28} className={dragging ? 'text-brand-primary' : 'text-stone-400'} />
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-sm font-black text-stone-900">Przeciągnij plik CSV tutaj</p>
-                                    <p className="text-[10px] text-stone-400 font-bold mt-1">lub kliknij aby wybrać z dysku</p>
+                                <span className={`grid h-12 w-12 place-items-center rounded-full ${dragging ? 'bg-surface text-brass-ink' : 'bg-ink/[0.06] text-ink-2'}`}>
+                                    <Upload size={22} aria-hidden="true" />
+                                </span>
+                                <div>
+                                    <p className="font-semibold text-ink">Przeciągnij plik CSV tutaj</p>
+                                    <p className="mt-1 text-sm text-ink-2">lub kliknij, aby wybrać z dysku</p>
                                 </div>
                                 <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileInput} />
                             </div>
 
                             {/* Date override */}
-                            <div className="bg-black/[0.02] rounded-2xl p-5 border border-black/5">
-                                <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-3">Data projektów (opcjonalne)</p>
-                                <div className="flex items-center gap-4">
+                            <div className="rounded-md border border-border bg-surface-2 p-5">
+                                <label htmlFor="csv-import-date" className="text-[13px] font-semibold text-ink-2">Data projektów (opcjonalne)</label>
+                                <div className="mt-1.5 flex items-center gap-3">
                                     <input
+                                        id="csv-import-date"
                                         type="date"
                                         value={importDate}
                                         max={todayStr}
                                         onChange={e => setImportDate(e.target.value)}
-                                        className="bg-white border border-black/10 rounded-xl px-4 py-2.5 text-sm font-bold text-stone-900 focus:outline-none focus:border-brand-primary/50 transition-colors"
+                                        className="tnum h-10 rounded-sm border border-border-strong bg-surface px-3 text-[15px] text-ink focus:border-ink focus:outline-none focus:shadow-[0_0_0_3px_rgba(26,25,23,0.08)]"
                                     />
                                     {importDate && (
-                                        <button
-                                            onClick={() => setImportDate('')}
-                                            className="text-[10px] font-black text-stone-400 hover:text-stone-700 uppercase tracking-widest transition-colors"
-                                        >
+                                        <Button variant="ghost" size="sm" onClick={() => setImportDate('')}>
                                             Wyczyść
-                                        </button>
+                                        </Button>
                                     )}
                                 </div>
-                                <p className="text-[10px] text-stone-400 font-bold mt-2">
+                                <p className="mt-2 text-[13px] text-ink-2">
                                     {importDate
-                                        ? `Wszystkie projekty zostaną zapisane z datą ${importDate}`
-                                        : 'Zostaw puste — użyje daty dzisiejszej (może zaburzać statystyki miesięczne)'
+                                        ? `Wszystkie projekty zostaną zapisane z datą ${formatDate(importDate)}`
+                                        : 'Zostaw puste, aby użyć daty dzisiejszej (może zaburzać statystyki miesięczne).'
                                     }
                                 </p>
                             </div>
 
-                            {fileError && (
-                                <div role="alert" className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-2xl px-5 py-3 text-xs font-bold text-red-700">
-                                    <XCircle size={14} className="shrink-0 mt-0.5" />
-                                    <span>{fileError}</span>
-                                </div>
-                            )}
+                            {fileError && <Banner tone="danger">{fileError}</Banner>}
 
                             {architectsLoading && (
-                                <div className="flex items-center gap-2 text-stone-400 text-xs font-bold">
-                                    <Loader2 size={13} className="animate-spin" />
+                                <div className="flex items-center gap-2 text-sm text-ink-2">
+                                    <Loader2 size={14} className="animate-spin" aria-hidden="true" />
                                     Wczytywanie listy architektów...
                                 </div>
                             )}
@@ -315,101 +345,77 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
                     {step === 'preview' && (
                         <div className="flex flex-col">
                             {/* Summary bar */}
-                            <div className="px-8 py-4 border-b border-black/5 flex items-center gap-6 bg-black/[0.01]">
-                                <div className="flex items-center gap-2">
-                                    <CheckCircle2 size={14} className="text-emerald-500" />
-                                    <span className="text-xs font-black text-stone-700">{validCount} poprawnych</span>
-                                </div>
-                                {autoRegCount > 0 && (
-                                    <div className="flex items-center gap-2">
-                                        <CheckCircle2 size={14} className="text-blue-500" />
-                                        <span className="text-xs font-black text-stone-700">{autoRegCount} nowych kont</span>
-                                    </div>
-                                )}
-                                {invalidCount > 0 && (
-                                    <div className="flex items-center gap-2">
-                                        <XCircle size={14} className="text-red-500" />
-                                        <span className="text-xs font-black text-stone-700">{invalidCount} z błędem (pominięte)</span>
-                                    </div>
+                            <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface-2 px-5 py-3 sm:px-6">
+                                <StatusPill tone="success">{validCount} poprawnych</StatusPill>
+                                {autoRegCount > 0 && <StatusPill tone="info">{autoRegCount} nowych kont</StatusPill>}
+                                {invalidCount > 0 && <StatusPill tone="danger">{invalidCount} z błędem (pominięte)</StatusPill>}
+                            </div>
+
+                            <div className="space-y-3 px-5 pt-4 sm:px-6">
+                                {fileError && <Banner tone="danger">{fileError}</Banner>}
+
+                                {settledCount > 0 && (
+                                    <Banner tone="warning" title={`Rozliczone = Tak (${settledCount} ${settledCount === 1 ? 'wiersz' : 'wierszy'})`}>
+                                        Projekt trafi od razu do statusu Zakończony, a prowizja zostanie zapisana jako wypłacona poza portalem (nie trafi do wypłat). Cashback 2% NIE zostanie naliczony. Stawka prowizji wynika z obrotu architekta przed danym projektem.
+                                    </Banner>
                                 )}
                             </div>
 
-                            {fileError && (
-                                <div role="alert" className="mx-8 mt-4 flex items-start gap-2 bg-red-50 border border-red-100 rounded-2xl px-5 py-3 text-xs font-bold text-red-700">
-                                    <XCircle size={14} className="shrink-0 mt-0.5" />
-                                    <span>{fileError}</span>
-                                </div>
-                            )}
-
-                            {settledCount > 0 && (
-                                <p className="mx-8 mt-4 text-[10px] font-bold text-stone-500 bg-amber-50 border border-amber-100 rounded-2xl px-5 py-3">
-                                    „Rozliczone = Tak” ({settledCount} {settledCount === 1 ? 'wiersz' : 'wierszy'}): projekt trafi od razu do statusu ZAKOŃCZONY, a prowizja zostanie zapisana jako PAID (wypłacona poza portalem, nie trafi do wypłat). Cashback 2% NIE zostanie naliczony. Stawka prowizji wynika z obrotu architekta przed danym projektem.
-                                </p>
-                            )}
-
                             {/* Table */}
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left">
+                            <div className="mt-4 overflow-x-auto border-y border-border">
+                                <table className="w-full min-w-[720px] text-left text-sm">
                                     <thead>
-                                        <tr className="bg-black/[0.02] border-b border-black/5">
-                                            <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">#</th>
-                                            <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Status</th>
-                                            <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Architekt</th>
-                                            <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Klient</th>
-                                            <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Nr zamówienia</th>
-                                            <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest text-right">Netto PLN</th>
-                                            <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Płatne</th>
-                                            <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Rozliczone</th>
+                                        <tr className="border-b border-border bg-surface-2">
+                                            <th className={TH}>#</th>
+                                            <th className={TH}>Status</th>
+                                            <th className={TH}>Architekt</th>
+                                            <th className={TH}>Klient</th>
+                                            <th className={TH}>Nr zamówienia</th>
+                                            <th className={`${TH} text-right`}>Netto PLN</th>
+                                            <th className={TH}>Płatne</th>
+                                            <th className={TH}>Rozliczone</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-black/5">
+                                    <tbody>
                                         {parsedRows.map((row, i) => (
-                                            <tr key={i} className={`transition-colors ${row.isValid ? 'hover:bg-black/[0.01]' : 'bg-red-50/50'}`}>
-                                                <td className="px-5 py-3 text-[10px] font-bold text-stone-400">{i + 1}</td>
-                                                <td className="px-5 py-3">
+                                            <tr key={i} className={`border-b border-border last:border-b-0 ${row.isValid ? 'hover:bg-surface-2' : 'bg-danger-soft/50'}`}>
+                                                <td className="tnum px-4 py-3 text-ink-2">{i + 1}</td>
+                                                <td className="px-4 py-3">
                                                     {row.willAutoRegister ? (
-                                                        <span className="flex items-center gap-1 text-[9px] font-black text-blue-600 uppercase tracking-widest whitespace-nowrap">
-                                                            <CheckCircle2 size={11} /> Nowe konto
-                                                        </span>
+                                                        <StatusPill tone="info">Nowe konto</StatusPill>
                                                     ) : row.isValid ? (
-                                                        <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase tracking-widest">
-                                                            <CheckCircle2 size={11} /> OK
-                                                        </span>
+                                                        <StatusPill tone="success">OK</StatusPill>
                                                     ) : !row.architectFound ? (
-                                                        <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase tracking-widest whitespace-nowrap">
-                                                            <AlertTriangle size={11} /> Brak architekta
-                                                        </span>
+                                                        <StatusPill tone="warning">Brak architekta</StatusPill>
                                                     ) : (
-                                                        <span className="flex items-center gap-1 text-[9px] font-black text-red-600 uppercase tracking-widest whitespace-nowrap">
-                                                            <XCircle size={11} /> Błąd kwoty
-                                                        </span>
+                                                        <StatusPill tone="danger">Błąd kwoty</StatusPill>
                                                     )}
                                                 </td>
-                                                <td className="px-5 py-3">
-                                                    <span className={`text-xs font-bold ${row.architectFound ? 'text-stone-900' : row.willAutoRegister ? 'text-blue-700' : 'text-red-600'}`}>
+                                                <td className="px-4 py-3">
+                                                    <span className={`font-medium ${row.architectFound ? 'text-ink' : row.willAutoRegister ? 'text-info' : 'text-danger'}`}>
                                                         {row.architectName || '—'}
                                                     </span>
                                                     {row.willAutoRegister && (
-                                                        <p className="text-[9px] font-bold text-blue-400 mt-0.5">{row.architectEmail}</p>
+                                                        <p className="mt-0.5 text-xs text-ink-2">{row.architectEmail}</p>
                                                     )}
                                                 </td>
-                                                <td className="px-5 py-3 text-xs font-bold text-stone-600">{row.clientLabel || '—'}</td>
-                                                <td className="px-5 py-3 text-xs font-mono text-stone-600">{row.orderNumber || '—'}</td>
-                                                <td className="px-5 py-3 text-right">
-                                                    <span className={`text-xs font-black ${row.validAmount ? 'text-stone-900' : 'text-red-600'}`}>
-                                                        {row.amountNet > 0 ? row.amountNet.toLocaleString('pl-PL', { minimumFractionDigits: 2 }) : '—'}
+                                                <td className="px-4 py-3 text-ink-2">{row.clientLabel || '—'}</td>
+                                                <td className="px-4 py-3 font-mono text-[13px] text-ink-2">{row.orderNumber || '—'}</td>
+                                                <td className="tnum px-4 py-3 text-right">
+                                                    <span className={`font-semibold ${row.validAmount ? 'text-ink' : 'text-danger'}`}>
+                                                        {row.amountNet > 0 ? formatNumber(row.amountNet) : '—'}
                                                     </span>
                                                 </td>
-                                                <td className="px-5 py-3">
+                                                <td className="px-4 py-3">
                                                     {row.isPaid
-                                                        ? <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Tak</span>
-                                                        : <span className="text-[9px] font-bold text-stone-400">Nie</span>
+                                                        ? <span className="font-semibold text-success">Tak</span>
+                                                        : <span className="text-ink-2">Nie</span>
                                                     }
                                                 </td>
-                                                <td className="px-5 py-3">
+                                                <td className="px-4 py-3">
                                                     {row.prowizjaRozliczona
-                                                        ? <span className="text-[9px] font-black text-brand-primary uppercase tracking-widest">Tak</span>
-                                                        : <span className="text-[9px] font-bold text-stone-400">Nie</span>
+                                                        ? <span className="font-semibold text-brass-ink">Tak</span>
+                                                        : <span className="text-ink-2">Nie</span>
                                                     }
                                                 </td>
                                             </tr>
@@ -419,25 +425,22 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
                             </div>
 
                             {/* Footer */}
-                            <div className="px-8 py-6 border-t border-black/5 flex items-center justify-between gap-4 bg-white shrink-0">
-                                <p className="text-[10px] text-stone-400 font-bold">
+                            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-4 sm:px-6">
+                                <p className="text-[13px] text-ink-2">
                                     {invalidCount > 0 && `${invalidCount} wierszy z błędami zostanie pominiętych.`}
                                 </p>
-                                <div className="flex items-center gap-3">
-                                    <button
-                                        onClick={() => { setStep('upload'); setParsedRows([]); }}
-                                        className="px-5 py-2.5 bg-black/5 hover:bg-black/10 text-stone-500 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
-                                    >
+                                <div className="flex items-center gap-2">
+                                    <Button variant="ghost" onClick={() => { setStep('upload'); setParsedRows([]); }}>
                                         Wróć
-                                    </button>
-                                    <button
+                                    </Button>
+                                    <Button
                                         onClick={handleImport}
-                                        disabled={importing || validCount === 0}
-                                        className="px-6 py-2.5 bg-stone-900 hover:bg-black text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50"
+                                        loading={importing}
+                                        disabled={validCount === 0}
+                                        icon={<Upload size={16} />}
                                     >
-                                        {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
                                         Importuj {validCount} {validCount === 1 ? 'projekt' : validCount < 5 ? 'projekty' : 'projektów'}
-                                    </button>
+                                    </Button>
                                 </div>
                             </div>
                         </div>
@@ -445,77 +448,46 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
 
                     {/* ── Step 3: Results ── */}
                     {step === 'results' && results && (
-                        <div className="p-8 space-y-6">
+                        <div className="space-y-5 p-5 sm:p-6">
                             {/* Summary */}
-                            <div className={`grid gap-4 ${results.newAccountsCreated > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 text-center">
-                                    <p className="text-3xl font-black text-emerald-600">{results.successCount}</p>
-                                    <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mt-1">Zaimportowanych</p>
-                                </div>
-                                {results.newAccountsCreated > 0 && (
-                                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-center">
-                                        <p className="text-3xl font-black text-blue-600">{results.newAccountsCreated}</p>
-                                        <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest mt-1">Nowych kont</p>
-                                    </div>
-                                )}
-                                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 text-center">
-                                    <p className="text-3xl font-black text-amber-600">{results.skippedCount}</p>
-                                    <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mt-1">Pominiętych</p>
-                                </div>
-                                <div className="bg-red-50 border border-red-100 rounded-2xl p-5 text-center">
-                                    <p className="text-3xl font-black text-red-600">{results.errorCount}</p>
-                                    <p className="text-[9px] font-black text-red-500 uppercase tracking-widest mt-1">Błędów</p>
-                                </div>
+                            <div className={`grid grid-cols-2 gap-3 ${results.newAccountsCreated > 0 ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+                                {resultsSummary.map(({ label, value }) => (
+                                    <KpiTile key={label} label={label} value={formatNumber(value)} />
+                                ))}
                             </div>
 
                             {/* Detail list */}
                             {results.results.length > 0 && (
-                                <div className="border border-black/5 rounded-2xl overflow-hidden">
-                                    <table className="w-full text-left">
+                                <div className="overflow-x-auto rounded-md border border-border">
+                                    <table className="w-full min-w-[560px] text-left text-sm">
                                         <thead>
-                                            <tr className="bg-black/[0.02] border-b border-black/5">
-                                                <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">#</th>
-                                                <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Status</th>
-                                                <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Architekt</th>
-                                                <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Nr zamówienia</th>
-                                                <th className="px-5 py-3 text-[9px] font-black text-stone-500 uppercase tracking-widest">Uwagi</th>
+                                            <tr className="border-b border-border bg-surface-2">
+                                                <th className={TH}>#</th>
+                                                <th className={TH}>Status</th>
+                                                <th className={TH}>Architekt</th>
+                                                <th className={TH}>Nr zamówienia</th>
+                                                <th className={TH}>Uwagi</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-black/5">
+                                        <tbody>
                                             {results.results.map((r, i) => (
-                                                <tr key={i} className="hover:bg-black/[0.01] transition-colors">
-                                                    <td className="px-5 py-3 text-[10px] font-bold text-stone-400">{r.rowIndex + 1}</td>
-                                                    <td className="px-5 py-3">
-                                                        {r.status === 'success' && (
-                                                            <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase tracking-widest">
-                                                                <CheckCircle2 size={11} /> Sukces
-                                                            </span>
-                                                        )}
-                                                        {r.status === 'skipped' && (
-                                                            <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase tracking-widest">
-                                                                <AlertTriangle size={11} /> Pominięto
-                                                            </span>
-                                                        )}
-                                                        {r.status === 'error' && (
-                                                            <span className="flex items-center gap-1 text-[9px] font-black text-red-600 uppercase tracking-widest">
-                                                                <XCircle size={11} /> Błąd
-                                                            </span>
-                                                        )}
+                                                <tr key={i} className="border-b border-border last:border-b-0 hover:bg-surface-2">
+                                                    <td className="tnum px-4 py-3 text-ink-2">{r.rowIndex + 1}</td>
+                                                    <td className="px-4 py-3">
+                                                        {r.status === 'success' && <StatusPill tone="success">Sukces</StatusPill>}
+                                                        {r.status === 'skipped' && <StatusPill tone="warning">Pominięto</StatusPill>}
+                                                        {r.status === 'error' && <StatusPill tone="danger">Błąd</StatusPill>}
                                                     </td>
-                                                    <td className="px-5 py-3 text-xs font-bold text-stone-700">{r.architectName || '—'}</td>
-                                                    <td className="px-5 py-3 text-xs font-mono text-stone-500">{r.orderNumber || '—'}</td>
-                                                    <td className="px-5 py-3 text-xs text-stone-400 font-bold">
+                                                    <td className="px-4 py-3 font-medium text-ink">{r.architectName || '—'}</td>
+                                                    <td className="px-4 py-3 font-mono text-[13px] text-ink-2">{r.orderNumber || '—'}</td>
+                                                    <td className="px-4 py-3 text-ink-2">
                                                         {r.status === 'success' && r.projectId ? (
-                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                            <div className="flex flex-wrap items-center gap-2">
                                                                 <a href={`/dashboard/admin/architects/${r.architectId}`} target="_blank" rel="noreferrer"
-                                                                    className="flex items-center gap-1 text-brand-primary hover:underline">
-                                                                    <FileText size={11} /> Profil architekta →
+                                                                    className="flex items-center gap-1 font-semibold text-brass-ink hover:underline">
+                                                                    <FileText size={13} aria-hidden="true" /> Profil architekta →
                                                                 </a>
-                                                                {r.newAccountCreated && (
-                                                                    <span className="text-[9px] font-black text-blue-600 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 uppercase tracking-widest whitespace-nowrap">
-                                                                        Nowe konto
-                                                                    </span>
-                                                                )}
+                                                                {r.newAccountCreated && <StatusPill tone="info">Nowe konto</StatusPill>}
                                                             </div>
                                                         ) : r.message}
                                                     </td>
@@ -527,12 +499,7 @@ export default function AdminCSVImportModal({ isOpen, onClose }: Props) {
                             )}
 
                             <div className="flex justify-end">
-                                <button
-                                    onClick={handleClose}
-                                    className="px-8 py-3 bg-stone-900 hover:bg-black text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all"
-                                >
-                                    Zamknij
-                                </button>
+                                <Button onClick={handleClose}>Zamknij</Button>
                             </div>
                         </div>
                     )}

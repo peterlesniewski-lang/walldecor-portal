@@ -398,3 +398,14 @@ migrations/
 - Mobile 390 px (emulacja CDP): logowanie, reset hasła, regulamin bez poziomego przewijania. Widoki za logowaniem na mobile nie sprawdzone (brak możliwości zmniejszenia okna w rozszerzeniu Chrome).
 - Nie testowane: logowanie STAFF i ARCHI (brak kont testowych), żadne akcje zapisu/wypłat.
 - Obserwacja: istniejące prowizje mają stawkę 7% (stary program); PENDING przeliczy się na nową stawkę przy finalizacji (`projects.ts`, UPDATE PENDING→EARNED z nowym `rate`). Prowizja IN_PAYMENT nie wlicza się do kafelków „EARNED/PENDING” na stronie projektu admina — drobna niespójność UX.
+
+## 2026-10-23 — Redesign Portalu Architekta (kierunek jasny, redakcyjny)
+
+- Design system v0.2 w `docs/design-system.html` (artefakt Claude + Superset Page) — źródło prawdy: tokeny `--wd-*`, Fraunces / Hanken Grotesk / IBM Plex Mono, oryginalne logo (`public/walldecor-logo-dark.png` na jasnym tle), jeden mosiężny akcent, statusy po polsku.
+- Plan i tickety w `PLAN-REDESIGN-2026-10-22.md`: T-R1 fundamenty (tokeny w `globals.css`, fonty przez `@fontsource`, prymitywy `src/components/ui/*`, jasny Sidebar/MobileNav/ShellHeader), T-R2…T-R6 strony (admin, architekci, projekt, strona architekta, auth/regulamin/pomoc/ustawienia), T-R7 sprzątanie. Wykonane przez subagentów Sonnet, przegląd i weryfikacja: orkiestrator.
+- Konwencje: `Button`/`StatusPill`/`KpiTile`/`Card`/`Banner`/`InlineConfirm` zamiast własnych klas; `formatPLN`/`formatSignedPLN`/`formatDate` z `@/components/ui` (grupowanie tysięcy zawsze); jeden przycisk primary na ekran; `.label-caps` to jedyne miejsce na wielkie litery; tytuł powłoki z `src/lib/shellTitle.ts` wg ścieżki; strony nie renderują własnego h1.
+- Usunięte aliasy starych tokenów (`brand-*`, `gold-*`, `stat-card`, `glass-panel`) — nowy kod ma używać wyłącznie tokenów z design systemu.
+- Lokalny podgląd: `scripts/seed-dev.mjs` tworzy `dev.sqlite` z kontami testowymi (dane w nagłówku skryptu), `.env.local` z `DB_TYPE=sqlite`; natywny `better-sqlite3` buduje się tylko pod Node 25 (`PATH=/opt/homebrew/opt/node@25/bin:$PATH`).
+- Weryfikacja: 91/91 testów (+2 nowe pliki), tsc czysto, `next build` OK, 0 klas legacy, 0 `alert/confirm`, 0 `toLocale*` bez `pl-PL`; szerokość 390 px bez przewijania na 12 stronach (pomiar przez CDP); zrzuty desktop ADMIN i ARCHI obejrzane, 0 błędów konsoli.
+- Zmiany logiki przy okazji (świadome): potwierdzenie inline przy „Oznacz jako opłacone” i zmianie roli w zespole; kafelek „Aktywne projekty” architekta liczy tylko projekty w toku; podgląd szablonu email bez `dangerouslySetInnerHTML`.
+- Otwarte: brak wspólnego prymitywu modala (trzy modale dublują obsługę Esc); kafelek cashback na stronie projektu liczony ze stawki, nie z `wallet_transactions`; `AddArchitectButton` i `RegisterArchitectButton` to dwa podobne komponenty do scalenia; Google OAuth + magic link do osobnego ticketu.

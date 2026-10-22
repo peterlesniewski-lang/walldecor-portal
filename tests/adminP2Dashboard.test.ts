@@ -11,15 +11,27 @@ test('admin dashboard makes the project pipeline the primary operational surface
     assert.match(source, /Pomoc kontekstowa/);
 });
 
-test('admin project pipeline uses kanban columns, drawer details, and 90 day inactive window', async () => {
+test('admin project pipeline uses a desktop table, mobile cards, a segmented filter, drawer details and a 90 day inactive window', async () => {
     const source = await readFile(new URL('../src/admin/components/AdminProjectPipeline.tsx', import.meta.url), 'utf8');
 
     assert.match(source, /RECENT_INACTIVE_DAYS\s*=\s*90/);
     assert.match(source, /selectedProject/);
     assert.match(source, /ProjectDrawer/);
     assert.match(source, /Otwórz pełny projekt/);
+    // Desktop: prawdziwa <table> w kontenerze z poziomym scrollem (nagłówki kolumn z scope="col").
+    assert.match(source, /<table/);
+    assert.match(source, /<th scope="col"/);
+    assert.match(source, /relative hidden overflow-x-auto xl:block/);
+    // Mobile i tablet: karty zamiast tabeli (xl:hidden).
+    assert.match(source, /function ProjectCard/);
+    assert.match(source, /xl:hidden/);
+    // Segmentowy filtr zakresu: Aktywne / Zakończone / Wszystkie, plus liczniki statusów w siatce 5 kolumn.
+    assert.match(source, /role="group" aria-label="Zakres projektów"/);
+    assert.match(source, /aria-pressed/);
     assert.match(source, /xl:grid-cols-5/);
-    assert.doesNotMatch(source, /<table/);
+    // Stary układ kanbanowy i siatka role="table" nie wracają.
+    assert.doesNotMatch(source, /role="table"/);
+    assert.doesNotMatch(source, /TABLE_COLUMNS/);
 });
 
 test('project finalization records who completed the project and when', async () => {

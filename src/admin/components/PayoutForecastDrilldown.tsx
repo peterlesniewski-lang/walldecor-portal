@@ -1,38 +1,53 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { formatPLN } from '@/lib/utils';
+import { Button } from '@/components/ui/Button';
+import { formatPLN } from '@/components/ui/format';
 
 interface DrilldownItem {
     name: string;
     balance: number;
 }
 
-export default function PayoutForecastDrilldown({ items, label }: { items: DrilldownItem[], label: string }) {
+/**
+ * Rozwijana lista partnerów z saldem (cyfry tabelaryczne, kwoty "5 000 PLN").
+ * `label` opisuje listę dla czytników ekranu.
+ */
+export default function PayoutForecastDrilldown({ items, label }: { items: DrilldownItem[]; label: string }) {
     const [isOpen, setIsOpen] = useState(false);
+    const listId = useId();
 
     if (items.length === 0) return null;
 
     return (
         <div className="mt-2">
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="text-[9px] font-black text-stone-500 uppercase tracking-widest flex items-center gap-1 hover:text-stone-900 transition-colors ml-auto"
-            >
-                {isOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-                {isOpen ? 'Ukryj listę' : 'Pokaż listę'}
-            </button>
+            <div className="flex justify-end">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-expanded={isOpen}
+                    aria-controls={listId}
+                    icon={isOpen ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+                    onClick={() => setIsOpen(!isOpen)}
+                >
+                    {isOpen ? 'Ukryj listę' : 'Pokaż listę'}
+                </Button>
+            </div>
 
             {isOpen && (
-                <div className="mt-3 space-y-1.5 max-h-40 overflow-y-auto pr-2 scrollbar-none">
+                <ul
+                    id={listId}
+                    aria-label={label}
+                    className="mt-2 max-h-48 divide-y divide-border overflow-y-auto rounded-sm border border-border bg-surface-2"
+                >
                     {items.map((item, i) => (
-                        <div key={i} className="flex justify-between items-center text-[9px] font-bold text-stone-400 bg-black/5 px-2.5 py-1.5 rounded-lg border border-black/5">
-                            <span className="truncate max-w-[110px]">{item.name}</span>
-                            <span className="text-stone-900 shrink-0 font-black">{formatPLN(item.balance)} PLN</span>
-                        </div>
+                        <li key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
+                            <span className="min-w-0 truncate text-ink-2">{item.name}</span>
+                            <span className="tnum shrink-0 font-semibold text-ink">{formatPLN(item.balance)}</span>
+                        </li>
                     ))}
-                </div>
+                </ul>
             )}
         </div>
     );

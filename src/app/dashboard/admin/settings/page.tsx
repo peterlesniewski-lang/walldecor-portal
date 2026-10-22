@@ -3,8 +3,8 @@ import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { redirect } from "next/navigation";
 import SettingsTeamClient from "./SettingsTeamClient";
-import Link from "next/link";
 import { Mail } from "lucide-react";
+import { Button } from "@/components/ui";
 
 
 export const metadata = {
@@ -41,27 +41,14 @@ export default async function SettingsPage() {
     ]);
 
     return (
-        <div className="space-y-10 pb-20">
+        <div className="space-y-6 pb-16">
 
-            {/* Header */}
-            <div className="flex justify-between items-end">
-                <div>
-                    <h1 className="text-2xl font-black text-stone-900 tracking-tight">Ustawienia</h1>
-                    <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-1">
-                        Zarządzanie dostępem i użytkownikami systemu
-                    </p>
-                </div>
-                <div className="flex gap-2">
-                    <Link
-                        href="/dashboard/admin/settings/emails"
-                        className="px-4 py-2 bg-white border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-stone-600 hover:text-orange-600 transition-colors shadow-sm flex items-center gap-2"
-                    >
-                        <Mail size={14} />
-                        Szablony Email
-                    </Link>
-                </div>
+            {/* Tytuł „Ustawienia” i opis są w nagłówku powłoki */}
+            <div className="flex justify-end">
+                <Button href="/dashboard/admin/settings/emails" variant="secondary" icon={<Mail size={16} />}>
+                    Szablony email
+                </Button>
             </div>
-
 
             <SettingsTeamClient
                 teamMembers={teamMembers}

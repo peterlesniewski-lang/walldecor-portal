@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { ArrowLeft, FileText } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
+import { Logo } from '@/components/ui';
 
 export const metadata = {
     title: 'Regulamin Programu Partnerskiego | WallDecor',
@@ -15,13 +16,13 @@ const EFFECTIVE_DATE = '1 stycznia 2026 r.';
 function Section({ number, title, children }: { number: string; title: string; children: React.ReactNode }) {
     return (
         <section className="space-y-4">
-            <h2 className="text-lg font-black text-stone-900 flex items-center gap-3">
-                <span className="w-9 h-9 rounded-xl bg-brand-primary/10 flex items-center justify-center text-brand-primary text-sm font-black flex-shrink-0">
+            <h2 className="flex items-center gap-3 font-display text-xl font-medium text-ink">
+                <span className="tnum grid h-9 min-w-9 shrink-0 place-items-center rounded-sm bg-brass-soft px-2 font-sans text-sm font-semibold text-brass-ink">
                     {number}
                 </span>
                 {title}
             </h2>
-            <div className="ml-12 space-y-3 text-sm text-stone-600 leading-relaxed">
+            <div className="space-y-3 text-[15px] leading-relaxed text-ink-2 sm:ml-12">
                 {children}
             </div>
         </section>
@@ -33,30 +34,30 @@ function P({ children }: { children: React.ReactNode }) {
 }
 
 function Ol({ children }: { children: React.ReactNode }) {
-    return <ol className="list-decimal list-inside space-y-2 marker:text-stone-400 marker:font-bold">{children}</ol>;
+    return <ol className="list-decimal space-y-2.5 pl-5 marker:font-semibold marker:text-ink-2">{children}</ol>;
 }
 
 function Li({ children }: { children: React.ReactNode }) {
-    return <li className="pl-1">{children}</li>;
+    return <li className="pl-1.5">{children}</li>;
 }
 
 function Table({ rows }: { rows: [string, string, string][] }) {
     return (
-        <div className="overflow-hidden rounded-2xl border border-black/5">
+        <div className="overflow-x-auto rounded-md border border-border bg-surface shadow-hairline">
             <table className="w-full text-sm">
                 <thead>
-                    <tr className="bg-stone-50 border-b border-black/5">
-                        <th className="px-5 py-3 text-left text-[10px] font-black text-stone-400 uppercase tracking-widest">Poziom</th>
-                        <th className="px-5 py-3 text-left text-[10px] font-black text-stone-400 uppercase tracking-widest">Obrót skumulowany</th>
-                        <th className="px-5 py-3 text-right text-[10px] font-black text-stone-400 uppercase tracking-widest">Stawka prowizji</th>
+                    <tr className="border-b border-border bg-surface-2">
+                        <th className="label-caps px-4 py-3 text-left sm:px-5">Poziom</th>
+                        <th className="label-caps px-4 py-3 text-left sm:px-5">Obrót skumulowany</th>
+                        <th className="label-caps px-4 py-3 text-right sm:px-5">Stawka prowizji</th>
                     </tr>
                 </thead>
-                <tbody className="divide-y divide-black/5">
+                <tbody className="divide-y divide-border">
                     {rows.map(([tier, range, rate]) => (
-                        <tr key={tier} className="hover:bg-stone-50/50 transition-colors">
-                            <td className="px-5 py-3 font-black text-stone-900">{tier}</td>
-                            <td className="px-5 py-3 text-stone-500">{range}</td>
-                            <td className="px-5 py-3 text-right font-black text-brand-primary">{rate}</td>
+                        <tr key={tier}>
+                            <td className="px-4 py-3 font-semibold text-ink sm:px-5">{tier}</td>
+                            <td className="tnum px-4 py-3 text-ink-2 sm:px-5">{range}</td>
+                            <td className="tnum px-4 py-3 text-right font-semibold text-brass-ink sm:px-5">{rate}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -67,53 +68,45 @@ function Table({ rows }: { rows: [string, string, string][] }) {
 
 export default function RegulaminPage() {
     return (
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen bg-bg">
             {/* Top bar */}
-            <div className="border-b border-black/5 bg-white sticky top-0 z-10">
-                <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div className="sticky top-0 z-10 border-b border-border bg-surface">
+                <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3 sm:px-6">
                     <div className="flex items-center gap-3">
-                        <div className="flex flex-col leading-none gap-1">
-                            <span className="font-black text-stone-900 tracking-tight">
-                                Wall<span className="gold-text">Decor</span>
-                            </span>
-                            <span className="text-xs font-bold text-stone-400">Portal Architekta</span>
-                        </div>
+                        <Logo variant="dark" height={36} />
+                        <span className="text-sm text-ink-2">Portal Architekta</span>
                     </div>
                     <Link
                         href="/auth/signin"
-                        className="flex items-center gap-2 text-xs font-bold text-stone-400 hover:text-stone-900 transition-colors"
+                        className="flex items-center gap-2 text-[13px] font-semibold text-brass-ink hover:underline"
                     >
-                        <ArrowLeft size={14} />
+                        <ArrowLeft size={14} aria-hidden="true" />
                         Portal Partnera
                     </Link>
                 </div>
             </div>
 
-            <main className="max-w-3xl mx-auto px-6 py-16 space-y-12">
+            <main className="mx-auto max-w-3xl space-y-10 px-4 py-10 sm:space-y-12 sm:px-6 sm:py-16">
 
                 {/* Header */}
                 <div className="space-y-4">
-                    <div className="flex items-center gap-3 text-brand-primary">
-                        <FileText size={20} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Dokument prawny</span>
-                    </div>
-                    <h1 className="text-4xl font-black text-stone-900 leading-tight tracking-tight">
-                        Regulamin Programu<br />
-                        <span className="gold-text">Partnerskiego WallDecor</span>
+                    <span className="label-caps">Dokument prawny</span>
+                    <h1 className="font-display text-[32px] font-normal leading-tight tracking-[-0.01em] text-ink sm:text-[40px]">
+                        Regulamin Programu Partnerskiego WallDecor
                     </h1>
-                    <p className="text-stone-400 text-sm">
+                    <p className="text-sm text-ink-2">
                         dla Architektów i Projektantów Wnętrz · Wersja 1.1 · obowiązuje od {EFFECTIVE_DATE}
                     </p>
                 </div>
 
-                <hr className="border-black/5" />
+                <hr className="border-border" />
 
                 {/* Sections */}
                 <Section number="§1" title="Postanowienia ogólne">
                     <Ol>
                         <Li>
                             Program Partnerski WallDecor (dalej: „Program") jest prowadzony przez{' '}
-                            <strong className="text-stone-900">{COMPANY_NAME}</strong> z siedzibą przy
+                            <strong className="font-semibold text-ink">{COMPANY_NAME}</strong> z siedzibą przy
                             {' '}{COMPANY_ADDRESS}, NIP: {COMPANY_NIP}, KRS: {COMPANY_KRS}, zwaną dalej
                             „Organizatorem".
                         </Li>
@@ -138,8 +131,8 @@ export default function RegulaminPage() {
                             ['Wartość projektu', 'Suma wartości netto pozycji typu PRODUKT (wyposażenie, materiały). Usługi montażowe nie są wliczane do podstawy prowizji ani cashbacku.'],
                             ['Obrót skumulowany', 'Suma wartości netto wszystkich projektów o statusie ZAKOŃCZONY, naliczana od początku współpracy Partnera z WallDecor.'],
                         ].map(([term, def]) => (
-                            <div key={term} className="flex gap-3">
-                                <span className="font-black text-stone-900 min-w-[160px] flex-shrink-0">{term}</span>
+                            <div key={term} className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+                                <span className="font-semibold text-ink sm:min-w-[160px] sm:shrink-0">{term}</span>
                                 <span>{def}</span>
                             </div>
                         ))}
@@ -173,13 +166,13 @@ export default function RegulaminPage() {
                         <Li>
                             Przykład: Partner z obrotem 35 000 PLN (status Partner Plus)
                             realizuje projekt o wartości 20 000 PLN:
-                            <div className="mt-2 ml-4 p-4 bg-stone-50 rounded-xl border border-black/5 space-y-1 font-mono text-xs text-stone-700">
+                            <div className="mt-2 space-y-1 rounded-sm border border-border bg-surface-2 p-4 font-mono text-xs text-ink sm:ml-4">
                                 <div>20 000 PLN × 12% = 2 400 PLN</div>
-                                <div className="pt-1 border-t border-black/5 font-black text-stone-900">Po rozliczeniu obrót wynosi 55 000 PLN — kolejny projekt będzie liczony stawką 15% (Partner Premium).</div>
+                                <div className="border-t border-border pt-1 font-medium text-ink">Po rozliczeniu obrót wynosi 55 000 PLN — kolejny projekt będzie liczony stawką 15% (Partner Premium).</div>
                             </div>
                         </Li>
                         <Li>
-                            Prowizja uzyskuje status <strong className="text-stone-900">ZAROBIONA</strong> po
+                            Prowizja uzyskuje status <strong className="font-semibold text-ink">ZAROBIONA</strong> po
                             zmianie statusu projektu na ZAKOŃCZONY. Do tego momentu jest oznaczona
                             jako szacunkowa (OCZEKUJĄCA).
                         </Li>
@@ -194,12 +187,12 @@ export default function RegulaminPage() {
                     <Ol>
                         <Li>
                             Za każdy projekt o statusie ZAKOŃCZONY Partner otrzymuje cashback
-                            w wysokości <strong className="text-stone-900">2% wartości netto</strong> pozycji
+                            w wysokości <strong className="font-semibold text-ink">2% wartości netto</strong> pozycji
                             PRODUKT, niezależnie od poziomu partnerskiego.
                         </Li>
                         <Li>
                             Środki cashback zapisywane są w Portfelu Partnera z datą ważności
-                            <strong className="text-stone-900"> 12 miesięcy</strong> od dnia kredytowania.
+                            <strong className="font-semibold text-ink"> 12 miesięcy</strong> od dnia kredytowania.
                         </Li>
                         <Li>
                             Cashback przeznaczony jest wyłącznie na zakupy produktów WallDecor
@@ -224,7 +217,7 @@ export default function RegulaminPage() {
                     <Ol>
                         <Li>
                             Minimalna kwota wniosku o wypłatę prowizji:{' '}
-                            <strong className="text-stone-900">100 PLN</strong>.
+                            <strong className="font-semibold text-ink">100 PLN</strong>.
                         </Li>
                         <Li>
                             Wniosek składany jest z poziomu Portalu, w zakładce „Portfel",
@@ -236,7 +229,7 @@ export default function RegulaminPage() {
                         </Li>
                         <Li>
                             Organizator rozpatruje wniosek w terminie do{' '}
-                            <strong className="text-stone-900">14 dni roboczych</strong> od daty złożenia
+                            <strong className="font-semibold text-ink">14 dni roboczych</strong> od daty złożenia
                             i dostarczenia kompletnej dokumentacji.
                         </Li>
                         <Li>
@@ -262,17 +255,17 @@ export default function RegulaminPage() {
                             <div className="mt-2 flex flex-wrap gap-2">
                                 {['ZGŁOSZONY', '→', 'PRZYJĘTY', '→', 'W REALIZACJI', '→', 'ZAKOŃCZONY'].map((s, i) => (
                                     s === '→'
-                                        ? <span key={i} className="text-stone-300 font-black self-center">→</span>
-                                        : <span key={i} className="px-3 py-1 rounded-full bg-stone-100 text-stone-700 text-xs font-black">{s}</span>
+                                        ? <span key={i} className="self-center text-ink-2" aria-hidden="true">→</span>
+                                        : <span key={i} className="rounded-pill border border-border bg-surface-2 px-3 py-1 text-xs font-semibold text-ink">{s}</span>
                                 ))}
                             </div>
-                            <div className="mt-1 text-stone-400 text-xs">
+                            <div className="mt-2 text-[13px] text-ink-2">
                                 Projekt może zostać oznaczony jako NIEZREALIZOWANY na każdym etapie przed zakończeniem (brak prowizji i cashbacku).
                             </div>
                         </Li>
                         <Li>
                             Prowizja i cashback naliczane są wyłącznie dla projektów
-                            o statusie <strong className="text-stone-900">ZAKOŃCZONY</strong>.
+                            o statusie <strong className="font-semibold text-ink">ZAKOŃCZONY</strong>.
                         </Li>
                         <Li>
                             Projekt ze statusem NIEZREALIZOWANY nie jest wliczany do obrotu
@@ -287,7 +280,7 @@ export default function RegulaminPage() {
                         oraz przepisami RODO (Rozporządzenie UE 2016/679). Administratorem
                         danych jest {COMPANY_NAME}, {COMPANY_ADDRESS},
                         NIP: {COMPANY_NIP}. Kontakt w sprawach danych osobowych:{' '}
-                        <a href="mailto:partner@walldecor.pl" className="text-brand-primary font-bold hover:underline">
+                        <a href="mailto:partner@walldecor.pl" className="font-semibold text-brass-ink hover:underline">
                             partner@walldecor.pl
                         </a>.
                     </P>
@@ -317,18 +310,18 @@ export default function RegulaminPage() {
                     </Ol>
                 </Section>
 
-                <hr className="border-black/5" />
+                <hr className="border-border" />
 
                 {/* Footer */}
-                <div className="flex flex-col sm:flex-row justify-between items-start gap-4 text-xs text-stone-400">
+                <div className="flex flex-col items-start justify-between gap-4 text-[13px] text-ink-2 sm:flex-row">
                     <div className="space-y-1">
-                        <p className="font-black text-stone-500">{COMPANY_NAME}</p>
+                        <p className="font-semibold text-ink">{COMPANY_NAME}</p>
                         <p>{COMPANY_ADDRESS}</p>
                         <p>NIP: {COMPANY_NIP} · KRS: {COMPANY_KRS}</p>
                     </div>
                     <div className="space-y-1 sm:text-right">
                         <p>
-                            <a href="mailto:partner@walldecor.pl" className="hover:text-stone-700 transition-colors">
+                            <a href="mailto:partner@walldecor.pl" className="hover:text-ink">
                                 partner@walldecor.pl
                             </a>
                         </p>

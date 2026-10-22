@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { X, Save, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useId } from 'react';
+import { X, CheckCircle2, Loader2 } from 'lucide-react';
 import { getArchitectById, updateArchitect } from '@/app/actions/projects';
+import { Banner, Button, cx } from '@/components/ui';
 
 interface EditArchitectModalProps {
     isOpen: boolean;
@@ -10,7 +11,22 @@ interface EditArchitectModalProps {
     architectId: string | null;
 }
 
+type FieldKey = 'first_name' | 'last_name' | 'email' | 'nip';
+
+/** Przypisuje komunikat z serwera do pola, którego dotyczy (bez zmiany walidacji po stronie serwera). */
+function fieldForError(message: string): FieldKey | null {
+    if (/email/i.test(message)) return 'email';
+    if (/imię/i.test(message)) return 'first_name';
+    if (/nazwisko/i.test(message)) return 'last_name';
+    if (/\bnip\b/i.test(message)) return 'nip';
+    return null;
+}
+
+const INPUT = 'h-10 w-full rounded-sm border bg-surface px-3 text-sm text-ink placeholder:text-ink-3';
+const LABEL = 'mb-1.5 block text-[13px] font-semibold text-ink';
+
 export default function EditArchitectModal({ isOpen, onClose, architectId }: EditArchitectModalProps) {
+    const titleId = useId();
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(false);
     const [success, setSuccess] = useState(false);
@@ -30,6 +46,7 @@ export default function EditArchitectModal({ isOpen, onClose, architectId }: Edi
     useEffect(() => {
         if (isOpen && architectId) {
             setFetching(true);
+            setError(null);
             getArchitectById(architectId)
                 .then(data => {
                     if (data) {
@@ -50,7 +67,18 @@ export default function EditArchitectModal({ isOpen, onClose, architectId }: Edi
         }
     }, [isOpen, architectId]);
 
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [isOpen, onClose]);
+
     if (!isOpen) return null;
+
+    const errorField = error ? fieldForError(error) : null;
+    const fieldError = (key: FieldKey) => (errorField === key ? error : null);
+    const formError = error && !errorField ? error : null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -73,150 +101,182 @@ export default function EditArchitectModal({ isOpen, onClose, architectId }: Edi
         }
     };
 
+    const inputProps = (key: FieldKey) => ({
+        'aria-invalid': fieldError(key) ? true : undefined,
+        'aria-describedby': fieldError(key) ? `${titleId}-${key}-err` : undefined,
+        className: cx(INPUT, fieldError(key) ? 'border-danger' : 'border-border-strong'),
+    });
+
+    const renderError = (key: FieldKey) =>
+        fieldError(key) ? (
+            <p id={`${titleId}-${key}-err`} role="alert" className="mt-1.5 text-[13px] text-danger">{fieldError(key)}</p>
+        ) : null;
+
     return (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 text-left">
-            <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md" onClick={onClose}></div>
+            <div className="absolute inset-0 bg-ink/40" onClick={onClose} aria-hidden="true" />
 
-            <div className="relative bg-white rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-[0_32px_128px_-16px_rgba(0,0,0,0.4)] animate-in fade-in zoom-in duration-300 flex flex-col">
-                {/* Header */}
-                <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                className="relative flex max-h-[90vh] w-full max-w-[720px] flex-col overflow-hidden rounded-lg bg-surface shadow-float"
+            >
+                <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-5">
                     <div>
-                        <h3 className="text-xl font-bold text-stone-900">Edytuj Dane Architekta</h3>
-                        <p className="text-sm text-stone-500 mt-1">Zaktualizuj informacje profilowe partnera.</p>
+                        <h2 id={titleId} className="font-display text-xl font-normal text-ink">Edytuj dane architekta</h2>
+                        <p className="mt-1 text-sm text-ink-2">Zaktualizuj dane profilowe partnera.</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white rounded-xl transition-all text-stone-400 hover:text-stone-600 border border-transparent hover:border-slate-100">
-                        <X size={20} />
-                    </button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-8 px-0!"
+                        aria-label="Zamknij"
+                        icon={<X size={16} aria-hidden="true" />}
+                        onClick={onClose}
+                    />
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto flex-1">
-                    {fetching ? (
-                        <div className="py-20 text-center flex flex-col items-center gap-4">
-                            <Loader2 className="animate-spin text-blue-600" size={40} />
-                            <p className="text-stone-500 font-medium">Pobieranie danych...</p>
-                        </div>
-                    ) : success ? (
-                        <div className="py-12 text-center space-y-4">
-                            <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto border border-emerald-100 shadow-xl shadow-emerald-100/50">
-                                <CheckCircle2 size={40} />
-                            </div>
-                            <h4 className="text-xl font-bold text-stone-900">Dane zostały zaktualizowane!</h4>
-                            <p className="text-stone-500">Zmiany zostały pomyślnie zapisane w bazie.</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Personal Info */}
-                            <div className="space-y-4">
-                                <h4 className="text-[10px] font-black text-stone-400 uppercase tracking-widest border-b border-slate-50 pb-2">Dane Osobowe</h4>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Imię</label>
+                {fetching ? (
+                    <div className="flex flex-col items-center gap-3 px-6 py-16 text-center" role="status">
+                        <Loader2 className="animate-spin text-ink-2" size={28} aria-hidden="true" />
+                        <p className="text-sm text-ink-2">Pobieranie danych...</p>
+                    </div>
+                ) : success ? (
+                    <div className="space-y-3 px-6 py-12 text-center" role="status">
+                        <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-success-soft text-success">
+                            <CheckCircle2 size={24} aria-hidden="true" />
+                        </span>
+                        <h3 className="text-lg font-semibold text-ink">Dane zostały zaktualizowane</h3>
+                        <p className="text-sm text-ink-2">Zmiany zostały zapisane.</p>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                        <div className="grid flex-1 grid-cols-1 gap-x-8 gap-y-6 overflow-y-auto px-6 py-6 md:grid-cols-2">
+                            {/* Dane osobowe */}
+                            <fieldset className="min-w-0 space-y-4">
+                                <legend className="label-caps mb-4">Dane osobowe</legend>
+                                <div>
+                                    <label className={LABEL} htmlFor={`${titleId}-first_name`}>Imię</label>
                                     <input
+                                        id={`${titleId}-first_name`}
                                         required
                                         type="text"
-                                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
+                                        {...inputProps('first_name')}
                                         value={formData.first_name}
                                         onChange={e => setFormData({ ...formData, first_name: e.target.value })}
                                     />
+                                    {renderError('first_name')}
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Nazwisko</label>
+                                <div>
+                                    <label className={LABEL} htmlFor={`${titleId}-last_name`}>Nazwisko</label>
                                     <input
+                                        id={`${titleId}-last_name`}
                                         required
                                         type="text"
-                                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
+                                        {...inputProps('last_name')}
                                         value={formData.last_name}
                                         onChange={e => setFormData({ ...formData, last_name: e.target.value })}
                                     />
+                                    {renderError('last_name')}
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Email</label>
+                                <div>
+                                    <label className={LABEL} htmlFor={`${titleId}-email`}>Email</label>
                                     <input
+                                        id={`${titleId}-email`}
                                         required
                                         type="email"
-                                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
+                                        {...inputProps('email')}
                                         value={formData.email}
                                         onChange={e => setFormData({ ...formData, email: e.target.value })}
                                     />
+                                    {renderError('email')}
                                 </div>
-                            </div>
+                            </fieldset>
 
-                            {/* Business Info */}
-                            <div className="space-y-4">
-                                <h4 className="text-[10px] font-black text-stone-400 uppercase tracking-widest border-b border-slate-50 pb-2">Dane Firmowe / Freelance</h4>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Nazwa Pracowni</label>
+                            {/* Dane firmowe */}
+                            <fieldset className="min-w-0 space-y-4">
+                                <legend className="label-caps mb-4">Dane firmowe lub freelance</legend>
+                                <div>
+                                    <label className={LABEL} htmlFor={`${titleId}-studio`}>Nazwa pracowni</label>
                                     <input
+                                        id={`${titleId}-studio`}
                                         type="text"
                                         placeholder="Opcjonalnie"
-                                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
+                                        className={cx(INPUT, 'border-border-strong')}
                                         value={formData.studio_name}
                                         onChange={e => setFormData({ ...formData, studio_name: e.target.value })}
                                     />
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">NIP</label>
+                                <div>
+                                    <label className={LABEL} htmlFor={`${titleId}-nip`}>NIP</label>
                                     <input
+                                        id={`${titleId}-nip`}
                                         type="text"
-                                        placeholder="Opcjonalnie (Freelancer)"
-                                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
+                                        placeholder="Opcjonalnie (freelancer)"
+                                        {...inputProps('nip')}
                                         value={formData.nip}
                                         onChange={e => setFormData({ ...formData, nip: e.target.value })}
                                     />
+                                    {renderError('nip')}
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Adres</label>
+                                <div>
+                                    <label className={LABEL} htmlFor={`${titleId}-address`}>Adres</label>
                                     <textarea
-                                        rows={1}
-                                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
+                                        id={`${titleId}-address`}
+                                        rows={2}
+                                        className="w-full resize-none rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-ink"
                                         value={formData.address}
                                         onChange={e => setFormData({ ...formData, address: e.target.value })}
                                     />
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">Numer Konta</label>
+                                <div>
+                                    <label className={LABEL} htmlFor={`${titleId}-bank`}>Numer konta</label>
                                     <input
+                                        id={`${titleId}-bank`}
                                         type="text"
                                         placeholder="Opcjonalnie"
-                                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-medium"
+                                        className={cx(INPUT, 'tnum border-border-strong')}
                                         value={formData.bank_account}
                                         onChange={e => setFormData({ ...formData, bank_account: e.target.value })}
                                     />
                                 </div>
-                                <div className="flex items-center gap-3 pt-2">
-                                    <div
+                                <div className="flex items-center gap-3 pt-1">
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={formData.is_vat_payer}
+                                        aria-labelledby={`${titleId}-vat`}
                                         onClick={() => setFormData({ ...formData, is_vat_payer: !formData.is_vat_payer })}
-                                        className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-all ${formData.is_vat_payer ? 'bg-blue-600' : 'bg-slate-200'}`}
+                                        className={cx(
+                                            'h-6 w-11 shrink-0 rounded-full p-0.5 transition-colors',
+                                            formData.is_vat_payer ? 'bg-ink' : 'bg-border-strong',
+                                        )}
                                     >
-                                        <div className={`w-4 h-4 bg-white rounded-full transition-all ${formData.is_vat_payer ? 'translate-x-6' : 'translate-x-0'}`} />
-                                    </div>
-                                    <span className="text-xs font-bold text-stone-600">Płatnik VAT (Faktura)</span>
+                                        <span
+                                            aria-hidden="true"
+                                            className={cx(
+                                                'block h-5 w-5 rounded-full bg-surface transition-transform',
+                                                formData.is_vat_payer ? 'translate-x-5' : 'translate-x-0',
+                                            )}
+                                        />
+                                    </button>
+                                    <span id={`${titleId}-vat`} className="text-[13px] font-semibold text-ink">Płatnik VAT (faktura)</span>
                                 </div>
-                            </div>
+                            </fieldset>
+                        </div>
 
-                            <div className="md:col-span-2 pt-4">
-                                {error && (
-                                    <div className="flex items-center gap-3 p-4 bg-red-50 text-red-600 rounded-2xl text-sm border border-red-100 mb-6">
-                                        <AlertCircle size={18} />
-                                        <span>{error}</span>
-                                    </div>
-                                )}
-
-                                <button
-                                    disabled={loading}
-                                    type="submit"
-                                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all disabled:opacity-50"
-                                >
-                                    {loading ? 'Zapisywanie...' : (
-                                        <>
-                                            <Save size={20} />
-                                            Zapisz zmiany
-                                        </>
-                                    )}
-                                </button>
+                        <div className="space-y-3 border-t border-border px-6 py-4">
+                            {formError && <Banner tone="danger" title="Nie udało się zapisać zmian">{formError}</Banner>}
+                            <div className="flex flex-wrap justify-end gap-3">
+                                <Button type="button" variant="ghost" onClick={onClose}>Anuluj</Button>
+                                <Button type="submit" loading={loading}>
+                                    {loading ? 'Zapisywanie...' : 'Zapisz zmiany'}
+                                </Button>
                             </div>
                         </div>
-                    )}
-                </form>
+                    </form>
+                )}
             </div>
         </div>
     );
