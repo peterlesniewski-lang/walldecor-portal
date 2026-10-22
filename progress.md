@@ -387,3 +387,14 @@ migrations/
 | 2026-02-24 | Etap 1: Light theme — globals.css (cream #FAF8F5 tło, white karty, dark/5 borders), dashboard/layout.tsx, Sidebar.tsx zaktualizowane z dark → warm neutrals |
 | 2026-02-24 | Etap 3: Recharts 3.7.0 — AdminCharts.tsx (BarChart obrót miesięczny + PieChart rozkład tierów), wbudowany w /dashboard/admin |
 | 2026-02-24 | Etap 4: Light theme class sweep — bulk perl substitution across 69 .tsx/.ts files: dark bg hex → bg-card/bg-background, border/bg-white/N → black overlays, text-white → text-stone-900, slate-x → stone-x, x-400 icon colors → x-600 for light bg visibility, dark -900/N color overlays → -50 equivalents |
+
+## 2026-10-22 — Deploy na produkcję i smoke test
+
+- PR #3 zmergowany do `main` (merge commit `c3958e7`), deploy przez Coolify (app `walldecor-portal`, nixpacks, `https://archi.walldecor.pl`), build ok, `ensure-production-schema` bez zmian schematu.
+- Portal stoi na Coolify, nie na PM2/nginx — `DEPLOY-P1-CHECKLIST.md` i `deploy/` są nieaktualne; merge do `main` nie deployuje sam, trigger przez API (`GET /api/v1/deploy?uuid=...`).
+- Backup przed deployem: utworzony harmonogram backupu MySQL w Coolify (codziennie 03:00, `walldecor_prod`) + `backup_now`; wcześniej nie było żadnego backupu.
+- Smoke test ADMIN (tylko odczyt, dane produkcyjne): dashboard, lista architektów, profile, strona projektu z wnioskiem o wypłatę (T7), ustawienia zespołu i emaili, `/api/admin/backup` (200, JSON) — bez błędów w konsoli.
+- Nagłówki bezpieczeństwa live (HSTS, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy); `/api/admin/pipeline` → 404; regulamin w wersji 1.1.
+- Mobile 390 px (emulacja CDP): logowanie, reset hasła, regulamin bez poziomego przewijania. Widoki za logowaniem na mobile nie sprawdzone (brak możliwości zmniejszenia okna w rozszerzeniu Chrome).
+- Nie testowane: logowanie STAFF i ARCHI (brak kont testowych), żadne akcje zapisu/wypłat.
+- Obserwacja: istniejące prowizje mają stawkę 7% (stary program); PENDING przeliczy się na nową stawkę przy finalizacji (`projects.ts`, UPDATE PENDING→EARNED z nowym `rate`). Prowizja IN_PAYMENT nie wlicza się do kafelków „EARNED/PENDING” na stronie projektu admina — drobna niespójność UX.
