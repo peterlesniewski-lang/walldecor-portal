@@ -2,7 +2,7 @@ import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { ArrowLeft, Search } from 'lucide-react';
+import { ArrowLeft, MailPlus, Search } from 'lucide-react';
 import Link from 'next/link';
 import ArchitectList, { RegisterArchitectButton } from '@/components/ArchitectList';
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState, KpiTile, cx, formatNumber } from '@/components/ui';
@@ -112,7 +112,12 @@ export default async function AdminArchitectsPage({
                     <ArrowLeft size={16} aria-hidden="true" />
                     Dashboard
                 </Link>
-                <RegisterArchitectButton canRegisterArchitects={session.user.role === 'ADMIN' || session.user.role === 'STAFF'} />
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button href="/dashboard/admin/invitations" variant="secondary" size="sm" icon={<MailPlus size={16} aria-hidden="true" />}>
+                        Zaproś architektów
+                    </Button>
+                    <RegisterArchitectButton canRegisterArchitects={session.user.role === 'ADMIN' || session.user.role === 'STAFF'} />
+                </div>
             </div>
 
             {/* Nagłówek sekcji + wyszukiwarka */}

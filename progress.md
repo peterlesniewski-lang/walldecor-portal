@@ -388,6 +388,16 @@ migrations/
 | 2026-02-24 | Etap 3: Recharts 3.7.0 — AdminCharts.tsx (BarChart obrót miesięczny + PieChart rozkład tierów), wbudowany w /dashboard/admin |
 | 2026-02-24 | Etap 4: Light theme class sweep — bulk perl substitution across 69 .tsx/.ts files: dark bg hex → bg-card/bg-background, border/bg-white/N → black overlays, text-white → text-stone-900, slate-x → stone-x, x-400 icon colors → x-600 for light bg visibility, dark -900/N color overlays → -50 equivalents |
 
+## 2026-10-23 — Moduł zaproszeń (masowe dodawanie architektów)
+
+- Nowa tabela `invitations` (migracja 018, seed-dev, `ensure-production-schema.mjs` tworzy ją w MySQL + dodaje szablon `ARCHITECT_INVITED`, jeśli brak); token 64 hex, ważność 14 dni, status PENDING/ACCEPTED/REVOKED, na liście rozbity na Niewysłane/Oczekuje/Wygasłe wg `sent_at` i `expires_at <= NOW()` (liczone w SQL).
+- Panel `/dashboard/admin/invitations` (ADMIN + STAFF, link w sidebarze i na liście architektów): wklejenie listy „email, imię i nazwisko, pracownia” (lub CSV/kolumny z arkusza; parser w `src/lib/invitations.ts` rozpoznaje email po `@`, format `Nazwa <email>`, nagłówek), podgląd z oznaczeniem „ma konto / już zaproszony / błąd”, „Utwórz i wyślij”.
+- Wysyłka partiami po 20 przez `sendInvitations` z paskiem postępu w kliencie (kilkaset maili nie blokuje jednego żądania); wynik per adres, `last_error` na wierszu; akcje: Wyślij ponownie (przedłuża ważność, wygasłe dostają nowy token), Kopiuj link (na żądanie, token nie trafia do listy), Anuluj (InlineConfirm); zbiorczo „Wyślij niewysłane” i „Odnów wygasłe”.
+- Publiczna strona `/auth/invite?token=` + `POST /api/auth/accept-invitation` (rate limit per IP, transakcja z `FOR UPDATE`, token jednorazowy): zaproszony uzupełnia imię i nazwisko, pracownię, hasło (polityka haseł), akceptuje regulamin; konto `ARCHI` z `must_change_password = 0`, od razu zalogowany. Stany linku: nieprawidłowy / wykorzystany / anulowany / wygasły.
+- Audyt: `INVITATIONS_CREATED`, `INVITATIONS_SENT`, `INVITATION_REVOKED`, `INVITATION_ACCEPTED` w `activity_logs`; tagi `{{invite_link}}`, `{{expires_at}}` dodane do listy w edytorze szablonów i do maila testowego; sekcja w `docs/help/admin.md`.
+- Weryfikacja: `tests/invitations.test.ts` (11 testów), razem 102/102; `tsc` czysty w `src/`; `next build` OK; test E2E w przeglądarce na dev (Node 25: `/opt/homebrew/opt/node@25/bin/node`, bo better-sqlite3 nie ładuje się pod Node 26): utworzenie → wysyłka (log maila w dev) → anulowanie → aktywacja konta i auto-logowanie → ponowne użycie linku odrzucone. Dane testowe usunięte z `dev.sqlite`.
+- Do zrobienia przed użyciem na produkcji: deploy uruchomi `ensure-production-schema` automatycznie; sprawdzić treść szablonu `ARCHITECT_INVITED` w Ustawienia → Szablony email i wysłać mail testowy; `NEXTAUTH_URL` musi wskazywać na `https://archi.walldecor.pl` (z niego budowany jest link).
+
 ## 2026-10-22 — Deploy na produkcję i smoke test
 
 - PR #3 zmergowany do `main` (merge commit `c3958e7`), deploy przez Coolify (app `walldecor-portal`, nixpacks, `https://archi.walldecor.pl`), build ok, `ensure-production-schema` bez zmian schematu.

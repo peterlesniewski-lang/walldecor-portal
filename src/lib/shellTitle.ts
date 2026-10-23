@@ -31,6 +31,9 @@ export function resolveShellTitle(pathname: string, isAdmin: boolean): ShellTitl
             return { title: 'Architekci', subtitle: 'Partnerzy, ich statusy w programie i portfele cashback.' };
         }
         if (path.startsWith('/dashboard/admin/architects/')) return { title: 'Profil partnera' };
+        if (path === '/dashboard/admin/invitations') {
+            return { title: 'Zaproszenia', subtitle: 'Masowe dodawanie architektów: każdy dostaje link i sam ustawia hasło.' };
+        }
         if (path.startsWith('/dashboard/admin/projects/')) return { title: 'Projekt' };
         if (path === '/dashboard/admin/settings' || path.startsWith('/dashboard/admin/settings/')) {
             return { title: 'Ustawienia', subtitle: 'Zarządzanie dostępem i użytkownikami systemu.' };
