@@ -33,6 +33,17 @@ ADMIN może:
 
 Zespół administracyjny jest zarządzany w ustawieniach. ADMIN może tworzyć konta `STAFF` i `ADMIN`, resetować hasła oraz zmieniać role innych członków zespołu.
 
+## Zaproszenia (masowe dodawanie architektów)
+
+Zakładka **Zaproszenia** w menu służy do dodania wielu architektów naraz, bez ręcznego zakładania kont:
+
+1. Wklej listę w polu "Nowe zaproszenia": jedna osoba w linii, kolumny `email, imię i nazwisko, pracownia` (dwie ostatnie opcjonalne). Można wkleić kolumny z Excela lub Google Sheets albo wczytać plik CSV.
+2. Kliknij "Sprawdź listę". Adresy z istniejącym kontem i aktywnym zaproszeniem są pomijane, błędne linie oznaczone.
+3. Kliknij "Utwórz i wyślij". Maile wychodzą partiami po 20 z paskiem postępu; można też utworzyć bez wysyłki i wysłać później przyciskiem "Wyślij niewysłane".
+4. Zaproszony dostaje link (szablon `ARCHITECT_INVITED`), ważny 14 dni. Po kliknięciu sam uzupełnia imię i nazwisko, pracownię i ustawia hasło, akceptuje regulamin i jest od razu zalogowany.
+
+Na liście zaproszeń: "Wyślij ponownie" przedłuża ważność (wygasłe dostają nowy link), ikona łańcucha kopiuje link do ręcznego przekazania (np. gdy mail wpada do spamu), "Anuluj" unieważnia zaproszenie. Zaproszenia może wysyłać ADMIN i STAFF.
+
 ## Statusy projektów
 
 | Status | Znaczenie | Skutek operacyjny |
@@ -126,7 +137,8 @@ Najważniejsze szablony:
 - `PAYOUT_PROCESSED` - wypłata prowizji;
 - `PAYOUT_REDEEMED_CARD` - karta lub kod rabatowy;
 - `PROFILE_INCOMPLETE` - prośba o uzupełnienie profilu;
-- `PASSWORD_RESET` - reset hasła.
+- `PASSWORD_RESET` - reset hasła;
+- `ARCHITECT_INVITED` - zaproszenie do portalu z linkiem aktywacyjnym.
 
 ## Kontrola po deployu
 

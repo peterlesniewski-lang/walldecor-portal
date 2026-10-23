@@ -135,7 +135,7 @@ export default function EmailsClient({ initialTemplates }: { initialTemplates: E
 
                                     <Banner tone="info" title="Dostępne tagi">
                                         <span className="flex flex-wrap items-center gap-1.5">
-                                            {['{{user_name}}', '{{project_name}}', '{{client_label}}', '{{amount}}', '{{card_code}}'].map((tag) => (
+                                            {['{{user_name}}', '{{email}}', '{{project_name}}', '{{client_label}}', '{{amount}}', '{{card_code}}', '{{password}}', '{{portal_url}}', '{{reset_link}}', '{{invite_link}}', '{{expires_at}}'].map((tag) => (
                                                 <code key={tag} className="rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-ink">{tag}</code>
                                             ))}
                                         </span>

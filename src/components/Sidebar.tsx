@@ -6,6 +6,7 @@ import {
     Wallet,
     Settings,
     Users,
+    MailPlus,
     CircleHelp
 } from 'lucide-react';
 import MobileNav from './MobileNav';
@@ -29,6 +30,7 @@ export default function Sidebar({ user }: { user: SidebarUser }) {
                 links: [
                     { name: 'Dashboard', href: '/dashboard/admin', icon: LayoutDashboard },
                     { name: 'Architekci', href: '/dashboard/admin/architects', icon: Users },
+                    { name: 'Zaproszenia', href: '/dashboard/admin/invitations', icon: MailPlus },
                 ],
             },
             {

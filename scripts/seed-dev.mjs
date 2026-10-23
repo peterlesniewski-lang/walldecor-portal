@@ -71,6 +71,12 @@ CREATE TABLE password_reset_tokens (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL,
   used INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE invitations (
+  id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT, studio_name TEXT, role TEXT NOT NULL DEFAULT 'ARCHI',
+  token TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'PENDING', invited_by TEXT, expires_at TEXT NOT NULL,
+  sent_at TEXT, send_count INTEGER NOT NULL DEFAULT 0, last_error TEXT, accepted_at TEXT, accepted_user_id TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `);
 
 const PASSWORD = 'Portal-Test-2026!';
@@ -154,6 +160,7 @@ ins('email_templates', [
   { id: 'et_5', slug: 'PAYOUT_PROCESSED', name: 'Wypłata została zrealizowana', subject: 'Wypłata {{amount}} PLN zrealizowana', content: '<p>Wypłata <strong>{{amount}} PLN</strong> przelana.</p>', description: 'Wysyłane po wykonaniu przelewu' },
   { id: 'et_6', slug: 'ARCHITECT_REGISTERED', name: 'Rejestracja konta architekta', subject: 'Twoje konto w Portalu WallDecor jest gotowe', content: '<p>Login: {{email}}, hasło: {{password}}, {{portal_url}}</p>', description: 'Wysyłane do nowego architekta' },
   { id: 'et_7', slug: 'PASSWORD_RESET', name: 'Reset hasła', subject: 'Reset hasła — Portal Architekta WallDecor', content: '<p><a href="{{reset_link}}">Resetuj hasło</a></p>', description: 'Wysyłane po kliknięciu „Zapomniałem hasła”' },
+  { id: 'et_8', slug: 'ARCHITECT_INVITED', name: 'Zaproszenie do portalu', subject: 'Zaproszenie do Panelu Architekta WallDecor', content: '<p>Login: {{email}}. <a href="{{invite_link}}">Aktywuj konto</a> (ważny do {{expires_at}})</p>', description: 'Wysyłane do zaproszonego architekta (moduł Zaproszenia)' },
 ]);
 
 const counts = {};

@@ -52,6 +52,8 @@ export async function testEmailTemplate(id: string, testEmail: string) {
         password: "TestHaslo123",
         portal_url: process.env.NEXTAUTH_URL || "http://localhost:3000",
         reset_link: `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/auth/reset-password?token=test`,
+        invite_link: `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/auth/invite?token=test`,
+        expires_at: "31.12.2026",
         project_name: "Projekt Testowy",
         client_label: "Firma Testowa",
         card_code: "TEST-CARD-123",
