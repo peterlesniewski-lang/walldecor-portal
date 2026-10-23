@@ -409,3 +409,11 @@ migrations/
 - Weryfikacja: 91/91 testów (+2 nowe pliki), tsc czysto, `next build` OK, 0 klas legacy, 0 `alert/confirm`, 0 `toLocale*` bez `pl-PL`; szerokość 390 px bez przewijania na 12 stronach (pomiar przez CDP); zrzuty desktop ADMIN i ARCHI obejrzane, 0 błędów konsoli.
 - Zmiany logiki przy okazji (świadome): potwierdzenie inline przy „Oznacz jako opłacone” i zmianie roli w zespole; kafelek „Aktywne projekty” architekta liczy tylko projekty w toku; podgląd szablonu email bez `dangerouslySetInnerHTML`.
 - Otwarte: brak wspólnego prymitywu modala (trzy modale dublują obsługę Esc); kafelek cashback na stronie projektu liczony ze stawki, nie z `wallet_transactions`; `AddArchitectButton` i `RegisterArchitectButton` to dwa podobne komponenty do scalenia; Google OAuth + magic link do osobnego ticketu.
+
+## 2026-10-23 — Deploy redesignu na produkcję
+
+- PR #4 zmergowany do `main` (merge commit `d050612`), deploy przez Coolify (deployment `ngc4c44gowgoo80osg4o4ggg`, status `finished`, ok. 8 min łącznie z kolejką).
+- Backup MySQL przed deployem potwierdzony w `GET …/backups/<id>/executions` (05:09 UTC, `success`); nocny backup z 03:00 też się wykonał. Odpowiedź PATCH `backup_now` mówi tylko „configuration updated” — stan sprawdzać przez `executions`.
+- Smoke test ADMIN na produkcji (tylko odczyt): dashboard, architekci, profil partnera, strona projektu z rozliczeniem prowizji i plikami, ustawienia zespołu i emaili, pomoc, regulamin — nowy wygląd live, logo oryginalne, 0 błędów konsoli.
+- Logowanie i regulamin sprawdzone przy 390 px (CDP) bez poziomego przewijania; `/walldecor-logo-dark.png` 200; brak `fonts.googleapis` w HTML; nagłówki bezpieczeństwa bez zmian; `/api/admin/pipeline` 404.
+- Nie testowane na produkcji: logowanie STAFF/ARCHI, widoki architekta za logowaniem, akcje zapisu.
