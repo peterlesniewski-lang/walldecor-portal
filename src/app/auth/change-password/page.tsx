@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, KeyRound } from 'lucide-react';
 import { changeOwnPassword } from '@/app/actions/account';
+import { Banner, Button } from '@/components/ui';
+import { PASSWORD_POLICY_HINT } from '@/lib/passwordPolicy';
+import { AuthShell, AuthField, AUTH_INPUT } from '../AuthShell';
 
 function ChangePasswordForm() {
     const router = useRouter();
@@ -37,106 +39,70 @@ function ChangePasswordForm() {
     };
 
     return (
-        <div className="stat-card bg-card p-10 border border-black/5 shadow-[0_32px_64px_rgba(0,0,0,0.5)]">
-            <form onSubmit={handleSubmit} className="space-y-8">
-                <p className="text-stone-500 text-sm font-bold leading-relaxed">
-                    Ze względów bezpieczeństwa ustaw teraz własne hasło. Musi mieć co najmniej
-                    8 znaków oraz zawierać literę i cyfrę. Dopiero po zmianie hasła uzyskasz
-                    dostęp do panelu.
-                </p>
+        <form onSubmit={handleSubmit} className="space-y-5">
+            <p className="text-sm leading-relaxed text-ink-2">
+                Ze względów bezpieczeństwa ustaw teraz własne hasło. Musi mieć co najmniej
+                8 znaków oraz zawierać literę i cyfrę. Dopiero po zmianie hasła uzyskasz
+                dostęp do panelu.
+            </p>
 
-                {status === 'error' && (
-                    <div className="bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest p-4 rounded-2xl border border-red-800/30 flex items-center gap-3">
-                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0"></div>
-                        {message}
-                    </div>
-                )}
+            {status === 'error' && <Banner tone="danger">{message}</Banner>}
 
-                <div className="space-y-3">
-                    <label className="block text-[10px] font-black text-stone-500 uppercase tracking-[0.2em] ml-1">
-                        Obecne hasło (tymczasowe)
-                    </label>
-                    <div className="relative group">
-                        <KeyRound className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-600 group-focus-within:text-brand-primary transition-colors" size={18} />
-                        <input
-                            type="password"
-                            required
-                            className="w-full pl-14 pr-6 py-4 rounded-2xl bg-background border border-black/5 text-stone-900 placeholder:text-stone-700 focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-bold"
-                            placeholder="Hasło z maila powitalnego"
-                            value={currentPassword}
-                            onChange={(e) => setCurrentPassword(e.target.value)}
-                        />
-                    </div>
-                </div>
+            <AuthField id="change-current" label="Obecne hasło (tymczasowe)">
+                <input
+                    id="change-current"
+                    name="currentPassword"
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    className={AUTH_INPUT}
+                    placeholder="Hasło z maila powitalnego"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                />
+            </AuthField>
 
-                <div className="space-y-3">
-                    <label className="block text-[10px] font-black text-stone-500 uppercase tracking-[0.2em] ml-1">
-                        Nowe hasło
-                    </label>
-                    <div className="relative group">
-                        <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-600 group-focus-within:text-brand-primary transition-colors" size={18} />
-                        <input
-                            type="password"
-                            required
-                            minLength={8}
-                            className="w-full pl-14 pr-6 py-4 rounded-2xl bg-background border border-black/5 text-stone-900 placeholder:text-stone-700 focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-bold"
-                            placeholder="Min. 8 znaków, litera i cyfra"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                        />
-                    </div>
-                </div>
+            <AuthField id="change-new" label="Nowe hasło" hint={PASSWORD_POLICY_HINT}>
+                <input
+                    id="change-new"
+                    name="password"
+                    type="password"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    className={AUTH_INPUT}
+                    placeholder="Min. 8 znaków, litera i cyfra"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                />
+            </AuthField>
 
-                <div className="space-y-3">
-                    <label className="block text-[10px] font-black text-stone-500 uppercase tracking-[0.2em] ml-1">
-                        Powtórz nowe hasło
-                    </label>
-                    <div className="relative group">
-                        <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-600 group-focus-within:text-brand-primary transition-colors" size={18} />
-                        <input
-                            type="password"
-                            required
-                            minLength={8}
-                            className="w-full pl-14 pr-6 py-4 rounded-2xl bg-background border border-black/5 text-stone-900 placeholder:text-stone-700 focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-bold"
-                            placeholder="Powtórz hasło"
-                            value={confirm}
-                            onChange={(e) => setConfirm(e.target.value)}
-                        />
-                    </div>
-                </div>
+            <AuthField id="change-confirm" label="Powtórz nowe hasło">
+                <input
+                    id="change-confirm"
+                    name="confirm"
+                    type="password"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    className={AUTH_INPUT}
+                    placeholder="Powtórz hasło"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                />
+            </AuthField>
 
-                <button
-                    type="submit"
-                    disabled={status === 'loading'}
-                    className="w-full gold-gradient text-black font-black py-5 rounded-[2rem] shadow-[0_20px_40px_rgba(212,175,55,0.2)] hover:shadow-[0_25px_50px_rgba(212,175,55,0.3)] transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-xs disabled:opacity-50"
-                >
-                    {status === 'loading' ? 'Zapisywanie...' : 'Ustaw nowe hasło'}
-                </button>
-            </form>
-        </div>
+            <Button type="submit" fullWidth loading={status === 'loading'}>
+                {status === 'loading' ? 'Zapisywanie...' : 'Ustaw nowe hasło'}
+            </Button>
+        </form>
     );
 }
 
 export default function ChangePassword() {
     return (
-        <div className="min-h-screen bg-background flex items-center justify-center p-6 relative overflow-hidden">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-brand-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
-
-            <div className="w-full max-w-md relative z-10">
-                <div className="text-center mb-12">
-                    <div className="w-16 h-16 gold-gradient rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_20px_40px_rgba(212,175,55,0.2)]">
-                        <KeyRound size={32} className="text-black" />
-                    </div>
-                    <h1 className="text-3xl font-black text-stone-900 tracking-tight leading-none mb-3">
-                        Zmień hasło
-                    </h1>
-                    <p className="text-stone-500 font-bold text-sm uppercase tracking-widest">
-                        Panel Architekta <span className="text-brand-primary mx-1">/</span> WallDecor
-                    </p>
-                </div>
-
-                <ChangePasswordForm />
-            </div>
-        </div>
+        <AuthShell title="Zmień hasło" subtitle="Portal Partnera WallDecor">
+            <ChangePasswordForm />
+        </AuthShell>
     );
 }

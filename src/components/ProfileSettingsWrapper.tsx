@@ -19,16 +19,20 @@ export default function ProfileSettingsWrapper({ user }: ProfileSettingsWrapperP
     return (
         <>
             <button
+                type="button"
                 onClick={() => setIsModalOpen(true)}
-                className="w-full flex items-center justify-between p-5 rounded-3xl bg-black/5 border border-black/5 hover:bg-black/10 transition-all group"
+                className="group flex w-full items-center justify-between gap-3 rounded-md border border-border bg-surface px-4 py-3.5 text-left shadow-hairline transition-colors hover:border-border-strong"
             >
-                <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-black/5 flex items-center justify-center text-stone-500 group-hover:text-stone-900 transition-colors">
-                        <Settings size={20} />
-                    </div>
-                    <span className="text-sm font-bold text-stone-400 group-hover:text-stone-900 transition-colors">Ustawienia Profilu</span>
-                </div>
-                <ArrowUpRight size={18} className="text-stone-700 group-hover:text-brand-primary transition-all" />
+                <span className="flex items-center gap-3">
+                    <span className="grid h-9 w-9 place-items-center rounded-sm bg-ink/[0.06] text-ink-2">
+                        <Settings size={18} aria-hidden="true" />
+                    </span>
+                    <span>
+                        <span className="block text-sm font-semibold text-ink">Ustawienia profilu</span>
+                        <span className="block text-xs text-ink-2">Dane firmy, NIP i numer konta</span>
+                    </span>
+                </span>
+                <ArrowUpRight size={18} className="text-ink-3 transition-colors group-hover:text-ink" aria-hidden="true" />
             </button>
 
             <ProfileSettingsModal

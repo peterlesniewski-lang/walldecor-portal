@@ -1,52 +1,61 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus } from 'lucide-react';
-import Link from 'next/link';
+import { Plus, UserPlus } from 'lucide-react';
 import ProjectSubmissionModal from './ProjectSubmissionModal';
 import ArchitectRegistrationModal from './ArchitectRegistrationModal';
+import { Button } from './ui/Button';
 
 interface HeaderActionsProps {
     userRole: string;
 }
 
+/**
+ * Akcje w nagłówku strony. Jeden przycisk główny: dodanie/zgłoszenie projektu.
+ * Pozostałe akcje są drugorzędne (secondary/ghost).
+ */
 export default function HeaderActions({ userRole }: HeaderActionsProps) {
     const [isArchiModalOpen, setIsArchiModalOpen] = useState(false);
     const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+    const isAdmin = userRole === 'ADMIN' || userRole === 'STAFF';
 
     return (
-        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-            <Link
-                href={userRole === 'ADMIN' || userRole === 'STAFF' ? '/dashboard/admin/help' : '/dashboard/help'}
-                className="bg-black/5 border border-black/5 text-stone-400 px-4 py-2.5 sm:px-6 sm:py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap hover:bg-black/10 hover:text-stone-900 transition-all"
-            >
-                Pomoc
-            </Link>
-            {userRole === 'ADMIN' || userRole === 'STAFF' ? (
+        <div className="flex items-center gap-3">
+            {/* Pomoc jest w szufladzie MobileNav, więc jako przycisk tylko na desktopie */}
+            <div className="hidden lg:block">
+                <Button
+                    href={isAdmin ? '/dashboard/admin/help' : '/dashboard/help'}
+                    variant="ghost"
+                >
+                    Pomoc
+                </Button>
+            </div>
+            {isAdmin ? (
                 <>
-                    {(userRole === 'ADMIN' || userRole === 'STAFF') && (
-                        <button
+                    <div className="hidden lg:block">
+                        <Button variant="secondary" onClick={() => setIsArchiModalOpen(true)}>
+                            Zarejestruj architekta
+                        </Button>
+                    </div>
+                    {/* Mobile: drugorzędna akcja jako ikona z aria-label, żeby akcje zajmowały jeden wiersz */}
+                    <div className="lg:hidden">
+                        <Button
+                            variant="secondary"
+                            aria-label="Zarejestruj architekta"
+                            title="Zarejestruj architekta"
+                            className="w-10 px-0!"
+                            icon={<UserPlus size={18} aria-hidden="true" />}
                             onClick={() => setIsArchiModalOpen(true)}
-                            className="bg-black/5 border border-black/5 text-stone-400 px-4 py-2.5 sm:px-6 sm:py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap hover:bg-black/10 hover:text-stone-900 transition-all flex items-center gap-2"
-                        >
-                            Rejestruj Architekta
-                        </button>
-                    )}
-                    <button
-                        onClick={() => setIsProjectModalOpen(true)}
-                        className="gold-gradient text-black px-5 py-2.5 sm:px-8 sm:py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap hover:shadow-[0_10px_20px_rgba(212,175,55,0.2)] transition-all"
-                    >
+                        />
+                    </div>
+                    <Button onClick={() => setIsProjectModalOpen(true)}>
                         Dodaj projekt
-                    </button>
+                    </Button>
                 </>
             ) : (
-                <button
-                    onClick={() => setIsProjectModalOpen(true)}
-                    className="gold-gradient text-black px-6 py-3 sm:px-10 sm:py-4 rounded-[2rem] text-[10px] font-black uppercase tracking-widest whitespace-nowrap hover:shadow-[0_20px_40px_rgba(212,175,55,0.2)] transition-all flex items-center gap-3"
-                >
-                    <Plus size={18} />
+                <Button icon={<Plus size={16} aria-hidden="true" />} onClick={() => setIsProjectModalOpen(true)}>
                     Zgłoś nowy projekt
-                </button>
+                </Button>
             )}
 
             <ProjectSubmissionModal

@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CreditCard, Loader2 } from 'lucide-react';
+import { CreditCard } from 'lucide-react';
 import { requestRedemption } from '@/app/actions/cashback';
 import { useRouter } from 'next/navigation';
-import { formatPLN } from '@/lib/utils';
+import { Button, formatPLN } from '@/components/ui';
 
 interface RedeemCashbackButtonProps {
     balance: number;
@@ -37,61 +37,61 @@ export default function RedeemCashbackButton({ balance }: RedeemCashbackButtonPr
     };
 
     return (
-        <div className="relative">
-            <button
+        <div className="space-y-3">
+            <Button
+                fullWidth
+                variant="secondary"
+                icon={<CreditCard size={16} aria-hidden="true" />}
                 onClick={() => { setIsOpen(!isOpen); setError(null); }}
-                className="w-full py-4 bg-brand-primary text-black rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-white transition-all shadow-lg shadow-brand-primary/20 flex items-center justify-center gap-3"
+                aria-expanded={isOpen}
             >
-                <CreditCard size={16} />
-                Zrealizuj Cashback (Karta Rabatowa)
-            </button>
+                Zrealizuj cashback (karta rabatowa)
+            </Button>
 
             {isOpen && (
-                <div className="absolute top-full left-0 right-0 mt-4 p-6 bg-white border border-black/10 rounded-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <h4 className="text-[10px] font-black text-stone-500 uppercase tracking-widest mb-4">Wybierz kwotę realizacji</h4>
-
-                    <div className="space-y-4 mb-6">
-                        <div className="relative">
+                <div className="rounded-md border border-border bg-surface-2 p-4">
+                    <div className="flex flex-col gap-1.5">
+                        <label htmlFor="redeem-amount" className="text-[13px] font-semibold text-ink-2">Kwota realizacji</label>
+                        <div className="flex h-10 items-center rounded-sm border border-border-strong bg-surface pr-3 focus-within:border-ink focus-within:ring-[3px] focus-within:ring-ink/10">
                             <input
+                                id="redeem-amount"
                                 type="number"
+                                min="0"
                                 value={amount}
                                 onChange={(e) => setAmount(Number(e.target.value))}
-                                className="w-full bg-black/5 border border-black/10 rounded-xl py-3 px-4 text-sm font-black text-stone-900 focus:outline-none focus:border-brand-primary/50 text-right pr-20"
+                                aria-invalid={Boolean(error) || undefined}
+                                className="tnum h-full min-w-0 flex-1 bg-transparent px-3 text-[15px] text-ink focus:outline-none"
                                 placeholder="0"
                             />
-                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-stone-500 uppercase tracking-widest">
-                                Kwota
-                            </div>
-                            <div className="absolute right-12 top-1/2 -translate-y-1/2 text-[10px] font-black text-stone-500 uppercase">
-                                PLN
-                            </div>
+                            <span className="text-[13px] text-ink-3">PLN</span>
                         </div>
-
-                        <button
-                            onClick={() => setAmount(balance)}
-                            className="w-full py-2 bg-black/5 hover:bg-black/10 border border-black/5 rounded-xl text-[10px] font-black text-stone-400 hover:text-stone-900 uppercase tracking-widest transition-all"
-                        >
-                            Wypłać całość: {formatPLN(balance)} PLN
-                        </button>
-
-                        {error && (
-                            <p role="alert" className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
-                                {error}
-                            </p>
-                        )}
                     </div>
 
                     <button
-                        onClick={handleRedeem}
-                        disabled={isLoading || amount <= 0 || amount > balance}
-                        className="w-full py-3 bg-white text-black rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-brand-primary transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        type="button"
+                        onClick={() => setAmount(balance)}
+                        className="mt-2 text-[13px] font-semibold text-brass-ink underline underline-offset-2 hover:text-ink"
                     >
-                        {isLoading ? <Loader2 size={14} className="animate-spin" /> : 'Złóż wniosek'}
+                        Wymień całość: <span className="tnum">{formatPLN(balance)}</span>
                     </button>
 
-                    <p className="text-[9px] text-stone-600 mt-3 text-center">
-                        Po zatwierdzeniu otrzymasz kod rabatowy <br /> do wykorzystania w naszym sklepie.
-                    </p>
+                    {error && (
+                        <p role="alert" className="mt-3 rounded-sm bg-danger-soft px-3 py-2 text-[13px] font-medium text-danger">
+                            {error}
+                        </p>
+                    )}
+
+                    <div className="mt-4 flex items-center gap-3">
+                        <Button
+                            variant="secondary"
+                            loading={isLoading}
+                            disabled={amount <= 0 || amount > balance}
+                            onClick={handleRedeem}
+                        >
+                            Złóż wniosek
+                        </Button>
+                        <p className="text-xs text-ink-2">Po zatwierdzeniu otrzymasz kod rabatowy do wykorzystania w sklepie WallDecor.</p>
+                    </div>
                 </div>
             )}
         </div>

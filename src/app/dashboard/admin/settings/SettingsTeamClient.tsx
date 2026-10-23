@@ -2,14 +2,14 @@
 
 import React, { useState } from 'react';
 import {
-    ShieldCheck, KeyRound, UserPlus, Loader2,
-    CheckCircle2, AlertCircle, RefreshCw, Eye, EyeOff, Copy, Check,
-    Users, ExternalLink, Upload, Database, Download
+    KeyRound, UserPlus, RefreshCw, Eye, EyeOff, Copy, Check,
+    Users, ExternalLink, Upload, Download
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createUser, resetUserPassword, updateUserRole } from '@/app/actions/settings';
 import AdminCSVImportModal from '@/admin/components/AdminCSVImportModal';
+import { Banner, Button, Card, EmptyState, InlineConfirm, KpiTile, StatusPill, formatDate, formatNumber } from '@/components/ui';
 
 interface TeamMember {
     id: string;
@@ -45,9 +45,28 @@ interface Props {
     dbStats: DbStats;
 }
 
+// ─── Style pól (design system: 40 px, hairline, fokus ink) ─────────────────
+
+const FIELD_LABEL = 'text-[13px] font-semibold text-ink-2';
+const FIELD_INPUT =
+    'h-10 w-full rounded-sm border border-border-strong bg-surface px-3 text-[15px] text-ink placeholder:text-ink-3 ' +
+    'focus:border-ink focus:outline-none focus:shadow-[0_0_0_3px_rgba(26,25,23,0.08)]';
+const TH = 'label-caps px-4 py-3 text-left sm:px-5';
+const TD = 'px-4 py-3.5 align-middle sm:px-5';
+
+const ROLE_LABEL: Record<'ADMIN' | 'STAFF', string> = { ADMIN: 'Administrator', STAFF: 'Pracownik' };
+
+function generatePassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
+    const arr = new Uint32Array(12);
+    crypto.getRandomValues(arr);
+    return Array.from(arr, (n) => chars[n % chars.length]).join('');
+}
+
 // ─── Password input with show/hide + copy ─────────────────────────────────
 
-function PasswordInput({ value, onChange, placeholder }: {
+function PasswordInput({ id, value, onChange, placeholder }: {
+    id?: string;
     value: string;
     onChange: (v: string) => void;
     placeholder?: string;
@@ -64,21 +83,25 @@ function PasswordInput({ value, onChange, placeholder }: {
     return (
         <div className="relative flex items-center">
             <input
+                id={id}
                 type={show ? 'text' : 'password'}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder || 'Hasło (min. 8 znaków)'}
-                className="w-full bg-black/5 border border-black/10 rounded-xl pl-4 pr-20 py-2.5 text-sm font-mono text-stone-900 focus:outline-none focus:border-brand-primary/50"
+                autoComplete="new-password"
+                className={`${FIELD_INPUT} pr-[72px] font-mono text-sm`}
             />
-            <div className="absolute right-2 flex items-center gap-1">
+            <div className="absolute right-1.5 flex items-center gap-0.5">
                 <button type="button" onClick={() => setShow(!show)}
-                    className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-black/5 transition-all">
-                    {show ? <EyeOff size={13} /> : <Eye size={13} />}
+                    aria-label={show ? 'Ukryj hasło' : 'Pokaż hasło'}
+                    className="rounded-sm p-1.5 text-ink-2 hover:bg-ink/5 hover:text-ink">
+                    {show ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
                 {value && (
                     <button type="button" onClick={copy}
-                        className="p-1.5 rounded-lg text-stone-400 hover:text-brand-primary hover:bg-black/5 transition-all">
-                        {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                        aria-label="Kopiuj hasło"
+                        className="rounded-sm p-1.5 text-ink-2 hover:bg-ink/5 hover:text-ink">
+                        {copied ? <Check size={15} className="text-success" /> : <Copy size={15} />}
                     </button>
                 )}
             </div>
@@ -89,32 +112,16 @@ function PasswordInput({ value, onChange, placeholder }: {
 // ─── Inline feedback ──────────────────────────────────────────────────────
 
 function Feedback({ type, msg }: { type: 'success' | 'error'; msg: string }) {
-    return (
-        <div className={`flex items-center gap-2 p-3 rounded-xl text-xs font-bold border ${type === 'success'
-            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600'
-            : 'bg-red-500/10 border-red-500/20 text-red-600'
-            }`}>
-            {type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-            {msg}
-        </div>
-    );
+    return <Banner tone={type === 'success' ? 'success' : 'danger'}>{msg}</Banner>;
 }
 
-// ─── Reset password row ───────────────────────────────────────────────────
+// ─── Reset password panel (rozwijany pod wierszem) ────────────────────────
 
-function ResetPasswordRow({ member }: { member: TeamMember }) {
+function ResetPasswordPanel({ member, onClose }: { member: TeamMember; onClose: () => void }) {
     const router = useRouter();
-    const [open, setOpen] = useState(false);
     const [password, setPassword] = useState('');
     const [saving, setSaving] = useState(false);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-
-    const generate = () => {
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
-        const arr = new Uint32Array(12);
-        crypto.getRandomValues(arr);
-        setPassword(Array.from(arr, (n) => chars[n % chars.length]).join(''));
-    };
 
     const save = async () => {
         setSaving(true);
@@ -122,7 +129,7 @@ function ResetPasswordRow({ member }: { member: TeamMember }) {
         try {
             await resetUserPassword(member.id, password);
             setFeedback({ type: 'success', msg: 'Hasło zostało zmienione.' });
-            setTimeout(() => { setOpen(false); setPassword(''); setFeedback(null); }, 2000);
+            setTimeout(() => { onClose(); setPassword(''); setFeedback(null); }, 2000);
             router.refresh();
         } catch (e: any) {
             setFeedback({ type: 'error', msg: e.message || 'Błąd zmiany hasła.' });
@@ -131,51 +138,27 @@ function ResetPasswordRow({ member }: { member: TeamMember }) {
         }
     };
 
-    if (!open) {
-        return (
-            <button
-                onClick={() => setOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/5 text-stone-500 hover:text-stone-900 hover:bg-black/10 text-[10px] font-black uppercase tracking-widest transition-all"
-            >
-                <KeyRound size={12} />
-                Reset hasła
-            </button>
-        );
-    }
+    const inputId = `reset-pw-${member.id}`;
 
     return (
-        <div className="mt-3 p-4 bg-black/[0.02] border border-black/10 rounded-2xl space-y-3" onClick={(e) => e.stopPropagation()}>
-            <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest">Nowe hasło dla {member.name}</p>
+        <div className="max-w-xl space-y-3 rounded-sm border border-border bg-surface-2 p-4">
+            <label htmlFor={inputId} className={FIELD_LABEL}>Nowe hasło dla {member.name}</label>
             <div className="flex items-center gap-2">
                 <div className="flex-1">
-                    <PasswordInput value={password} onChange={setPassword} />
+                    <PasswordInput id={inputId} value={password} onChange={setPassword} />
                 </div>
-                <button
-                    type="button"
-                    onClick={generate}
-                    className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-black/5 hover:bg-black/10 text-stone-500 hover:text-stone-900 text-[10px] font-black uppercase tracking-widest transition-all shrink-0"
-                    title="Auto-generuj hasło"
-                >
-                    <RefreshCw size={12} />
-                    Auto
-                </button>
+                <Button variant="secondary" icon={<RefreshCw size={14} />} onClick={() => setPassword(generatePassword())} title="Wygeneruj hasło automatycznie">
+                    Generuj
+                </Button>
             </div>
             {feedback && <Feedback type={feedback.type} msg={feedback.msg} />}
             <div className="flex items-center gap-2">
-                <button
-                    onClick={save}
-                    disabled={saving || password.length < 8}
-                    className="px-4 py-2 bg-brand-primary hover:bg-brand-secondary text-black rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 disabled:opacity-50 transition-all"
-                >
-                    {saving ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+                <Button size="sm" loading={saving} disabled={password.length < 8} icon={<KeyRound size={14} />} onClick={save}>
                     Zapisz hasło
-                </button>
-                <button
-                    onClick={() => { setOpen(false); setPassword(''); setFeedback(null); }}
-                    className="px-4 py-2 bg-black/5 hover:bg-black/10 text-stone-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-                >
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => { onClose(); setPassword(''); setFeedback(null); }}>
                     Anuluj
-                </button>
+                </Button>
             </div>
         </div>
     );
@@ -184,14 +167,16 @@ function ResetPasswordRow({ member }: { member: TeamMember }) {
 // ─── Shared last-login formatter ──────────────────────────────────────────
 
 function LastLogin({ value }: { value: string | null }) {
-    if (!value) return <p className="text-[10px] text-stone-300 font-bold italic">Brak danych</p>;
+    if (!value) return <span className="text-sm text-ink-2">Brak logowań</span>;
+    return <span className="tnum text-sm text-ink-2">{formatDate(value)}</span>;
+}
+
+function UserCell({ name, email }: { name: string; email: string }) {
     return (
-        <p className="text-[10px] text-stone-500 font-bold">
-            {new Date(value).toLocaleString('pl-PL', {
-                day: '2-digit', month: '2-digit', year: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-            })}
-        </p>
+        <>
+            <p className="font-semibold text-ink">{name}</p>
+            <p className="mt-0.5 text-[13px] text-ink-2">{email}</p>
+        </>
     );
 }
 
@@ -203,6 +188,11 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>('team');
     const [showImport, setShowImport] = useState(false);
+    const [resetOpenFor, setResetOpenFor] = useState<string | null>(null);
+
+    // Potwierdzenie zmiany roli (zamiast zmiany jednym kliknięciem w select)
+    const [pendingRole, setPendingRole] = useState<{ id: string; role: 'STAFF' | 'ADMIN' } | null>(null);
+    const [roleSaving, setRoleSaving] = useState(false);
 
     // Add user form state
     const [showAddForm, setShowAddForm] = useState(false);
@@ -213,13 +203,6 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
     const [addSaving, setAddSaving] = useState(false);
     const [addFeedback, setAddFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [roleFeedback, setRoleFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-
-    const generateForNew = () => {
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
-        const arr = new Uint32Array(12);
-        crypto.getRandomValues(arr);
-        setNewPassword(Array.from(arr, (n) => chars[n % chars.length]).join(''));
-    };
 
     const submitCreate = async () => {
         setAddSaving(true);
@@ -238,18 +221,23 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
 
     const changeRole = async (userId: string, role: 'STAFF' | 'ADMIN') => {
         setRoleFeedback(null);
+        setRoleSaving(true);
         try {
             await updateUserRole(userId, role);
+            setPendingRole(null);
             router.refresh();
         } catch (e: any) {
+            setPendingRole(null);
             setRoleFeedback({ type: 'error', msg: e.message || 'Nie udało się zmienić roli.' });
+        } finally {
+            setRoleSaving(false);
         }
     };
 
-    const tabs: { id: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
-        { id: 'team', label: 'Zespół', icon: <ShieldCheck size={14} />, count: teamMembers.length },
-        { id: 'architects', label: 'Architekci', icon: <Users size={14} />, count: architects.length },
-        { id: 'database', label: 'Baza danych', icon: <Database size={14} /> },
+    const tabs: { id: Tab; label: string; count?: number }[] = [
+        { id: 'team', label: 'Zespół', count: teamMembers.length },
+        { id: 'architects', label: 'Architekci', count: architects.length },
+        { id: 'database', label: 'Baza danych' },
     ];
 
     return (
@@ -258,27 +246,24 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
             isOpen={showImport}
             onClose={(didImport) => { setShowImport(false); if (didImport) router.refresh(); }}
         />
-        <div className="stat-card bg-card border border-black/5 p-0 overflow-hidden">
+        <Card className="overflow-hidden">
             {/* Tab bar */}
-            <div className="flex items-center border-b border-black/5 px-6">
+            <div role="tablist" aria-label="Sekcje ustawień" className="flex gap-1 overflow-x-auto border-b border-border px-3 sm:px-5">
                 {tabs.map((tab) => (
                     <button
                         key={tab.id}
-                        onClick={() => { setActiveTab(tab.id); setShowAddForm(false); }}
-                        className={`flex items-center gap-2 px-4 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 -mb-px ${
+                        role="tab"
+                        aria-selected={activeTab === tab.id}
+                        onClick={() => { setActiveTab(tab.id); setShowAddForm(false); setResetOpenFor(null); setPendingRole(null); }}
+                        className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3.5 py-3.5 text-sm font-medium ${
                             activeTab === tab.id
-                                ? 'border-brand-primary text-stone-900'
-                                : 'border-transparent text-stone-400 hover:text-stone-700'
+                                ? 'border-ink text-ink'
+                                : 'border-transparent text-ink-2 hover:text-ink'
                         }`}
                     >
-                        {tab.icon}
                         {tab.label}
                         {tab.count !== undefined && (
-                            <span className={`ml-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${
-                                activeTab === tab.id
-                                    ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
-                                    : 'bg-black/5 text-stone-400 border-black/5'
-                            }`}>
+                            <span className="tnum rounded-pill bg-ink/[0.06] px-2 py-0.5 text-xs font-semibold text-ink-2">
                                 {tab.count}
                             </span>
                         )}
@@ -288,78 +273,77 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
 
             {/* ── Tab: Zespół ── */}
             {activeTab === 'team' && (
-                <div className="p-6 space-y-6">
+                <div role="tabpanel" className="space-y-5 p-4 sm:p-6">
                     {/* Header row */}
-                    <div className="flex items-center justify-between">
-                        <p className="text-[10px] text-stone-500 font-bold">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm text-ink-2">
                             {teamMembers.length} {teamMembers.length === 1 ? 'użytkownik' : 'użytkowników'} z dostępem administracyjnym
                         </p>
-                        <button
+                        <Button
+                            variant={showAddForm ? 'secondary' : 'primary'}
+                            icon={<UserPlus size={16} />}
                             onClick={() => setShowAddForm(!showAddForm)}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-primary hover:bg-brand-secondary text-black text-[10px] font-black uppercase tracking-widest transition-all shadow-[0_4px_16px_rgba(212,175,55,0.2)]"
                         >
-                            <UserPlus size={14} />
                             Dodaj użytkownika
-                        </button>
+                        </Button>
                     </div>
 
                     {roleFeedback && <Feedback type={roleFeedback.type} msg={roleFeedback.msg} />}
 
                     {/* Add user form */}
                     {showAddForm && (
-                        <div className="bg-black/[0.02] border border-brand-primary/20 rounded-2xl p-6 space-y-4">
-                            <p className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Nowy użytkownik systemu</p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Imię i nazwisko</label>
+                        <div className="space-y-4 rounded-md border border-border bg-surface-2 p-5">
+                            <h3 className="font-display text-lg text-ink">Nowy użytkownik systemu</h3>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <div className="flex flex-col gap-1.5">
+                                    <label htmlFor="new-user-name" className={FIELD_LABEL}>Imię i nazwisko</label>
                                     <input
+                                        id="new-user-name"
                                         type="text"
                                         value={newName}
                                         onChange={(e) => setNewName(e.target.value)}
                                         placeholder="Jan Kowalski"
-                                        className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-none focus:border-brand-primary/50"
+                                        className={FIELD_INPUT}
                                     />
                                 </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Email</label>
+                                <div className="flex flex-col gap-1.5">
+                                    <label htmlFor="new-user-email" className={FIELD_LABEL}>Email</label>
                                     <input
+                                        id="new-user-email"
                                         type="email"
                                         value={newEmail}
                                         onChange={(e) => setNewEmail(e.target.value)}
                                         placeholder="jan@walldecor.pl"
-                                        className="w-full bg-black/5 border border-black/10 rounded-xl px-4 py-2.5 text-sm text-stone-900 focus:outline-none focus:border-brand-primary/50"
+                                        className={FIELD_INPUT}
                                     />
                                 </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Hasło</label>
+                                <div className="flex flex-col gap-1.5">
+                                    <label htmlFor="new-user-password" className={FIELD_LABEL}>Hasło</label>
                                     <div className="flex items-center gap-2">
                                         <div className="flex-1">
-                                            <PasswordInput value={newPassword} onChange={setNewPassword} />
+                                            <PasswordInput id="new-user-password" value={newPassword} onChange={setNewPassword} />
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={generateForNew}
-                                            className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-black/5 hover:bg-black/10 text-stone-500 hover:text-stone-900 text-[10px] font-black uppercase tracking-widest transition-all shrink-0"
-                                        >
-                                            <RefreshCw size={12} />
-                                            Auto
-                                        </button>
+                                        <Button variant="secondary" icon={<RefreshCw size={14} />} onClick={() => setNewPassword(generatePassword())} title="Wygeneruj hasło automatycznie">
+                                            Generuj
+                                        </Button>
                                     </div>
                                 </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest">Rola</label>
-                                    <div className="flex gap-2">
+                                <div className="flex flex-col gap-1.5">
+                                    <span className={FIELD_LABEL} id="new-user-role-label">Rola</span>
+                                    <div role="radiogroup" aria-labelledby="new-user-role-label" className="flex gap-2">
                                         {(['STAFF', 'ADMIN'] as const).map((r) => (
                                             <button
                                                 key={r}
                                                 type="button"
+                                                role="radio"
+                                                aria-checked={newRole === r}
                                                 onClick={() => setNewRole(r)}
-                                                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${newRole === r
-                                                    ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary'
-                                                    : 'bg-black/5 border-black/5 text-stone-500 hover:border-black/10'
+                                                className={`h-10 flex-1 rounded-sm border text-sm font-semibold ${newRole === r
+                                                    ? 'border-ink bg-surface text-ink shadow-[0_0_0_3px_rgba(26,25,23,0.08)]'
+                                                    : 'border-border-strong bg-surface text-ink-2 hover:border-ink-3'
                                                     }`}
                                             >
-                                                {r}
+                                                {ROLE_LABEL[r]}
                                             </button>
                                         ))}
                                     </div>
@@ -368,72 +352,85 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
 
                             {addFeedback && <Feedback type={addFeedback.type} msg={addFeedback.msg} />}
 
-                            <div className="flex items-center gap-3 pt-2">
-                                <button
+                            <div className="flex items-center gap-3 pt-1">
+                                <Button
+                                    loading={addSaving}
+                                    disabled={!newName || !newEmail || newPassword.length < 8}
+                                    icon={<UserPlus size={16} />}
                                     onClick={submitCreate}
-                                    disabled={addSaving || !newName || !newEmail || newPassword.length < 8}
-                                    className="px-6 py-2.5 bg-brand-primary hover:bg-brand-secondary text-black rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 disabled:opacity-50 transition-all"
                                 >
-                                    {addSaving ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
                                     Utwórz konto
-                                </button>
-                                <button
-                                    onClick={() => { setShowAddForm(false); setAddFeedback(null); }}
-                                    className="px-5 py-2.5 bg-black/5 hover:bg-black/10 text-stone-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-                                >
+                                </Button>
+                                <Button variant="ghost" onClick={() => { setShowAddForm(false); setAddFeedback(null); }}>
                                     Anuluj
-                                </button>
+                                </Button>
                             </div>
                         </div>
                     )}
 
                     {/* Team members table */}
-                    <div className="border border-black/5 rounded-2xl overflow-hidden">
-                        <table className="w-full">
+                    <div className="overflow-x-auto rounded-md border border-border">
+                        <table className="w-full min-w-[640px] text-sm">
                             <thead>
-                                <tr className="bg-black/[0.02] border-b border-black/5">
-                                    <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Użytkownik</th>
-                                    <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Rola</th>
-                                    <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Ostatnie logowanie</th>
-                                    <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Akcje</th>
+                                <tr className="border-b border-border bg-surface-2">
+                                    <th className={TH}>Użytkownik</th>
+                                    <th className={TH}>Rola</th>
+                                    <th className={TH}>Ostatnie logowanie</th>
+                                    <th className={TH}>Akcje</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-black/5">
+                            <tbody>
                                 {teamMembers.map((m) => (
-                                    <tr key={m.id} className="hover:bg-black/[0.01] transition-colors">
-                                        <td className="px-6 py-4">
-                                            <p className="text-sm font-black text-stone-900">{m.name}</p>
-                                            <p className="text-[10px] text-stone-400 font-bold mt-0.5">{m.email}</p>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            {m.id === currentUserId ? (
-                                                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${m.role === 'ADMIN'
-                                                    ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
-                                                    : 'bg-black/5 text-stone-500 border-black/5'
-                                                    }`}>
-                                                    {m.role}
-                                                </span>
-                                            ) : (
-                                                <select
-                                                    value={m.role}
-                                                    onChange={(e) => changeRole(m.id, e.target.value as 'STAFF' | 'ADMIN')}
-                                                    className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border cursor-pointer focus:outline-none transition-all ${m.role === 'ADMIN'
-                                                        ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
-                                                        : 'bg-black/5 text-stone-500 border-black/5'
-                                                        }`}
+                                    <React.Fragment key={m.id}>
+                                        <tr className="border-b border-border last:border-b-0 hover:bg-surface-2">
+                                            <td className={TD}>
+                                                <UserCell name={m.name} email={m.email} />
+                                            </td>
+                                            <td className={TD}>
+                                                {m.id === currentUserId ? (
+                                                    <StatusPill tone={m.role === 'ADMIN' ? 'accent' : 'neutral'}>{ROLE_LABEL[m.role]}</StatusPill>
+                                                ) : pendingRole?.id === m.id ? (
+                                                    <InlineConfirm
+                                                        question={`Zmienić rolę na: ${ROLE_LABEL[pendingRole.role]}?`}
+                                                        confirmLabel="Zmień rolę"
+                                                        loading={roleSaving}
+                                                        onConfirm={() => changeRole(m.id, pendingRole.role)}
+                                                        onCancel={() => setPendingRole(null)}
+                                                    />
+                                                ) : (
+                                                    <select
+                                                        value={m.role}
+                                                        aria-label={`Rola użytkownika ${m.name}`}
+                                                        onChange={(e) => setPendingRole({ id: m.id, role: e.target.value as 'STAFF' | 'ADMIN' })}
+                                                        className="h-8 cursor-pointer rounded-sm border border-border-strong bg-surface px-2.5 text-[13px] text-ink focus:border-ink focus:outline-none focus:shadow-[0_0_0_3px_rgba(26,25,23,0.08)]"
+                                                    >
+                                                        <option value="STAFF">{ROLE_LABEL.STAFF}</option>
+                                                        <option value="ADMIN">{ROLE_LABEL.ADMIN}</option>
+                                                    </select>
+                                                )}
+                                            </td>
+                                            <td className={TD}>
+                                                <LastLogin value={m.last_login_at} />
+                                            </td>
+                                            <td className={TD}>
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    icon={<KeyRound size={14} />}
+                                                    onClick={() => setResetOpenFor(resetOpenFor === m.id ? null : m.id)}
                                                 >
-                                                    <option value="STAFF">STAFF</option>
-                                                    <option value="ADMIN">ADMIN</option>
-                                                </select>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <LastLogin value={m.last_login_at} />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <ResetPasswordRow member={m} />
-                                        </td>
-                                    </tr>
+                                                    Reset hasła
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                        {resetOpenFor === m.id && (
+                                            <tr className="border-b border-border last:border-b-0">
+                                                <td colSpan={4} className="px-4 pb-4 sm:px-5">
+                                                    <ResetPasswordPanel member={m} onClose={() => setResetOpenFor(null)} />
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                         </table>
@@ -443,54 +440,51 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
 
             {/* ── Tab: Architekci ── */}
             {activeTab === 'architects' && (
-                <div className="p-6 space-y-4">
+                <div role="tabpanel" className="space-y-4 p-4 sm:p-6">
                     {/* Header row */}
-                    <div className="flex items-center justify-between">
-                        <p className="text-[10px] text-stone-500 font-bold">
-                            {architects.length} {architects.length === 1 ? 'architekt' : architects.length < 5 ? 'architektów' : 'architektów'} w systemie
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm text-ink-2">
+                            {architects.length} {architects.length === 1 ? 'architekt' : 'architektów'} w systemie
                         </p>
-                        <button
-                            onClick={() => setShowImport(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-stone-600 hover:text-stone-900 text-[10px] font-black uppercase tracking-widest transition-all border border-black/5"
-                        >
-                            <Upload size={12} />
+                        <Button icon={<Upload size={16} />} onClick={() => setShowImport(true)}>
                             Importuj CSV
-                        </button>
+                        </Button>
                     </div>
 
                     {architects.length === 0 ? (
-                        <div className="py-12 flex flex-col items-center justify-center gap-3">
-                            <Users size={32} className="text-stone-300" />
-                            <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Brak zarejestrowanych architektów</p>
-                        </div>
+                        <EmptyState
+                            icon={<Users size={22} />}
+                            title="Brak zarejestrowanych architektów"
+                            description="Zaimportuj plik CSV albo zarejestruj architekta na liście architektów."
+                        />
                     ) : (
-                        <div className="border border-black/5 rounded-2xl overflow-hidden">
-                            <table className="w-full">
+                        <div className="overflow-x-auto rounded-md border border-border">
+                            <table className="w-full min-w-[560px] text-sm">
                                 <thead>
-                                    <tr className="bg-black/[0.02] border-b border-black/5">
-                                        <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Użytkownik</th>
-                                        <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Ostatnie logowanie</th>
-                                        <th className="px-6 py-3 text-left text-[9px] font-black text-stone-500 uppercase tracking-widest">Akcje</th>
+                                    <tr className="border-b border-border bg-surface-2">
+                                        <th className={TH}>Użytkownik</th>
+                                        <th className={TH}>Ostatnie logowanie</th>
+                                        <th className={TH}>Akcje</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-black/5">
+                                <tbody>
                                     {architects.map((a) => (
-                                        <tr key={a.id} className="hover:bg-black/[0.01] transition-colors">
-                                            <td className="px-6 py-4">
-                                                <p className="text-sm font-black text-stone-900">{a.name}</p>
-                                                <p className="text-[10px] text-stone-400 font-bold mt-0.5">{a.email}</p>
+                                        <tr key={a.id} className="border-b border-border last:border-b-0 hover:bg-surface-2">
+                                            <td className={TD}>
+                                                <UserCell name={a.name} email={a.email} />
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className={TD}>
                                                 <LastLogin value={a.last_login_at} />
                                             </td>
-                                            <td className="px-6 py-4">
-                                                <Link
+                                            <td className={TD}>
+                                                <Button
                                                     href={`/dashboard/admin/architects/${a.id}`}
-                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/5 text-stone-500 hover:text-stone-900 hover:bg-black/10 text-[10px] font-black uppercase tracking-widest transition-all w-fit"
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    icon={<ExternalLink size={14} />}
                                                 >
-                                                    <ExternalLink size={12} />
                                                     Profil
-                                                </Link>
+                                                </Button>
                                             </td>
                                         </tr>
                                     ))}
@@ -503,51 +497,48 @@ export default function SettingsTeamClient({ teamMembers, architects, currentUse
 
             {/* ── Tab: Baza danych ── */}
             {activeTab === 'database' && (
-                <div className="p-6 space-y-6">
+                <div role="tabpanel" className="space-y-6 p-4 sm:p-6">
                     {/* Stats grid */}
                     <div>
-                        <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-4">Liczba rekordów</p>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <p className="label-caps mb-3">Liczba rekordów</p>
+                        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                             {[
                                 { label: 'Architekci', value: dbStats.architectsCount },
                                 { label: 'Projekty', value: dbStats.projectsCount },
-                                { label: 'Pozycje proj.', value: dbStats.itemsCount },
+                                { label: 'Pozycje projektów', value: dbStats.itemsCount },
                                 { label: 'Prowizje', value: dbStats.commissionsCount },
-                                { label: 'Trans. portfela', value: dbStats.transactionsCount },
+                                { label: 'Transakcje portfela', value: dbStats.transactionsCount },
                                 { label: 'Wypłaty', value: dbStats.payoutsCount },
                                 { label: 'Logi aktywności', value: dbStats.logsCount },
                             ].map(({ label, value }) => (
-                                <div key={label} className="bg-black/[0.02] border border-black/5 rounded-2xl p-4 text-center">
-                                    <p className="text-2xl font-black text-stone-900">{(value ?? 0).toLocaleString('pl-PL')}</p>
-                                    <p className="text-[9px] font-black text-stone-400 uppercase tracking-widest mt-1">{label}</p>
-                                </div>
+                                <KpiTile key={label} label={label} value={formatNumber(value ?? 0)} />
                             ))}
                         </div>
                     </div>
 
                     {/* Backup */}
-                    <div className="border border-black/5 rounded-2xl p-6 space-y-4">
+                    <div className="space-y-4 rounded-md border border-border p-5">
                         <div>
-                            <p className="text-[10px] font-black text-stone-900 uppercase tracking-widest">Kopia zapasowa</p>
-                            <p className="text-[10px] text-stone-400 font-bold mt-1">
+                            <h3 className="font-display text-lg text-ink">Kopia zapasowa</h3>
+                            <p className="mt-1 text-sm text-ink-2">
                                 Pobierz pełną kopię bazy danych (SQLite: plik .sqlite / MySQL: eksport JSON).
                             </p>
                         </div>
                         <a
                             href="/api/admin/backup"
                             download
-                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-stone-900 hover:bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border-strong bg-surface px-[18px] text-sm font-semibold text-ink hover:border-ink-3"
                         >
-                            <Download size={13} />
+                            <Download size={16} aria-hidden="true" />
                             Pobierz backup
                         </a>
-                        <p className="text-[10px] text-stone-400 font-bold border-t border-black/5 pt-4">
+                        <p className="border-t border-border pt-4 text-[13px] text-ink-2">
                             Produkcyjna kopia zapasowa powinna być konfigurowana na poziomie hostingu (cron job + cloud storage). Ręczny backup jest uzupełnieniem, nie zastępstwem automatycznych kopii.
                         </p>
                     </div>
                 </div>
             )}
-        </div>
+        </Card>
         </>
     );
 }

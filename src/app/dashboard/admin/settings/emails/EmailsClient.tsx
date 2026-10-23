@@ -1,8 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Mail, Edit2, Check, X, Send, Info } from 'lucide-react';
+import { Edit2, Send } from 'lucide-react';
 import { updateEmailTemplate, testEmailTemplate } from '@/app/actions/emailTemplates';
+import { Banner, Button, Card, CardBody, CardHeader, StatusPill } from '@/components/ui';
+
+const FIELD_LABEL = 'text-[13px] font-semibold text-ink-2';
+const FIELD_INPUT =
+    'w-full rounded-sm border border-border-strong bg-surface px-3 text-[15px] text-ink placeholder:text-ink-3 ' +
+    'focus:border-ink focus:outline-none focus:shadow-[0_0_0_3px_rgba(26,25,23,0.08)]';
 
 interface EmailTemplate {
     id: string;
@@ -71,152 +77,136 @@ export default function EmailsClient({ initialTemplates }: { initialTemplates: E
     };
 
     return (
-        <div className="space-y-6">
-            {/* Feedback Message */}
+        <div className="space-y-4">
+            {/* Feedback Message (komunikat pływający: float) */}
             {msg && (
-                <div className={`fixed bottom-8 right-8 p-4 rounded-xl shadow-2xl z-50 border ${msg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
-                    } flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4`}>
-                    {msg.type === 'success' ? <Check size={18} /> : <X size={18} />}
-                    <span className="font-bold text-sm tracking-tight">{msg.text}</span>
+                <div className="fixed inset-x-4 bottom-4 z-50 sm:inset-x-auto sm:bottom-8 sm:right-8 sm:w-[380px]">
+                    <Banner tone={msg.type === 'success' ? 'success' : 'danger'} className="shadow-float">
+                        {msg.text}
+                    </Banner>
                 </div>
             )}
 
-            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-sm">
-                <div className="p-6 border-b border-stone-100 bg-stone-50/50">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
-                            <Mail size={20} />
-                        </div>
-                        <div>
-                            <h2 className="text-sm font-black text-stone-900 uppercase tracking-tighter">Szablony Powiadomień Email</h2>
-                            <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-0.5">Konfiguruj treści wiadomości systemowych</p>
-                        </div>
-                    </div>
-                </div>
+            <div>
+                <h3 className="font-display text-xl text-ink">Szablony powiadomień email</h3>
+                <p className="mt-1 text-sm text-ink-2">Konfiguruj treści wiadomości systemowych.</p>
+            </div>
 
-                <div className="divide-y divide-stone-100">
-                    {templates.map((template) => (
-                        <div key={template.id} className="p-6">
-                            {editingId === template.id ? (
-                                <div className="space-y-4">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <h3 className="font-bold text-stone-900 italic tracking-tight">{template.name}</h3>
-                                        <div className="flex items-center gap-2">
-                                            <label className="flex items-center gap-2 text-[10px] font-bold text-stone-500 uppercase cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={editForm.is_active}
-                                                    onChange={(e) => setEditForm(f => ({ ...f, is_active: e.target.checked }))}
-                                                    className="w-4 h-4 rounded text-orange-600 focus:ring-orange-500 border-stone-300"
-                                                />
-                                                Aktywny
-                                            </label>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Temat Wiadomości</label>
+            <div className="space-y-4">
+                {templates.map((template) => (
+                    <Card key={template.id} as="article">
+                        {editingId === template.id ? (
+                            <>
+                                <CardHeader
+                                    title={template.name}
+                                    action={
+                                        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink">
+                                            <input
+                                                type="checkbox"
+                                                checked={editForm.is_active}
+                                                onChange={(e) => setEditForm(f => ({ ...f, is_active: e.target.checked }))}
+                                                className="h-4 w-4 rounded-sm border-border-strong accent-[#E3C15A]"
+                                            />
+                                            Aktywny
+                                        </label>
+                                    }
+                                />
+                                <CardBody className="space-y-4">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label htmlFor={`tpl-subject-${template.id}`} className={FIELD_LABEL}>Temat wiadomości</label>
                                         <input
+                                            id={`tpl-subject-${template.id}`}
                                             value={editForm.subject}
                                             onChange={(e) => setEditForm(f => ({ ...f, subject: e.target.value }))}
-                                            className="w-full text-sm font-bold p-3 bg-stone-100 border-transparent rounded-xl focus:bg-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                                            className={`${FIELD_INPUT} h-10`}
                                         />
                                     </div>
 
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Treść (HTML)</label>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label htmlFor={`tpl-content-${template.id}`} className={FIELD_LABEL}>Treść (HTML)</label>
                                         <textarea
+                                            id={`tpl-content-${template.id}`}
                                             rows={8}
                                             value={editForm.content}
                                             onChange={(e) => setEditForm(f => ({ ...f, content: e.target.value }))}
-                                            className="w-full text-sm font-medium p-3 bg-stone-100 border-transparent rounded-xl focus:bg-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-mono"
+                                            className={`${FIELD_INPUT} py-2.5 font-mono text-[13px] leading-relaxed`}
                                         />
                                     </div>
 
-                                    <div className="bg-blue-50 p-3 rounded-xl flex gap-3 text-blue-700">
-                                        <Info size={16} className="shrink-0 mt-0.5" />
-                                        <div className="text-[10px] leading-relaxed">
-                                            <span className="font-bold block mb-1">Dostępne tagi:</span>
-                                            <code className="bg-blue-100 px-1 rounded">{"{{user_name}}"}</code>,
-                                            <code className="bg-blue-100 px-1 rounded ml-1">{"{{project_name}}"}</code>,
-                                            <code className="bg-blue-100 px-1 rounded ml-1">{"{{client_label}}"}</code>,
-                                            <code className="bg-blue-100 px-1 rounded ml-1">{"{{amount}}"}</code>,
-                                            <code className="bg-blue-100 px-1 rounded ml-1">{"{{card_code}}"}</code>
-                                        </div>
-                                    </div>
+                                    <Banner tone="info" title="Dostępne tagi">
+                                        <span className="flex flex-wrap items-center gap-1.5">
+                                            {['{{user_name}}', '{{project_name}}', '{{client_label}}', '{{amount}}', '{{card_code}}'].map((tag) => (
+                                                <code key={tag} className="rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-ink">{tag}</code>
+                                            ))}
+                                        </span>
+                                    </Banner>
 
-                                    <div className="flex gap-2 justify-end pt-2">
-                                        <button
-                                            onClick={() => setEditingId(null)}
-                                            className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-stone-500 hover:text-stone-700 transition-colors"
-                                        >
+                                    <div className="flex justify-end gap-2">
+                                        <Button variant="ghost" onClick={() => setEditingId(null)}>
                                             Anuluj
-                                        </button>
-                                        <button
-                                            disabled={isSaving}
-                                            onClick={() => handleSave(template.id)}
-                                            className="px-6 py-2 bg-stone-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-orange-600 transition-colors disabled:opacity-50"
-                                        >
-                                            {isSaving ? 'Zapisywanie...' : 'Zapisz Zmiany'}
-                                        </button>
+                                        </Button>
+                                        <Button loading={isSaving} onClick={() => handleSave(template.id)}>
+                                            {isSaving ? 'Zapisywanie...' : 'Zapisz zmiany'}
+                                        </Button>
                                     </div>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-1">
-                                            <h3 className="font-bold text-stone-900 italic tracking-tight">{template.name}</h3>
-                                            <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter ${template.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-stone-100 text-stone-500'
-                                                }`}>
-                                                {template.is_active ? 'Aktywny' : 'Wyłączony'}
-                                            </span>
-                                            <span className="text-[10px] font-medium text-stone-400 font-mono">{template.slug}</span>
-                                        </div>
-                                        <p className="text-xs text-stone-500 mb-3">{template.description}</p>
-                                        <div className="bg-stone-50 p-3 rounded-xl border border-stone-100 space-y-2">
-                                            <div>
-                                                <span className="text-[9px] font-black text-stone-400 uppercase tracking-widest block mb-0.5">Temat:</span>
-                                                <p className="text-xs font-bold text-stone-800">{template.subject}</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-[9px] font-black text-stone-400 uppercase tracking-widest block mb-0.5">Podgląd treści:</span>
-                                                <div className="text-[10px] text-stone-500 line-clamp-2 italic" dangerouslySetInnerHTML={{ __html: template.content.replace(/<[^>]*>?/gm, '') }} />
-                                            </div>
-                                        </div>
+                                </CardBody>
+                            </>
+                        ) : (
+                            <CardBody className="flex flex-col justify-between gap-5 md:flex-row md:items-start">
+                                <div className="min-w-0 flex-1">
+                                    <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                                        <h3 className="font-semibold text-ink">{template.name}</h3>
+                                        <StatusPill tone={template.is_active ? 'success' : 'neutral'}>
+                                            {template.is_active ? 'Aktywny' : 'Wyłączony'}
+                                        </StatusPill>
+                                        <span className="font-mono text-xs text-ink-2">{template.slug}</span>
                                     </div>
-
-                                    <div className="flex flex-col gap-2 shrink-0">
-                                        <button
-                                            onClick={() => startEditing(template)}
-                                            className="flex items-center gap-2 px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors"
-                                        >
-                                            <Edit2 size={12} />
-                                            Edytuj
-                                        </button>
-
-                                        <div className="flex flex-col gap-1.5 pt-2 border-t border-stone-100">
-                                            <div className="flex gap-1">
-                                                <input
-                                                    placeholder="Test email..."
-                                                    className="w-full text-[10px] p-2 bg-stone-50 border border-stone-200 rounded-lg focus:ring-2 focus:ring-orange-500/20"
-                                                    value={testEmail}
-                                                    onChange={(e) => setTestEmail(e.target.value)}
-                                                />
-                                                <button
-                                                    onClick={() => handleTest(template.id)}
-                                                    className="p-2 bg-white border border-stone-200 text-stone-600 hover:text-orange-600 rounded-lg transition-colors"
-                                                    title="Wyślij test"
-                                                >
-                                                    <Send size={12} />
-                                                </button>
-                                            </div>
+                                    <p className="mb-3 text-sm text-ink-2">{template.description}</p>
+                                    <div className="space-y-2.5 rounded-sm border border-border bg-surface-2 p-3.5">
+                                        <div>
+                                            <span className="label-caps mb-0.5 block">Temat</span>
+                                            <p className="text-sm font-medium text-ink">{template.subject}</p>
+                                        </div>
+                                        <div>
+                                            <span className="label-caps mb-0.5 block">Podgląd treści</span>
+                                            <p className="line-clamp-2 text-[13px] text-ink-2">
+                                                {template.content.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ')}
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
+
+                                <div className="flex shrink-0 flex-col gap-3 md:w-[240px]">
+                                    <Button variant="secondary" icon={<Edit2 size={14} />} onClick={() => startEditing(template)}>
+                                        Edytuj
+                                    </Button>
+
+                                    <div className="space-y-1.5 border-t border-border pt-3">
+                                        <label htmlFor={`tpl-test-${template.id}`} className={FIELD_LABEL}>Wyślij test na adres</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                id={`tpl-test-${template.id}`}
+                                                type="email"
+                                                placeholder="adres@email.pl"
+                                                className={`${FIELD_INPUT} h-8 min-w-0 flex-1 text-[13px]`}
+                                                value={testEmail}
+                                                onChange={(e) => setTestEmail(e.target.value)}
+                                            />
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                icon={<Send size={14} />}
+                                                onClick={() => handleTest(template.id)}
+                                                title="Wyślij test"
+                                                aria-label="Wyślij test"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardBody>
+                        )}
+                    </Card>
+                ))}
             </div>
         </div>
     );

@@ -3,29 +3,16 @@ import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { ProjectFile } from "@/components/ProjectFilesSection";
-import {
-    ArrowLeft,
-    Building2,
-    Receipt,
-    Package,
-    Wrench,
-} from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { Banner, Card, KpiTile, StatusPill, formatDate, formatNumber } from '@/components/ui';
 import AdminProjectDetailClient from './AdminProjectDetailClient';
-
-const STATUS_COLORS: Record<string, string> = {
-    ZGŁOSZONY: 'bg-blue-900/30 text-blue-600 border-blue-800/30',
-    PRZYJĘTY: 'bg-emerald-900/30 text-emerald-600 border-emerald-800/30',
-    W_REALIZACJI: 'bg-amber-100/30 text-amber-600 border-amber-800/30',
-    ZAKOŃCZONY: 'bg-stone-200/30 text-stone-400 border-slate-600/30',
-    NIEZREALIZOWANY: 'bg-red-50 text-red-600 border-red-800/30',
-};
 
 export default async function AdminProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
-        return <div className="p-8">Brak uprawnień.</div>;
+        return <Banner tone="danger" title="Brak uprawnień">Ta strona jest dostępna tylko dla administracji.</Banner>;
     }
 
     const isAdmin = session.user.role === 'ADMIN';
@@ -105,86 +92,85 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
         ORDER BY c.status DESC
     `, [id]);
 
+    const sumBy = (status: string) =>
+        commissionsRes
+            .filter((c: any) => c.status === status)
+            .reduce((s: number, c: any) => s + Number(c.amount_net), 0);
+
     const productItems = items.filter((i: any) => i.type === 'PRODUCT');
     const installationItems = items.filter((i: any) => i.type === 'INSTALLATION');
     const totalProduct = productItems.reduce((s: number, i: any) => s + Number(i.amount_net), 0);
     const totalInstallation = installationItems.reduce((s: number, i: any) => s + Number(i.amount_net), 0);
-    const earnedComm = commissionsRes
-        .filter((c: any) => c.status === 'EARNED')
-        .reduce((s: number, c: any) => s + Number(c.amount_net), 0);
-    const pendingComm = commissionsRes
-        .filter((c: any) => c.status === 'PENDING')
-        .reduce((s: number, c: any) => s + Number(c.amount_net), 0);
+    const earnedComm = sumBy('EARNED');
+    const pendingComm = sumBy('PENDING');
+    const inPaymentComm = sumBy('IN_PAYMENT');
+    const paidComm = sumBy('PAID');
+
+    // Prowizja w płatności lub wypłacona nie wpada do „zarobionej”, więc pokazujemy ją w opisie kafelka.
+    const earnedDescription =
+        inPaymentComm > 0 || paidComm > 0
+            ? [
+                inPaymentComm > 0 ? `W wypłacie: ${formatNumber(inPaymentComm)} PLN` : null,
+                paidComm > 0 ? `Wypłacona: ${formatNumber(paidComm)} PLN` : null,
+            ].filter(Boolean).join(' · ')
+            : earnedComm > 0
+                ? 'Gotowa do wypłaty'
+                : 'Naliczana po zakończeniu projektu';
 
     return (
-        <div className="space-y-10 pb-20">
+        <div className="space-y-6 pb-20">
 
-            {/* Back */}
             <Link
                 href="/dashboard/admin"
-                className="inline-flex items-center gap-2 text-[10px] font-black text-stone-500 uppercase tracking-widest hover:text-stone-900 transition-all"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-ink-2 transition-colors hover:text-ink"
             >
-                <ArrowLeft size={14} />
+                <ArrowLeft size={16} aria-hidden="true" />
                 Powrót do panelu admin
             </Link>
 
-            {/* Header */}
-            <div className="stat-card bg-gradient-to-br from-[#151518] to-[#0A0A0B] border border-black/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                <div className="flex items-center gap-6">
-                    <div className="w-16 h-16 rounded-2xl bg-black/5 border border-black/10 flex items-center justify-center text-brand-primary">
-                        <Building2 size={32} />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-black text-stone-100 mb-1">{project.name}</h1>
-                        <div className="flex items-center gap-3 flex-wrap">
-                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${STATUS_COLORS[project.status] || 'bg-black/5 text-stone-500 border-black/10'}`}>
-                                {project.status}
-                            </span>
-                            <span className="text-[10px] text-stone-400 font-bold">{project.client_label}</span>
-                            <span className="text-stone-500">·</span>
+            {/* Nagłówek projektu */}
+            <Card as="section" className="p-5 sm:p-6">
+                <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-3">
+                            <h2 className="font-display text-[28px] font-normal leading-tight tracking-[-0.01em] text-ink">
+                                {project.name}
+                            </h2>
+                            <StatusPill kind="project" status={project.status} />
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-2">
+                            {project.client_label && <span>{project.client_label}</span>}
+                            {project.client_label && <span aria-hidden="true" className="text-ink-3">·</span>}
                             <Link
                                 href={`/dashboard/admin/architects/${project.architect_id}`}
-                                className="text-[10px] text-stone-400 font-bold hover:text-brand-primary transition-all"
+                                className="font-semibold text-brass-ink underline-offset-2 hover:underline"
                             >
                                 {project.architect_name}
                             </Link>
-                            <span className="text-stone-500">·</span>
-                            <span className="text-[10px] text-stone-400 font-bold">
-                                {new Date(project.created_at).toLocaleDateString('pl-PL')}
-                            </span>
+                            <span aria-hidden="true" className="text-ink-3">·</span>
+                            <span className="tnum">{formatDate(project.created_at)}</span>
                         </div>
                     </div>
-                </div>
 
-                {/* Value summary */}
-                <div className="text-right shrink-0">
-                    <p className="text-3xl font-black gold-text leading-none">
-                        {totalProduct.toLocaleString('pl-PL')}
-                        <span className="text-[12px] text-stone-500 ml-1">PLN</span>
-                    </p>
-                    <p className="text-[10px] text-stone-600 font-bold mt-1">wartość produktów</p>
-                </div>
-            </div>
-
-            {/* KPI strip */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                    { label: 'Produkty netto', value: `${totalProduct.toLocaleString('pl-PL')} PLN`, color: 'text-brand-primary', bg: 'bg-brand-primary/10', icon: Package },
-                    { label: 'Montaż netto', value: `${totalInstallation.toLocaleString('pl-PL')} PLN`, color: 'text-stone-400', bg: 'bg-black/5', icon: Wrench },
-                    { label: 'Prowizja earned', value: `${earnedComm.toLocaleString('pl-PL')} PLN`, color: 'text-emerald-600', bg: 'bg-emerald-50', icon: Receipt },
-                    { label: 'Prowizja pending', value: `${pendingComm.toLocaleString('pl-PL')} PLN`, color: 'text-amber-600', bg: 'bg-amber-50', icon: Receipt },
-                ].map((kpi, i) => (
-                    <div key={i} className="stat-card bg-card border border-black/5 py-6">
-                        <div className={`w-10 h-10 rounded-xl ${kpi.bg} flex items-center justify-center ${kpi.color} border border-black/5 mb-4`}>
-                            <kpi.icon size={20} />
+                    <div className="shrink-0 md:text-right">
+                        <div className="font-display text-[34px] font-normal leading-none tracking-[-0.01em] tnum text-ink">
+                            {formatNumber(totalProduct)}
+                            <small className="ml-1.5 font-sans text-sm font-normal tracking-normal text-ink-3">PLN</small>
                         </div>
-                        <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">{kpi.label}</p>
-                        <p className="text-xl font-black text-stone-900 leading-tight">{kpi.value}</p>
+                        <div className="mt-1.5 text-[13px] text-ink-2">wartość produktów</div>
                     </div>
-                ))}
+                </div>
+            </Card>
+
+            {/* KPI */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <KpiTile label="Produkty netto" value={formatNumber(totalProduct)} unit="PLN" description={`${productItems.length} poz.`} />
+                <KpiTile label="Montaż netto" value={formatNumber(totalInstallation)} unit="PLN" description="Bez prowizji" />
+                <KpiTile label="Prowizja zarobiona" value={formatNumber(earnedComm)} unit="PLN" description={earnedDescription} />
+                <KpiTile label="Prowizja planowana" value={formatNumber(pendingComm)} unit="PLN" description="Po zakończeniu projektu" />
             </div>
 
-            {/* Interactive section — client component */}
+            {/* Część interaktywna (komponent kliencki) */}
             <AdminProjectDetailClient
                 project={project}
                 items={items}

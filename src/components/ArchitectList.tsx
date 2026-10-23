@@ -1,25 +1,73 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ExternalLink, Edit2, AlertCircle, Loader2, Trash2 } from 'lucide-react';
+import { ArrowUpRight, Pencil, Trash2, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { deleteArchitect } from '@/app/actions/architects';
 import EditArchitectModal from './EditArchitectModal';
-import { formatPLN } from '@/lib/utils';
+import ArchitectRegistrationModal from './ArchitectRegistrationModal';
+import { Banner, Button, InlineConfirm, StatusPill, formatNumber, formatPLN } from '@/components/ui';
+import type { Tone } from '@/components/ui';
 
 interface ArchitectListItem {
     id: string;
     name: string;
+    email?: string | null;
+    studio_name?: string | null;
     projects_count: number;
+    turnover?: number | string;
     balance: number | string;
     pending_redemptions: number;
     has_business_history?: number | boolean;
+    tier_status?: string;
+    tier_label?: string;
 }
 
 interface ArchitectListProps {
     architects: ArchitectListItem[];
     isAdmin: boolean;
+}
+
+const DELETE_BLOCKED = 'Nie można usunąć konta z historią projektów lub rozliczeń';
+
+const TIER_TONE: Record<string, Tone> = {
+    PARTNER: 'accent',
+    PARTNER_PLUS: 'info',
+    PARTNER_PREMIUM: 'success',
+};
+
+function initials(name: string): string {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function Avatar({ name }: { name: string }) {
+    return (
+        <span
+            aria-hidden="true"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brass-soft text-[13px] font-semibold text-brass-ink"
+        >
+            {initials(name)}
+        </span>
+    );
+}
+
+/** Przycisk rejestracji partnera (drugorzędny), otwiera ten sam modal co przycisk w nagłówku powłoki. */
+export function RegisterArchitectButton({ canRegisterArchitects }: { canRegisterArchitects: boolean }) {
+    const [isOpen, setIsOpen] = useState(false);
+    if (!canRegisterArchitects) return null;
+
+    return (
+        <>
+            <Button variant="secondary" size="sm" icon={<UserPlus size={16} aria-hidden="true" />} onClick={() => setIsOpen(true)}>
+                Zarejestruj architekta
+            </Button>
+            <ArchitectRegistrationModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+        </>
+    );
 }
 
 export default function ArchitectList({ architects, isAdmin }: ArchitectListProps) {
@@ -32,106 +80,182 @@ export default function ArchitectList({ architects, isAdmin }: ArchitectListProp
     const handleDelete = async (archi: ArchitectListItem) => {
         if (archi.has_business_history) return;
 
-        setConfirmingId(null);
         setError(null);
         setDeletingId(archi.id);
         try {
             await deleteArchitect(archi.id);
+            setConfirmingId(null);
             router.refresh();
         } catch (err: unknown) {
+            setConfirmingId(null);
             setError(err instanceof Error ? err.message : 'Nie udało się usunąć konta architekta');
         } finally {
             setDeletingId(null);
         }
     };
 
+    const renderActions = (archi: ArchitectListItem) => (
+        <div className="flex items-center justify-end gap-1">
+            {isAdmin && (
+                <>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-8 px-0!"
+                        aria-label={`Edytuj dane: ${archi.name}`}
+                        title="Edytuj dane"
+                        icon={<Pencil size={16} aria-hidden="true" />}
+                        onClick={() => setEditId(archi.id)}
+                    />
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-8 px-0! text-danger! hover:bg-danger-soft!"
+                        aria-label={archi.has_business_history ? DELETE_BLOCKED : `Usuń konto architekta: ${archi.name}`}
+                        title={archi.has_business_history ? DELETE_BLOCKED : 'Usuń konto architekta'}
+                        icon={<Trash2 size={16} aria-hidden="true" />}
+                        loading={deletingId === archi.id}
+                        disabled={Boolean(archi.has_business_history)}
+                        onClick={() => { setError(null); setConfirmingId(archi.id); }}
+                    />
+                </>
+            )}
+            <Button
+                href={`/dashboard/admin/architects/${archi.id}`}
+                variant="ghost"
+                size="sm"
+                className="w-8 px-0!"
+                aria-label={`Profil architekta: ${archi.name}`}
+                title="Profil architekta"
+                icon={<ArrowUpRight size={16} aria-hidden="true" />}
+            />
+        </div>
+    );
+
+    const renderConfirm = (archi: ArchitectListItem) => (
+        <InlineConfirm
+            question={`Usunąć konto ${archi.name}? Tej operacji nie można cofnąć.`}
+            confirmLabel="Usuń konto"
+            cancelLabel="Zostaw"
+            danger
+            loading={deletingId === archi.id}
+            onConfirm={() => handleDelete(archi)}
+            onCancel={() => setConfirmingId(null)}
+        />
+    );
+
+    const tierPill = (archi: ArchitectListItem) =>
+        archi.tier_label ? (
+            <StatusPill tone={TIER_TONE[archi.tier_status ?? ''] ?? 'neutral'}>{archi.tier_label}</StatusPill>
+        ) : null;
+
+    const requestPill = (archi: ArchitectListItem) =>
+        archi.pending_redemptions > 0 ? (
+            <StatusPill tone="warning">Wniosek o kartę</StatusPill>
+        ) : null;
+
     return (
-        <div className="stat-card bg-card p-0 overflow-hidden max-h-[800px] flex flex-col">
+        <div>
             {error && (
-                <div className="mx-6 mt-6 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
-                    {error}
+                <div className="p-5 pb-0">
+                    <Banner tone="danger" title="Nie udało się usunąć konta">{error}</Banner>
                 </div>
             )}
-            <div className="divide-y divide-black/5 overflow-y-auto">
+
+            {/* Desktop: tabela */}
+            <div className="relative hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[860px] text-left text-sm">
+                    <thead>
+                        <tr className="border-b border-border">
+                            <th scope="col" className="label-caps px-5 py-3">Architekt</th>
+                            <th scope="col" className="label-caps px-3 py-3">Email</th>
+                            <th scope="col" className="label-caps px-3 py-3">Status</th>
+                            <th scope="col" className="label-caps px-3 py-3 text-right">Projekty</th>
+                            <th scope="col" className="label-caps px-3 py-3 text-right">Obrót</th>
+                            <th scope="col" className="label-caps px-3 py-3 text-right">Portfel</th>
+                            <th scope="col" className="px-5 py-3"><span className="sr-only">Akcje</span></th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                        {architects.map((archi) => (
+                            <React.Fragment key={archi.id}>
+                                <tr className="transition-colors hover:bg-surface-2">
+                                    <td className="px-5 py-3">
+                                        <div className="flex items-center gap-3">
+                                            <Avatar name={archi.name} />
+                                            <div className="min-w-0">
+                                                <Link
+                                                    href={`/dashboard/admin/architects/${archi.id}`}
+                                                    className="block truncate font-semibold text-ink hover:underline hover:underline-offset-4"
+                                                >
+                                                    {archi.name}
+                                                </Link>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    {archi.studio_name && <span className="truncate text-[13px] text-ink-2">{archi.studio_name}</span>}
+                                                    {requestPill(archi)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="max-w-[240px] truncate px-3 py-3 text-ink-2">{archi.email || '—'}</td>
+                                    <td className="px-3 py-3">{tierPill(archi)}</td>
+                                    <td className="tnum px-3 py-3 text-right text-ink">{formatNumber(archi.projects_count)}</td>
+                                    <td className="tnum whitespace-nowrap px-3 py-3 text-right text-ink">{formatPLN(archi.turnover ?? 0)}</td>
+                                    <td className="tnum whitespace-nowrap px-3 py-3 text-right font-semibold text-ink">{formatPLN(archi.balance)}</td>
+                                    <td className="px-5 py-3">{renderActions(archi)}</td>
+                                </tr>
+                                {confirmingId === archi.id && (
+                                    <tr className="bg-surface-2">
+                                        <td colSpan={7} className="px-5 py-3">{renderConfirm(archi)}</td>
+                                    </tr>
+                                )}
+                            </React.Fragment>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Mobile: karty */}
+            <ul className="divide-y divide-border md:hidden">
                 {architects.map((archi) => (
-                    <div key={archi.id} className="p-6 hover:bg-black/[0.02] transition-all flex items-center justify-between group cursor-default">
-                        <div className="flex items-center gap-5">
-                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs border border-black/5 ${archi.projects_count >= 11 ? 'bg-indigo-900/30 text-indigo-600' :
-                                archi.projects_count >= 6 ? 'bg-brand-primary/20 text-brand-primary' :
-                                    'bg-black/5 text-stone-500'
-                                }`}>
-                                {archi.name.substring(0, 2).toUpperCase()}
+                    <li key={archi.id} className="space-y-3 p-4">
+                        <div className="flex items-start gap-3">
+                            <Avatar name={archi.name} />
+                            <div className="min-w-0 flex-1">
+                                <Link
+                                    href={`/dashboard/admin/architects/${archi.id}`}
+                                    className="block font-semibold text-ink"
+                                >
+                                    {archi.name}
+                                </Link>
+                                {archi.studio_name && <div className="text-[13px] text-ink-2">{archi.studio_name}</div>}
+                                {archi.email && <div className="break-all text-[13px] text-ink-2">{archi.email}</div>}
+                            </div>
+                            {tierPill(archi)}
+                        </div>
+                        {archi.pending_redemptions > 0 && <div>{requestPill(archi)}</div>}
+                        <dl className="grid grid-cols-3 gap-3">
+                            <div>
+                                <dt className="label-caps">Projekty</dt>
+                                <dd className="tnum mt-1 text-sm text-ink">{formatNumber(archi.projects_count)}</dd>
                             </div>
                             <div>
-                                <div className="text-sm font-black text-stone-900 group-hover:gold-text transition-all">{archi.name}</div>
-                                <div className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mt-1">
-                                    {archi.projects_count} PROJEKTÓW •
-                                    <span className="text-emerald-500 ml-1 italic">{formatPLN(archi.balance)} PLN</span>
-                                    {archi.pending_redemptions > 0 && (
-                                        <span className="ml-2 bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-lg border border-amber-500/20 text-[8px] flex items-center gap-1 inline-flex align-middle">
-                                            <AlertCircle size={8} />
-                                            WNIOSEK
-                                        </span>
-                                    )}
-                                </div>
+                                <dt className="label-caps">Obrót</dt>
+                                <dd className="tnum mt-1 text-sm text-ink">{formatPLN(archi.turnover ?? 0)}</dd>
                             </div>
-                        </div>
-                        <div className="flex gap-2">
-                            {isAdmin && (
-                                <>
-                                    <button
-                                        onClick={() => setEditId(archi.id)}
-                                        title="Edytuj dane"
-                                        className="p-2.5 text-stone-700 hover:text-stone-900 hover:bg-black/5 rounded-xl transition-all border border-transparent hover:border-black/5"
-                                    >
-                                        <Edit2 size={16} />
-                                    </button>
-                                    {confirmingId === archi.id ? (
-                                        <div className="flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-1.5">
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-red-700">Usunąć konto?</span>
-                                            <button
-                                                onClick={() => handleDelete(archi)}
-                                                className="rounded-lg bg-red-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:bg-red-700"
-                                            >
-                                                Tak, usuń
-                                            </button>
-                                            <button
-                                                onClick={() => setConfirmingId(null)}
-                                                className="rounded-lg bg-black/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-stone-700 transition-all hover:bg-black/10"
-                                            >
-                                                Anuluj
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={() => { setError(null); setConfirmingId(archi.id); }}
-                                            disabled={Boolean(archi.has_business_history) || deletingId === archi.id}
-                                            title={archi.has_business_history
-                                                ? 'Nie można usunąć konta z historią projektów lub rozliczeń'
-                                                : 'Usuń konto architekta'
-                                            }
-                                            className="p-2.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100 disabled:cursor-not-allowed disabled:text-stone-300 disabled:hover:bg-transparent disabled:hover:border-transparent"
-                                        >
-                                            {deletingId === archi.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                                        </button>
-                                    )}
-                                </>
-                            )}
-                            <Link
-                                href={`/dashboard/admin/architects/${archi.id}`}
-                                title="Profil architekta"
-                                className="p-2.5 text-stone-700 hover:text-brand-primary hover:bg-brand-primary/10 rounded-xl transition-all border border-transparent hover:border-brand-primary/20"
-                            >
-                                <ExternalLink size={16} />
-                            </Link>
-                        </div>
-                    </div>
+                            <div>
+                                <dt className="label-caps">Portfel</dt>
+                                <dd className="tnum mt-1 text-sm font-semibold text-ink">{formatPLN(archi.balance)}</dd>
+                            </div>
+                        </dl>
+                        {confirmingId === archi.id ? renderConfirm(archi) : renderActions(archi)}
+                    </li>
                 ))}
-            </div>
+            </ul>
 
             <EditArchitectModal
                 isOpen={!!editId}
-                onClose={() => setEditId(null)}
+                onClose={() => { setEditId(null); router.refresh(); }}
                 architectId={editId}
             />
         </div>

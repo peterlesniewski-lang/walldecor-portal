@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { getProviders, signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { LogIn, ShieldCheck, Mail, Lock } from 'lucide-react';
 import Link from 'next/link';
+import { Banner, Button } from '@/components/ui';
+import { AuthShell, AuthField, AUTH_INPUT } from '../AuthShell';
 
 function GoogleIcon() {
     return (
@@ -63,127 +64,71 @@ export default function SignIn() {
     };
 
     return (
-        <div className="min-h-screen bg-background flex items-center justify-center p-6 relative overflow-hidden">
-            {/* Background Aura */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-brand-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
+        <AuthShell title="Witaj ponownie" subtitle="Portal Partnera WallDecor">
+            {/* Google Sign In */}
+            {hasGoogleProvider && (
+                <>
+                    <Button
+                        variant="secondary"
+                        fullWidth
+                        icon={<GoogleIcon />}
+                        onClick={handleGoogleSignIn}
+                        disabled={loading}
+                        loading={googleLoading}
+                    >
+                        {googleLoading ? 'Przekierowanie...' : 'Zaloguj się przez Google'}
+                    </Button>
 
-            <div className="w-full max-w-md relative z-10">
-                <div className="text-center mb-12">
-                    <div className="w-16 h-16 gold-gradient rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_20px_40px_rgba(212,175,55,0.2)]">
-                        <ShieldCheck size={32} className="text-black" />
+                    <div className="my-6 flex items-center gap-4" role="separator" aria-label="lub">
+                        <div className="h-px flex-1 bg-border" />
+                        <span className="text-[13px] text-ink-2">lub</span>
+                        <div className="h-px flex-1 bg-border" />
                     </div>
-                    <h1 className="text-3xl font-black text-stone-900 tracking-tight leading-none mb-3">
-                        Witaj ponownie
-                    </h1>
-                    <p className="text-stone-500 font-bold text-sm uppercase tracking-widest">
-                        Panel Architekta <span className="text-brand-primary mx-1">/</span> WallDecor
-                    </p>
-                </div>
+                </>
+            )}
 
-                <div className="stat-card bg-card p-10 border border-black/5 shadow-[0_32px_64px_rgba(0,0,0,0.5)]">
-                    {/* Google Sign In */}
-                    {hasGoogleProvider && (
-                        <>
-                            <button
-                                type="button"
-                                onClick={handleGoogleSignIn}
-                                disabled={googleLoading || loading}
-                                className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl border border-black/10 bg-white hover:bg-stone-50 transition-all font-bold text-stone-700 text-sm disabled:opacity-50 shadow-sm hover:shadow-md mb-8"
-                            >
-                                {googleLoading ? (
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Przekierowanie...</span>
-                                ) : (
-                                    <>
-                                        <GoogleIcon />
-                                        Zaloguj się przez Google
-                                    </>
-                                )}
-                            </button>
+            <form onSubmit={handleSubmit} className="space-y-5">
+                {error && <Banner tone="danger">{error}</Banner>}
 
-                            {/* Separator */}
-                            <div className="flex items-center gap-4 mb-8">
-                                <div className="flex-1 h-px bg-black/5"></div>
-                                <span className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em]">lub</span>
-                                <div className="flex-1 h-px bg-black/5"></div>
-                            </div>
-                        </>
-                    )}
+                <AuthField id="signin-email" label="Email">
+                    <input
+                        id="signin-email"
+                        name="email"
+                        type="email"
+                        required
+                        autoComplete="email"
+                        className={AUTH_INPUT}
+                        placeholder="architekt@walldecor.pl"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                    />
+                </AuthField>
 
-                    <form onSubmit={handleSubmit} className="space-y-8">
-                        {error && (
-                            <div className="bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest p-4 rounded-2xl border border-red-800/30 flex items-center gap-3">
-                                <div className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0"></div>
-                                {error}
-                            </div>
-                        )}
+                <AuthField
+                    id="signin-password"
+                    label="Hasło"
+                    labelAside={
+                        <Link href="/auth/forgot-password" className="text-[13px] font-semibold text-brass-ink hover:underline">
+                            Zapomniałeś hasła?
+                        </Link>
+                    }
+                >
+                    <input
+                        id="signin-password"
+                        name="password"
+                        type="password"
+                        required
+                        autoComplete="current-password"
+                        className={AUTH_INPUT}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                    />
+                </AuthField>
 
-                        <div className="space-y-3">
-                            <label className="block text-[10px] font-black text-stone-500 uppercase tracking-[0.2em] ml-1">
-                                Email
-                            </label>
-                            <div className="relative group">
-                                <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-600 group-focus-within:text-brand-primary transition-colors" size={18} />
-                                <input
-                                    type="email"
-                                    required
-                                    className="w-full pl-14 pr-6 py-4 rounded-2xl bg-background border border-black/5 text-stone-900 placeholder:text-stone-400 placeholder:font-normal focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-bold"
-                                    placeholder="architekt@walldecor.pl"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between ml-1">
-                                <label className="block text-[10px] font-black text-stone-500 uppercase tracking-[0.2em]">
-                                    Hasło
-                                </label>
-                                <Link
-                                    href="/auth/forgot-password"
-                                    className="text-[10px] font-black text-brand-primary uppercase tracking-[0.15em] hover:underline"
-                                >
-                                    Zapomniałeś?
-                                </Link>
-                            </div>
-                            <div className="relative group">
-                                <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-600 group-focus-within:text-brand-primary transition-colors" size={18} />
-                                <input
-                                    type="password"
-                                    required
-                                    className="w-full pl-14 pr-6 py-4 rounded-2xl bg-background border border-black/5 text-stone-900 placeholder:text-stone-400 placeholder:font-normal focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-bold"
-                                    placeholder="••••••••"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                />
-                            </div>
-                        </div>
-
-                        <button
-                            type="submit"
-                            disabled={loading || googleLoading}
-                            className="w-full gold-gradient text-black font-black py-5 rounded-[2rem] shadow-[0_20px_40px_rgba(212,175,55,0.2)] hover:shadow-[0_25px_50px_rgba(212,175,55,0.3)] transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-xs disabled:opacity-50"
-                        >
-                            {loading ? 'Logowanie...' : (
-                                <>
-                                    <LogIn size={20} />
-                                    Zaloguj się
-                                </>
-                            )}
-                        </button>
-                    </form>
-                </div>
-
-                <div className="text-center mt-10 space-y-4">
-                    <div className="flex items-center justify-center gap-4 opacity-50">
-                        <span className="text-[10px] font-bold text-stone-500 uppercase tracking-[0.3em]">v1.2 Premium Edition</span>
-                        <span className="text-stone-300">·</span>
-                        <a href="/regulamin" target="_blank" className="text-[10px] font-bold text-stone-500 uppercase tracking-[0.3em] hover:text-brand-primary transition-colors">
-                            Regulamin
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
+                <Button type="submit" fullWidth loading={loading} disabled={googleLoading}>
+                    {loading ? 'Logowanie...' : 'Zaloguj się'}
+                </Button>
+            </form>
+        </AuthShell>
     );
 }

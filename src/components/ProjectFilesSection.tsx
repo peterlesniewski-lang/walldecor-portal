@@ -1,10 +1,8 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
-import {
-    FileText, Image as ImageIcon, Upload, Trash2, Download,
-    Loader2, AlertCircle, Paperclip, X, CheckCircle2, ZoomIn
-} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { FileText, Image as ImageIcon, Upload, Trash2, Download, Paperclip, X, ZoomIn } from 'lucide-react';
+import { Banner, Button, Card, CardHeader, EmptyState, InlineConfirm, cx, formatDate } from '@/components/ui';
 
 export interface ProjectFile {
     id: string;
@@ -28,55 +26,86 @@ interface ProjectFilesSectionProps {
 
 type FilterMode = 'ALL' | 'DOC' | 'PHOTO';
 
+const FILTERS: { key: FilterMode; label: string }[] = [
+    { key: 'ALL', label: 'Wszystkie' },
+    { key: 'DOC', label: 'Dokumenty' },
+    { key: 'PHOTO', label: 'Zdjęcia' },
+];
+
 function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toLocaleString('pl-PL', { maximumFractionDigits: 1 })} KB`;
+    return `${(bytes / (1024 * 1024)).toLocaleString('pl-PL', { maximumFractionDigits: 1 })} MB`;
 }
 
-function FileIcon({ mimeType }: { mimeType: string }) {
-    if (mimeType.startsWith('image/')) {
-        return <ImageIcon size={14} className="text-blue-500" />;
-    }
-    return <FileText size={14} className="text-amber-500" />;
+function FileTypeIcon({ mimeType }: { mimeType: string }) {
+    const isImage = mimeType.startsWith('image/');
+    return (
+        <span
+            className={cx(
+                'grid h-9 w-9 shrink-0 place-items-center rounded-sm',
+                isImage ? 'bg-info-soft text-info' : 'bg-brass-soft text-brass-ink',
+            )}
+        >
+            {isImage ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
+        </span>
+    );
 }
+
+const ICON_ACTION_CLASS =
+    'grid h-8 w-8 shrink-0 place-items-center rounded-sm text-ink-2 transition-colors hover:bg-ink/5 hover:text-ink';
 
 // ─── Lightbox ────────────────────────────────────────────────────────────────
 
 function Lightbox({ file, projectId, onClose }: { file: ProjectFile; projectId: string; onClose: () => void }) {
     const src = `/api/projects/${projectId}/files/${file.id}`;
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Podgląd: ${file.original_name}`}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4"
             onClick={onClose}
         >
             <button
+                type="button"
                 onClick={onClose}
-                className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all"
+                aria-label="Zamknij podgląd"
+                className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-sm bg-surface text-ink shadow-float transition-colors hover:bg-surface-2"
             >
-                <X size={20} />
+                <X size={18} aria-hidden="true" />
             </button>
             <div
-                className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-3"
+                className="relative flex max-h-[90vh] max-w-[90vw] flex-col items-center gap-3"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                     src={src}
                     alt={file.original_name}
-                    className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl"
+                    className="max-h-[80vh] max-w-full rounded-md object-contain shadow-float"
                 />
-                <div className="flex items-center gap-4">
-                    <p className="text-white/70 text-xs font-bold">{file.original_name}</p>
-                    <a
+                <div className="flex flex-wrap items-center justify-center gap-3 rounded-sm bg-surface px-3 py-2 shadow-float">
+                    <p className="min-w-0 truncate text-sm text-ink">{file.original_name}</p>
+                    <Button
+                        variant="secondary"
+                        size="sm"
                         href={src}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
+                        icon={<Download size={14} aria-hidden="true" />}
                     >
-                        <Download size={11} />
                         Pobierz
-                    </a>
+                    </Button>
                 </div>
             </div>
         </div>
@@ -94,16 +123,15 @@ export default function ProjectFilesSection({
     const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
     const [filter, setFilter] = useState<FilterMode>('ALL');
     const [uploading, setUploading] = useState(false);
-    const [uploadError, setUploadError] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     const [lightboxFile, setLightboxFile] = useState<ProjectFile | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Upload category follows the filter (defaults to DOC when ALL)
+    // Kategoria uploadu podąża za zakładką (przy „Wszystkie” domyślnie dokument)
     const uploadCategory: 'DOC' | 'PHOTO' = filter === 'PHOTO' ? 'PHOTO' : 'DOC';
 
-    // Accept attribute follows the filter
     const acceptAttr =
         filter === 'PHOTO'
             ? '.jpg,.jpeg,.png,.webp'
@@ -111,14 +139,15 @@ export default function ProjectFilesSection({
             ? '.pdf'
             : '.pdf,.jpg,.jpeg,.png,.webp';
 
-    const visibleFiles =
-        filter === 'ALL' ? files : files.filter((f) => f.category === filter);
+    const visibleFiles = filter === 'ALL' ? files : files.filter((f) => f.category === filter);
+
+    const countFor = (key: FilterMode) => (key === 'ALL' ? files.length : files.filter((f) => f.category === key).length);
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const selected = e.target.files;
         if (!selected || selected.length === 0) return;
 
-        setUploadError(null);
+        setError(null);
         setUploading(true);
 
         try {
@@ -132,15 +161,17 @@ export default function ProjectFilesSection({
                     body: formData,
                 });
 
-                const json = await res.json();
+                const json = await res.json().catch(() => ({}));
 
                 if (!res.ok) {
-                    setUploadError(json.error || 'Błąd przesyłania pliku');
+                    setError(json.error || 'Błąd przesyłania pliku');
                     break;
                 }
 
                 setFiles((prev) => [json.file, ...prev]);
             }
+        } catch {
+            setError('Błąd przesyłania pliku');
         } finally {
             setUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -149,7 +180,7 @@ export default function ProjectFilesSection({
 
     const handleDelete = async (fileId: string) => {
         setDeletingId(fileId);
-        setConfirmDeleteId(null);
+        setError(null);
 
         try {
             const res = await fetch(`/api/projects/${projectId}/files/${fileId}`, {
@@ -158,7 +189,15 @@ export default function ProjectFilesSection({
 
             if (res.ok) {
                 setFiles((prev) => prev.filter((f) => f.id !== fileId));
+                setConfirmDeleteId(null);
+            } else {
+                const json = await res.json().catch(() => ({}));
+                setError(json.error || 'Nie udało się usunąć pliku');
+                setConfirmDeleteId(null);
             }
+        } catch {
+            setError('Nie udało się usunąć pliku');
+            setConfirmDeleteId(null);
         } finally {
             setDeletingId(null);
         }
@@ -169,207 +208,169 @@ export default function ProjectFilesSection({
         return file.uploaded_by === currentUserId;
     };
 
-    const FILTERS: { key: FilterMode; label: string }[] = [
-        { key: 'ALL', label: 'Wszystkie' },
-        { key: 'DOC', label: 'Dok.' },
-        { key: 'PHOTO', label: 'Foto' },
-    ];
+    const uploadLabel = uploading
+        ? 'Przesyłanie…'
+        : filter === 'PHOTO'
+        ? 'Dodaj zdjęcie'
+        : filter === 'DOC'
+        ? 'Dodaj dokument'
+        : 'Dodaj plik';
 
     return (
         <>
             {lightboxFile && (
-                <Lightbox
-                    file={lightboxFile}
-                    projectId={projectId}
-                    onClose={() => setLightboxFile(null)}
-                />
+                <Lightbox file={lightboxFile} projectId={projectId} onClose={() => setLightboxFile(null)} />
             )}
 
-            <div className="stat-card bg-card border border-black/5 p-6 space-y-4">
-                {/* Header */}
-                <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                        <Paperclip size={14} className="text-brand-primary" />
-                        <h3 className="text-[10px] font-black text-stone-500 uppercase tracking-[0.3em]">
-                            Pliki projektu
-                        </h3>
-                        {files.length > 0 && (
-                            <span className="text-[10px] font-black text-stone-400">({files.length})</span>
-                        )}
-                    </div>
+            <Card as="section" className="overflow-hidden">
+                <CardHeader
+                    title={files.length > 0 ? `Pliki projektu (${files.length})` : 'Pliki projektu'}
+                    action={
+                        <>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                loading={uploading}
+                                icon={<Upload size={16} aria-hidden="true" />}
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                {uploadLabel}
+                            </Button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept={acceptAttr}
+                                multiple
+                                className="hidden"
+                                onChange={handleFileChange}
+                            />
+                        </>
+                    }
+                />
 
-                    <div className="flex items-center gap-3">
-                        {/* Filter toggle */}
-                        <div className="flex items-center gap-1 bg-black/5 rounded-xl p-1">
-                            {FILTERS.map(({ key, label }) => (
-                                <button
-                                    key={key}
-                                    onClick={() => setFilter(key)}
-                                    className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                                        filter === key
-                                            ? 'bg-white shadow-sm text-stone-900'
-                                            : 'text-stone-500 hover:text-stone-700'
-                                    }`}
-                                >
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Upload button */}
-                        <button
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={uploading}
-                            className="flex items-center gap-2 px-3 py-2 bg-black/5 hover:bg-black/10 border border-black/10 rounded-xl text-[9px] font-black text-stone-700 uppercase tracking-widest transition-all disabled:opacity-50"
-                        >
-                            {uploading ? (
-                                <Loader2 size={12} className="animate-spin" />
-                            ) : (
-                                <Upload size={12} />
-                            )}
-                            {uploading
-                                ? 'Przesyłanie...'
-                                : filter === 'PHOTO'
-                                ? 'Dodaj zdjęcie'
-                                : filter === 'DOC'
-                                ? 'Dodaj dokument'
-                                : 'Dodaj plik'}
-                        </button>
-
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept={acceptAttr}
-                            multiple
-                            className="hidden"
-                            onChange={handleFileChange}
-                        />
-                    </div>
+                {/* Zakładki */}
+                <div role="tablist" aria-label="Rodzaj plików" className="flex gap-1 overflow-x-auto border-b border-border px-3">
+                    {FILTERS.map(({ key, label }) => {
+                        const active = filter === key;
+                        return (
+                            <button
+                                key={key}
+                                type="button"
+                                role="tab"
+                                aria-selected={active}
+                                onClick={() => setFilter(key)}
+                                className={cx(
+                                    '-mb-px whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors',
+                                    active
+                                        ? 'border-ink text-ink'
+                                        : 'border-transparent text-ink-2 hover:text-ink',
+                                )}
+                            >
+                                {label}
+                                <span className="tnum ml-1.5 text-xs text-ink-3">{countFor(key)}</span>
+                            </button>
+                        );
+                    })}
                 </div>
 
-                {/* Upload error */}
-                {uploadError && (
-                    <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                        <AlertCircle size={14} />
-                        <span className="text-[11px] font-bold">{uploadError}</span>
-                        <button onClick={() => setUploadError(null)} className="ml-auto">
-                            <X size={12} />
-                        </button>
-                    </div>
-                )}
+                <div className="space-y-4 p-5">
+                    {error && (
+                        <Banner
+                            tone="danger"
+                            title={error}
+                            action={
+                                <Button size="sm" variant="ghost" onClick={() => setError(null)}>
+                                    Zamknij
+                                </Button>
+                            }
+                        />
+                    )}
 
-                {/* File list */}
-                {visibleFiles.length === 0 ? (
-                    <div className="py-8 text-center border border-dashed border-black/10 rounded-2xl">
-                        <Paperclip size={20} className="mx-auto text-stone-300 mb-2" />
-                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
-                            {files.length === 0 ? 'Brak załączników' : 'Brak plików w tej kategorii'}
-                        </p>
-                    </div>
-                ) : (
-                    <div className="space-y-1">
-                        {visibleFiles.map((file) => {
-                            const isImage = file.mime_type.startsWith('image/');
-                            return (
-                                <div
-                                    key={file.id}
-                                    className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-black/5 transition-all group"
-                                >
-                                    {/* Category badge */}
-                                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg border shrink-0 ${
-                                        file.category === 'PHOTO'
-                                            ? 'bg-blue-50 text-blue-500 border-blue-200'
-                                            : 'bg-amber-50 text-amber-600 border-amber-200'
-                                    }`}>
-                                        {file.category === 'PHOTO' ? 'Foto' : 'Doc'}
-                                    </span>
+                    {visibleFiles.length === 0 ? (
+                        <EmptyState
+                            icon={<Paperclip size={20} aria-hidden="true" />}
+                            title={files.length === 0 ? 'Brak załączników' : 'Brak plików w tej kategorii'}
+                            description={files.length === 0 ? 'Dodaj dokument lub zdjęcie, aby dołączyć je do projektu.' : undefined}
+                        />
+                    ) : (
+                        <ul className="-my-1 divide-y divide-border">
+                            {visibleFiles.map((file) => {
+                                const isImage = file.mime_type.startsWith('image/');
+                                const confirming = confirmDeleteId === file.id;
+                                return (
+                                    <li key={file.id} className="flex flex-wrap items-center gap-3 py-3">
+                                        <FileTypeIcon mimeType={file.mime_type} />
 
-                                    {/* Icon + name */}
-                                    <FileIcon mimeType={file.mime_type} />
-                                    <span
-                                        className="flex-1 text-[11px] font-bold text-stone-700 truncate"
-                                        title={file.original_name}
-                                    >
-                                        {file.original_name}
-                                    </span>
+                                        <div className="min-w-0 flex-1 basis-48">
+                                            <p className="truncate text-sm font-semibold text-ink" title={file.original_name}>
+                                                {file.original_name}
+                                            </p>
+                                            <p className="mt-0.5 text-xs text-ink-2">
+                                                <span className="tnum">{formatBytes(file.file_size)}</span>
+                                                <span aria-hidden="true" className="mx-1.5 text-ink-3">·</span>
+                                                <span className="tnum">{formatDate(file.created_at)}</span>
+                                                {isAdmin && file.uploaded_by_name && (
+                                                    <>
+                                                        <span aria-hidden="true" className="mx-1.5 text-ink-3">·</span>
+                                                        <span>{file.uploaded_by_name}</span>
+                                                    </>
+                                                )}
+                                            </p>
+                                        </div>
 
-                                    {/* Meta */}
-                                    <span className="text-[10px] text-stone-400 font-medium shrink-0 hidden sm:block">
-                                        {formatBytes(file.file_size)}
-                                    </span>
-                                    <span className="text-[10px] text-stone-400 font-medium shrink-0 hidden md:block">
-                                        {new Date(file.created_at).toLocaleDateString('pl-PL')}
-                                    </span>
-                                    {isAdmin && (
-                                        <span className="text-[10px] text-stone-400 font-medium shrink-0 hidden lg:block max-w-[120px] truncate" title={file.uploaded_by_name}>
-                                            {file.uploaded_by_name}
-                                        </span>
-                                    )}
-
-                                    {/* Actions */}
-                                    <div className="flex items-center gap-1 shrink-0">
-                                        {/* Lightbox for images */}
-                                        {isImage && (
-                                            <button
-                                                onClick={() => setLightboxFile(file)}
-                                                className="p-1.5 rounded-lg hover:bg-black/5 text-stone-400 hover:text-blue-500 transition-all"
-                                                title="Podgląd"
-                                            >
-                                                <ZoomIn size={13} />
-                                            </button>
-                                        )}
-
-                                        <a
-                                            href={`/api/projects/${projectId}/files/${file.id}`}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="p-1.5 rounded-lg hover:bg-black/5 text-stone-400 hover:text-stone-700 transition-all"
-                                            title="Pobierz / Otwórz"
-                                        >
-                                            <Download size={13} />
-                                        </a>
-
-                                        {canDeleteFile(file) && (
-                                            <>
-                                                {confirmDeleteId === file.id ? (
-                                                    <div className="flex items-center gap-1">
-                                                        <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">Usuń?</span>
-                                                        <button
-                                                            onClick={() => handleDelete(file.id)}
-                                                            disabled={deletingId === file.id}
-                                                            className="p-1 rounded-lg text-[9px] font-black text-red-500 hover:bg-red-50 transition-all"
-                                                        >
-                                                            {deletingId === file.id ? (
-                                                                <Loader2 size={11} className="animate-spin" />
-                                                            ) : (
-                                                                <CheckCircle2 size={13} />
-                                                            )}
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setConfirmDeleteId(null)}
-                                                            className="p-1 rounded-lg text-stone-400 hover:bg-black/5 transition-all"
-                                                        >
-                                                            <X size={13} />
-                                                        </button>
-                                                    </div>
-                                                ) : (
+                                        {confirming ? (
+                                            <InlineConfirm
+                                                question="Usunąć plik?"
+                                                confirmLabel="Usuń plik"
+                                                cancelLabel="Zostaw"
+                                                danger
+                                                loading={deletingId === file.id}
+                                                onConfirm={() => handleDelete(file.id)}
+                                                onCancel={() => setConfirmDeleteId(null)}
+                                            />
+                                        ) : (
+                                            <div className="flex shrink-0 items-center gap-0.5">
+                                                {isImage && (
                                                     <button
-                                                        onClick={() => setConfirmDeleteId(file.id)}
-                                                        className="p-1.5 rounded-lg hover:bg-red-50 text-stone-400 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
-                                                        title="Usuń"
+                                                        type="button"
+                                                        onClick={() => setLightboxFile(file)}
+                                                        className={ICON_ACTION_CLASS}
+                                                        aria-label={`Podgląd: ${file.original_name}`}
+                                                        title="Podgląd"
                                                     >
-                                                        <Trash2 size={13} />
+                                                        <ZoomIn size={16} aria-hidden="true" />
                                                     </button>
                                                 )}
-                                            </>
+                                                <a
+                                                    href={`/api/projects/${projectId}/files/${file.id}`}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className={ICON_ACTION_CLASS}
+                                                    aria-label={`Pobierz: ${file.original_name}`}
+                                                    title="Pobierz"
+                                                >
+                                                    <Download size={16} aria-hidden="true" />
+                                                </a>
+                                                {canDeleteFile(file) && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setConfirmDeleteId(file.id)}
+                                                        className={cx(ICON_ACTION_CLASS, 'hover:bg-danger-soft hover:text-danger')}
+                                                        aria-label={`Usuń: ${file.original_name}`}
+                                                        title="Usuń"
+                                                    >
+                                                        <Trash2 size={16} aria-hidden="true" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         )}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+                </div>
+            </Card>
         </>
     );
 }

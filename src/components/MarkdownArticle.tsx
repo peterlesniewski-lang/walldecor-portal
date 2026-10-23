@@ -6,14 +6,14 @@ function renderInline(text: string): React.ReactNode[] {
     return parts.map((part, index) => {
         if (part.startsWith('`') && part.endsWith('`')) {
             return (
-                <code key={index} className="rounded-md bg-black/5 px-1.5 py-0.5 text-[0.92em] font-bold text-stone-800">
+                <code key={index} className="rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[0.88em] text-ink">
                     {part.slice(1, -1)}
                 </code>
             );
         }
 
         if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={index} className="font-black text-stone-900">{part.slice(2, -2)}</strong>;
+            return <strong key={index} className="font-semibold text-ink">{part.slice(2, -2)}</strong>;
         }
 
         return <React.Fragment key={index}>{part}</React.Fragment>;
@@ -33,10 +33,43 @@ function isTableSeparator(line: string) {
     return /^\|\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(line.trim());
 }
 
-export default function MarkdownArticle({ markdown }: { markdown: string }) {
+const POLISH_MAP: Record<string, string> = { ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z' };
+
+function slugify(text: string) {
+    return text
+        .toLowerCase()
+        .replace(/[ąćęłńóśźż]/g, (ch) => POLISH_MAP[ch] ?? ch)
+        .replace(/[`*]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'sekcja';
+}
+
+function stripInline(text: string) {
+    return text.replace(/`([^`]+)`/g, '$1').replace(/\*\*([^*]+)\*\*/g, '$1');
+}
+
+/**
+ * Artykuł w stylu redakcyjnym: nagłówki w Fraunces, spis treści z lewej (desktop) lub rozwijany (mobile),
+ * tekst w kolumnie 68 znaków, tabele w kartach, kod w IBM Plex Mono.
+ * `# ` renderuje się jako h2 (h1 jest w layoucie dashboardu), `## ` jako h3.
+ * hideTitle: pomija pierwszy nagłówek `# `, gdy strona pokazuje tytuł dokumentu sama.
+ */
+export default function MarkdownArticle({ markdown, hideTitle = false }: { markdown: string; hideTitle?: boolean }) {
     const lines = markdown.split(/\r?\n/);
     const blocks: React.ReactNode[] = [];
+    const toc: { id: string; label: string }[] = [];
+    const usedIds = new Set<string>();
+    let skippedTitle = false;
     let i = 0;
+
+    const uniqueId = (text: string) => {
+        const base = slugify(text);
+        let id = base;
+        let n = 2;
+        while (usedIds.has(id)) id = `${base}-${n++}`;
+        usedIds.add(id);
+        return id;
+    };
 
     while (i < lines.length) {
         const line = lines[i];
@@ -56,7 +89,7 @@ export default function MarkdownArticle({ markdown }: { markdown: string }) {
             }
             i += 1;
             blocks.push(
-                <pre key={blocks.length} className="overflow-x-auto rounded-2xl border border-black/10 bg-stone-950 p-5 text-xs font-semibold leading-relaxed text-stone-100">
+                <pre key={blocks.length} className="max-w-[68ch] overflow-x-auto rounded-md border border-border bg-surface-2 p-4 font-mono text-[13px] leading-relaxed text-ink">
                     <code>{codeLines.join('\n')}</code>
                 </pre>
             );
@@ -64,20 +97,27 @@ export default function MarkdownArticle({ markdown }: { markdown: string }) {
         }
 
         if (trimmed.startsWith('# ')) {
-            blocks.push(
-                <h1 key={blocks.length} className="text-4xl font-black tracking-tight text-stone-950">
-                    {renderInline(trimmed.slice(2))}
-                </h1>
-            );
+            if (hideTitle && !skippedTitle) {
+                skippedTitle = true;
+            } else {
+                blocks.push(
+                    <h2 key={blocks.length} className="font-display text-[32px] font-normal leading-tight tracking-[-0.01em] text-ink">
+                        {renderInline(trimmed.slice(2))}
+                    </h2>
+                );
+            }
             i += 1;
             continue;
         }
 
         if (trimmed.startsWith('## ')) {
+            const headingText = trimmed.slice(3);
+            const id = uniqueId(stripInline(headingText));
+            toc.push({ id, label: stripInline(headingText) });
             blocks.push(
-                <h2 key={blocks.length} className="border-t border-black/10 pt-8 text-xl font-black tracking-tight text-stone-950">
-                    {renderInline(trimmed.slice(3))}
-                </h2>
+                <h3 key={blocks.length} id={id} className="scroll-mt-6 border-t border-border pt-8 font-display text-2xl font-medium leading-snug text-ink">
+                    {renderInline(headingText)}
+                </h3>
             );
             i += 1;
             continue;
@@ -93,22 +133,22 @@ export default function MarkdownArticle({ markdown }: { markdown: string }) {
             }
 
             blocks.push(
-                <div key={blocks.length} className="overflow-x-auto rounded-2xl border border-black/10 bg-white">
+                <div key={blocks.length} className="overflow-x-auto rounded-md border border-border bg-surface shadow-hairline">
                     <table className="w-full min-w-[640px] text-left text-sm">
-                        <thead className="bg-black/[0.03] text-[10px] font-black uppercase tracking-widest text-stone-500">
+                        <thead className="border-b border-border bg-surface-2">
                             <tr>
                                 {headers.map((header, index) => (
-                                    <th key={index} className="border-b border-black/10 px-5 py-4">
+                                    <th key={index} className="px-4 py-3 text-left text-[13px] font-semibold text-ink-2">
                                         {renderInline(header)}
                                     </th>
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-black/5">
+                        <tbody className="divide-y divide-border">
                             {rows.map((row, rowIndex) => (
                                 <tr key={rowIndex}>
                                     {row.map((cell, cellIndex) => (
-                                        <td key={cellIndex} className="px-5 py-4 align-top font-medium leading-relaxed text-stone-700">
+                                        <td key={cellIndex} className="px-4 py-3 align-top text-sm leading-relaxed text-ink-2">
                                             {renderInline(cell)}
                                         </td>
                                     ))}
@@ -128,9 +168,9 @@ export default function MarkdownArticle({ markdown }: { markdown: string }) {
                 i += 1;
             }
             blocks.push(
-                <ul key={blocks.length} className="space-y-2 pl-5 text-sm font-medium leading-relaxed text-stone-700">
+                <ul key={blocks.length} className="max-w-[68ch] space-y-2 pl-5 text-[15px] leading-relaxed text-ink-2">
                     {items.map((item, index) => (
-                        <li key={index} className="list-disc marker:text-brand-primary">
+                        <li key={index} className="list-disc marker:text-brass-ink">
                             {renderInline(item)}
                         </li>
                     ))}
@@ -146,9 +186,9 @@ export default function MarkdownArticle({ markdown }: { markdown: string }) {
                 i += 1;
             }
             blocks.push(
-                <ol key={blocks.length} className="space-y-2 pl-5 text-sm font-medium leading-relaxed text-stone-700">
+                <ol key={blocks.length} className="max-w-[68ch] space-y-2 pl-5 text-[15px] leading-relaxed text-ink-2">
                     {items.map((item, index) => (
-                        <li key={index} className="list-decimal marker:font-black marker:text-brand-primary">
+                        <li key={index} className="list-decimal marker:font-semibold marker:text-brass-ink">
                             {renderInline(item)}
                         </li>
                     ))}
@@ -172,11 +212,47 @@ export default function MarkdownArticle({ markdown }: { markdown: string }) {
         }
 
         blocks.push(
-            <p key={blocks.length} className="text-sm font-medium leading-7 text-stone-700">
+            <p key={blocks.length} className="max-w-[68ch] text-[15px] leading-7 text-ink-2">
                 {renderInline(paragraph.join(' '))}
             </p>
         );
     }
 
-    return <article className="space-y-6">{blocks}</article>;
+    const article = <article className="min-w-0 space-y-5">{blocks}</article>;
+
+    if (toc.length < 2) return article;
+
+    const tocLinks = (
+        <ol className="space-y-0.5 text-sm">
+            {toc.map((item, index) => (
+                <li key={item.id}>
+                    <a
+                        href={`#${item.id}`}
+                        className="flex gap-2 rounded-sm px-2 py-1.5 text-ink-2 hover:bg-ink/5 hover:text-ink"
+                    >
+                        <span className="tnum w-5 shrink-0 text-ink-2">{index + 1}.</span>
+                        <span>{item.label}</span>
+                    </a>
+                </li>
+            ))}
+        </ol>
+    );
+
+    return (
+        <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-10">
+            {/* Mobile: rozwijany spis treści */}
+            <details className="rounded-md border border-border bg-surface-2 px-4 py-3 lg:hidden">
+                <summary className="cursor-pointer text-sm font-semibold text-ink">Spis treści</summary>
+                <div className="mt-3">{tocLinks}</div>
+            </details>
+
+            {/* Desktop: spis z lewej, przyklejony */}
+            <nav aria-label="Spis treści" className="hidden self-start lg:sticky lg:top-6 lg:block">
+                <p className="label-caps mb-2 px-2">Spis treści</p>
+                {tocLinks}
+            </nav>
+
+            {article}
+        </div>
+    );
 }

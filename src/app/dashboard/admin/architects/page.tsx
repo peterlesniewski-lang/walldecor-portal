@@ -2,19 +2,10 @@ import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
-import {
-    Users,
-    Search,
-    Filter,
-    ShieldCheck,
-    Wallet,
-    ArrowLeft,
-    CreditCard
-} from 'lucide-react';
+import { ArrowLeft, Search } from 'lucide-react';
 import Link from 'next/link';
-import ArchitectList from '@/components/ArchitectList';
-import AddArchitectButton from "@/components/AddArchitectButton";
-import { formatPLN } from "@/lib/utils";
+import ArchitectList, { RegisterArchitectButton } from '@/components/ArchitectList';
+import { Banner, Button, Card, CardBody, CardHeader, EmptyState, KpiTile, cx, formatNumber } from '@/components/ui';
 import { walletBalanceSql } from "@/lib/walletSql";
 import { getPartnerStatusInfo } from "@/lib/partnerProgram";
 
@@ -25,7 +16,7 @@ export default async function AdminArchitectsPage({
 }) {
     const session = await getServerSession(authOptions);
     if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
-        return <div className="p-8 text-stone-900 font-black uppercase tracking-widest bg-red-50 border border-red-800/30 rounded-2xl">Brak uprawnień.</div>;
+        return <Banner tone="danger" title="Brak uprawnień">Ta strona jest dostępna tylko dla administratora i zespołu.</Banner>;
     }
 
     const { q, tier, status } = await searchParams;
@@ -80,105 +71,117 @@ export default async function AdminArchitectsPage({
     // 3. Overall Stats for KPIs
     const totalBalance = architects.reduce((acc: number, a: any) => acc + Number(a.balance), 0);
     const pendingRedemptionsCount = architects.filter((a: any) => a.pending_redemptions > 0).length;
+    const activeCount = architects.filter((a: any) => a.projects_count > 0).length;
+
+    const isAdmin = session.user.role === 'ADMIN';
+    const hasFilters = Boolean(q || tier || status);
+
+    const listItems = architects.map((a: any) => {
+        const info = getPartnerStatusInfo(Number(a.turnover), a.tier_override);
+        return {
+            id: a.id,
+            name: a.name,
+            email: a.email,
+            studio_name: a.studio_name ?? null,
+            projects_count: Number(a.projects_count) || 0,
+            turnover: Number(a.turnover) || 0,
+            balance: Number(a.balance) || 0,
+            pending_redemptions: Number(a.pending_redemptions) || 0,
+            has_business_history: Number(a.has_business_history) === 1,
+            tier_status: info.status,
+            tier_label: info.label,
+        };
+    });
+
+    const filters = [
+        { label: 'Wszyscy', href: '/dashboard/admin/architects', active: !tier && !status },
+        { label: 'Partner', href: '/dashboard/admin/architects?tier=partner', active: tier === 'partner' },
+        { label: 'Plus', href: '/dashboard/admin/architects?tier=partner_plus', active: tier === 'partner_plus' },
+        { label: 'Premium', href: '/dashboard/admin/architects?tier=partner_premium', active: tier === 'partner_premium' },
+        { label: 'Oczekują na kartę', href: '/dashboard/admin/architects?status=PENDING_CASHBACK', active: status === 'PENDING_CASHBACK' },
+    ];
 
     return (
-        <div className="space-y-10 pb-20">
-            {/* Breadcrumbs */}
-            <div className="flex items-center justify-between">
+        <div className="space-y-6 pb-16">
+            {/* Wróć + akcja rejestracji (drugorzędna; przycisk główny jest w nagłówku powłoki) */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <Link
                     href="/dashboard/admin"
-                    className="inline-flex items-center gap-2 text-[10px] font-black text-stone-500 uppercase tracking-widest hover:text-stone-900 transition-all underline-offset-4 hover:underline"
+                    className="inline-flex items-center gap-1.5 rounded-sm text-sm font-semibold text-ink-2 transition-colors hover:text-ink"
                 >
-                    <ArrowLeft size={14} />
+                    <ArrowLeft size={16} aria-hidden="true" />
                     Dashboard
                 </Link>
-                <AddArchitectButton canRegisterArchitects={session.user.role === 'ADMIN' || session.user.role === 'STAFF'} />
+                <RegisterArchitectButton canRegisterArchitects={session.user.role === 'ADMIN' || session.user.role === 'STAFF'} />
             </div>
 
-            {/* Header / Title */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                <div>
-                    <h1 className="text-4xl font-black text-stone-900 mb-2 uppercase tracking-tighter">Baza Architektów</h1>
-                    <p className="text-stone-500 font-bold">Zarządzanie partnerami, ich tierami oraz portfelami cashback.</p>
-                </div>
-
-                {/* Search Bar */}
-                <form action="/dashboard/admin/architects" method="GET" className="relative group min-w-[320px]">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-600 group-focus-within:text-brand-primary transition-colors" size={18} />
+            {/* Nagłówek sekcji + wyszukiwarka */}
+            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+                <form action="/dashboard/admin/architects" method="GET" role="search" className="relative w-full md:w-[360px]">
+                    {tier && <input type="hidden" name="tier" value={tier} />}
+                    {status && <input type="hidden" name="status" value={status} />}
+                    <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
                     <input
-                        type="text"
+                        type="search"
                         name="q"
                         defaultValue={q}
-                        placeholder="Szukaj po nazwie, emailu lub biurze..."
-                        className="w-full bg-card border border-black/5 rounded-2xl py-4 pl-12 pr-6 text-stone-900 font-bold placeholder:text-stone-700 focus:outline-none focus:border-brand-primary/50 transition-all shadow-xl"
+                        aria-label="Szukaj architekta"
+                        placeholder="Szukaj po nazwie, emailu lub pracowni"
+                        className="h-10 w-full rounded-sm border border-border-strong bg-surface pl-9 pr-3 text-sm text-ink placeholder:text-ink-3"
                     />
                 </form>
             </div>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {[
-                    { label: 'Wszyscy Partnerzy', value: architects.length, icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-900/10' },
-                    { label: 'Suma Portfeli', value: `${formatPLN(totalBalance)} PLN`, icon: Wallet, color: 'text-sky-600', bg: 'bg-sky-900/10' },
-                    { label: 'Wnioski o Karty', value: pendingRedemptionsCount, icon: CreditCard, color: 'text-amber-600', bg: 'bg-amber-100/10' },
-                    { label: 'Aktywne Tillery', value: architects.filter((a: any) => a.projects_count > 0).length, icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-900/10' },
-                ].map((kpi, i) => (
-                    <div key={i} className="stat-card bg-card border border-black/5 py-6">
-                        <div className={`w-10 h-10 rounded-xl ${kpi.bg} flex items-center justify-center ${kpi.color} border border-black/5 mb-4`}>
-                            <kpi.icon size={20} />
-                        </div>
-                        <p className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-1">{kpi.label}</p>
-                        <p className="text-2xl font-black text-stone-900 tracking-tighter">{kpi.value}</p>
-                    </div>
-                ))}
+            {/* KPI: jeden kafelek wyróżniony, ten który wymaga działania */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <KpiTile label="Wszyscy partnerzy" value={formatNumber(architects.length)} description={hasFilters ? 'Zgodnie z filtrem' : 'Konta architektów w systemie'} />
+                <KpiTile label="Suma portfeli" value={formatNumber(totalBalance)} unit="PLN" description="Dostępny cashback wszystkich partnerów" />
+                <KpiTile
+                    label="Wnioski o karty"
+                    value={formatNumber(pendingRedemptionsCount)}
+                    description={pendingRedemptionsCount > 0 ? 'Partnerzy czekają na decyzję' : 'Brak wniosków do decyzji'}
+                    highlight={pendingRedemptionsCount > 0}
+                />
+                <KpiTile label="Aktywni" value={formatNumber(activeCount)} description="Mają co najmniej jeden projekt" />
             </div>
 
-            {/* Filter Pills */}
-            <div className="flex flex-wrap items-center gap-3">
-                <p className="text-[9px] font-black text-stone-600 uppercase tracking-widest mr-2 flex items-center gap-2">
-                    <Filter size={12} />
-                    Filtruj:
-                </p>
-                {[
-                    { label: 'Wszyscy', href: '/dashboard/admin/architects', active: !tier && !status },
-                    { label: 'Partner', href: '/dashboard/admin/architects?tier=partner', active: tier === 'partner' },
-                    { label: 'Partner Plus', href: '/dashboard/admin/architects?tier=partner_plus', active: tier === 'partner_plus' },
-                    { label: 'Partner Premium', href: '/dashboard/admin/architects?tier=partner_premium', active: tier === 'partner_premium' },
-                    { label: 'Oczekują na Kartę', href: '/dashboard/admin/architects?status=PENDING_CASHBACK', active: status === 'PENDING_CASHBACK', highlight: true },
-                ].map((pill, i) => (
+            {/* Filtr segmentowy */}
+            <nav aria-label="Filtr statusu partnerskiego" className="inline-flex max-w-full flex-wrap gap-1 rounded-sm border border-border bg-surface p-1">
+                {filters.map((f) => (
                     <Link
-                        key={i}
-                        href={pill.href}
-                        className={`text-[10px] font-black uppercase tracking-widest px-5 py-2.5 rounded-xl border transition-all ${pill.active
-                            ? (pill.highlight ? 'bg-amber-500/10 border-amber-500/50 text-amber-500' : 'bg-brand-primary/10 border-brand-primary/50 text-brand-primary')
-                            : 'bg-black/5 border-black/5 text-stone-500 hover:text-stone-900 hover:border-black/10'
-                            }`}
+                        key={f.label}
+                        href={f.href}
+                        aria-current={f.active ? 'page' : undefined}
+                        className={cx(
+                            'inline-flex h-8 items-center rounded-[6px] px-3 text-[13px] font-semibold transition-colors',
+                            f.active ? 'bg-ink text-surface' : 'text-ink-2 hover:bg-ink/5 hover:text-ink',
+                        )}
                     >
-                        {pill.label}
+                        {f.label}
                     </Link>
                 ))}
-            </div>
+            </nav>
 
-            {/* Main List */}
-            <div className="stat-card bg-card p-0 border border-black/5 overflow-hidden">
-                <div className="p-8 border-b border-black/5 flex items-center justify-between">
-                    <h2 className="text-lg font-black text-stone-900 flex items-center gap-3">
-                        <Users size={20} className="text-brand-primary" />
-                        Lista Kont Architektów
-                    </h2>
-                </div>
-                {architects.length === 0 ? (
-                    <div className="py-20 text-center">
-                        <Users size={48} className="mx-auto text-slate-800 mb-4 opacity-20" />
-                        <p className="text-stone-500 font-bold">Nie znaleziono architektów spełniających kryteria.</p>
-                        <Link href="/dashboard/admin/architects" className="text-brand-primary text-xs font-black uppercase mt-4 inline-block tracking-widest hover:underline">Zresetuj filtry</Link>
-                    </div>
-                ) : (
-                    <div className="divide-y divide-black/5">
-            <ArchitectList architects={architects} isAdmin={session.user.role === 'ADMIN'} />
-                    </div>
-                )}
-            </div>
+            {/* Lista */}
+            <Card as="section">
+                <CardHeader
+                    title="Konta architektów"
+                    action={<span className="tnum text-[13px] text-ink-2">Wyniki: {formatNumber(architects.length)}</span>}
+                />
+                <CardBody flush>
+                    {architects.length === 0 ? (
+                        <div className="p-5">
+                            <EmptyState
+                                title="Nie znaleziono architektów"
+                                description={hasFilters ? 'Żaden partner nie spełnia wybranych kryteriów. Zmień wyszukiwanie albo zresetuj filtry.' : 'Zarejestruj pierwszego partnera, aby pojawił się na liście.'}
+                                action={hasFilters ? <Button variant="secondary" href="/dashboard/admin/architects">Zresetuj filtry</Button> : undefined}
+                            />
+                        </div>
+                    ) : (
+                        <ArchitectList architects={listItems} isAdmin={isAdmin} />
+                    )}
+                </CardBody>
+            </Card>
         </div>
     );
 }

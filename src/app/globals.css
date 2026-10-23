@@ -1,67 +1,111 @@
 @import "tailwindcss";
 
-@theme {
-  --color-brand-primary: #D4AF37;
-  /* Metallic Gold */
-  --color-brand-secondary: #FFD700;
-  /* Gold */
-  --color-brand-accent: #C5A028;
+/*
+ * Design system WallDecor v0.2 (docs/design-system.html).
+ * Kierunek: jasny papier, białe karty z hairline, jeden mosiężny akcent, cyfry tabelaryczne.
+ * Używaj klas Tailwind z tych tokenów: bg-bg, bg-surface, text-ink, text-ink-2, border-border,
+ * bg-brass, text-brass-ink, bg-brass-soft, font-display, font-mono, rounded-md itd.
+ * Nie definiuj własnych kolorów ani fontów w plikach stron.
+ */
+@theme static {
+  /* Neutralne (ciepłe) */
+  --color-bg: #F6F5F2;
+  --color-surface: #FFFFFF;
+  --color-surface-2: #FBFAF8;
+  --color-border: #E7E5DF;
+  --color-border-strong: #D5D2C9;
+  --color-ink: #1A1917;
+  --color-ink-2: #5F5D57;
+  --color-ink-3: #8E8B83; /* tylko etykiety 12 px i daty, nigdy treść */
 
-  --color-background: #FAF8F5;
-  /* Warm cream */
-  --color-foreground: #1C1814;
+  /* Akcent marki: mosiądz. brass = tła przycisków (ciemny tekst), brass-ink = tekst i linki na bieli */
+  --color-brass: #E3C15A;
+  --color-brass-ink: #8A6D12;
+  --color-brass-soft: #F7EFD2;
 
-  --color-card: #FFFFFF;
-  /* White card */
-  --color-card-foreground: #2C2416;
+  /* Semantyka, osobna od akcentu marki */
+  --color-success: #1F7A4D;
+  --color-success-soft: #E3F3EA;
+  --color-warning: #9A6400;
+  --color-warning-soft: #FBF0D6;
+  --color-danger: #B3261E;
+  --color-danger-soft: #FBE5E3;
+  --color-info: #2B5FA8;
+  --color-info-soft: #E4ECF8;
 
-  --color-border: rgba(0, 0, 0, 0.08);
-  /* Subtle border */
-  --color-border-hover: rgba(0, 0, 0, 0.15);
+  /* Serie na wykresach */
+  --color-chart-1: #C9A62F;
+  --color-chart-2: #1A1917;
+  --color-chart-3: #B5B2A9;
+  --color-chart-4: #7FA38A;
+  --color-chart-5: #6C7FA0;
 
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-error: #EF4444;
+  /* Fonty ładowane lokalnie przez @fontsource (layout.tsx), bez Google w czasie builda */
+  --font-display: "Fraunces Variable", Fraunces, Georgia, "Times New Roman", serif;
+  --font-sans: "Hanken Grotesk Variable", "Hanken Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  /* Kształty: kontrolki 8, karty 12, panele i modale 16, pigułki pełne */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Cienie: hairline na kartach, float tylko na warstwach pływających (menu, toast, modal) */
+  --shadow-hairline: 0 1px 2px rgba(26, 25, 23, 0.04);
+  --shadow-float: 0 8px 24px -12px rgba(26, 25, 23, 0.12);
 }
 
 :root {
-  --background: var(--color-background);
-  --foreground: var(--color-foreground);
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Premium Utilities */
-.glass-panel {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 2rem;
+/* Cyfry tabelaryczne dla kwot, dat i metraży */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
-.gold-gradient {
-  background: linear-gradient(135deg, #FFD700 0%, #D4AF37 50%, #C5A028 100%);
+/* Etykieta 12 px z lekkim rozstrzeleniem, jedyne miejsce na wielkie litery */
+.label-caps {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
 }
 
-.gold-text {
-  background: linear-gradient(135deg, #FFD700 0%, #D4AF37 50%, #B8860B 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+/* Dostępność: widoczny fokus klawiatury i szacunek dla reduced-motion */
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
 }
 
-.sidebar-link {
-  @apply flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-300 text-stone-300 hover:bg-white/10 hover:text-white;
+::selection {
+  background: var(--color-brass-soft);
+  color: var(--color-ink);
 }
 
-.sidebar-link-active {
-  @apply flex items-center gap-4 px-4 py-3.5 rounded-lg transition-all duration-300 bg-brand-primary/15 text-white font-semibold shadow-[inset_3px_0_0_#D4AF37];
-}
-
-.stat-card {
-  @apply p-6 rounded-lg bg-card border border-border hover:border-border-hover transition-all duration-300;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

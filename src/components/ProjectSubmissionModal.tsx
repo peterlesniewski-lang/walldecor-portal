@@ -1,6 +1,9 @@
+'use client';
+
 import React, { useState, useEffect } from 'react';
-import { X, Plus, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { X, Plus, CheckCircle2 } from 'lucide-react';
 import { createProject, getAllArchitects } from '@/app/actions/projects';
+import { Banner, Button, cx } from '@/components/ui';
 
 interface ProjectSubmissionModalProps {
     isOpen: boolean;
@@ -9,6 +12,34 @@ interface ProjectSubmissionModalProps {
 }
 
 const categories = ['Tapety', 'Sztukateria', 'Farby', 'Tynki', 'Tkaniny', 'Podłogi', 'Inne'];
+
+const FIELD = 'h-10 w-full rounded-sm border border-border-strong bg-surface px-3 text-[15px] text-ink placeholder:text-ink-3 focus:border-ink focus:outline-none focus:ring-[3px] focus:ring-ink/10';
+const LABEL = 'text-[13px] font-semibold text-ink-2';
+
+/** Przycisk otwierający modal zgłoszenia projektu (dla stron serwerowych i pustych stanów). */
+export function NewProjectButton({
+    userRole,
+    variant = 'primary',
+    size = 'md',
+    label = 'Zgłoś nowy projekt',
+    className,
+}: {
+    userRole?: string;
+    variant?: 'primary' | 'secondary';
+    size?: 'md' | 'sm';
+    label?: string;
+    className?: string;
+}) {
+    const [isOpen, setIsOpen] = useState(false);
+    return (
+        <>
+            <Button variant={variant} size={size} className={className} icon={<Plus size={16} aria-hidden="true" />} onClick={() => setIsOpen(true)}>
+                {label}
+            </Button>
+            <ProjectSubmissionModal isOpen={isOpen} onClose={() => setIsOpen(false)} userRole={userRole} />
+        </>
+    );
+}
 
 export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: ProjectSubmissionModalProps) {
     const [loading, setLoading] = useState(false);
@@ -30,6 +61,13 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
             getAllArchitects().then(setArchitects).catch(console.error);
         }
     }, [isOpen, isStaff]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isOpen, onClose]);
 
     if (!isOpen) return null;
 
@@ -92,138 +130,153 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
         }
     };
 
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}></div>
+    const title = isStaff ? 'Rejestracja projektu' : 'Zgłoś nowy projekt';
 
-            <div className="relative bg-background border border-black/5 rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-[0_32px_64px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in duration-300">
-                {/* Header */}
-                <div className="p-10 border-b border-black/5 flex justify-between items-center bg-black/5">
+    return (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4">
+            <div className="absolute inset-0 bg-ink/40" onClick={onClose} aria-hidden="true" />
+
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="project-modal-title"
+                className="relative flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-lg bg-surface shadow-float sm:rounded-lg"
+            >
+                {/* Nagłówek */}
+                <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-5">
                     <div>
-                        <h3 className="text-2xl font-black text-stone-900 tracking-tight">{isStaff ? 'Rejestracja Projektu' : 'Zgłoś Nowy Projekt'}</h3>
-                        <p className="text-sm text-stone-500 mt-1 font-medium">{isStaff ? 'Manualne wprowadzenie danych dla architekta.' : 'Podaj szczegóły realizacji i kategorii produktów.'}</p>
+                        <h3 id="project-modal-title" className="font-display text-2xl font-normal leading-tight text-ink">{title}</h3>
+                        <p className="mt-1 text-sm text-ink-2">
+                            {isStaff ? 'Ręczne wprowadzenie danych dla architekta.' : 'Podaj szczegóły realizacji i kategorie produktów.'}
+                        </p>
                     </div>
-                    <button onClick={onClose} className="p-3 bg-black/5 hover:bg-black/10 rounded-2xl transition-all text-stone-400 hover:text-stone-900 border border-black/5">
-                        <X size={20} />
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        aria-label="Zamknij"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-sm text-ink-2 transition-colors hover:bg-ink/5 hover:text-ink"
+                    >
+                        <X size={18} aria-hidden="true" />
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-10 max-h-[70vh] overflow-y-auto space-y-8 scrollbar-hide">
-                    {success ? (
-                        <div className="py-20 text-center space-y-6">
-                            <div className="w-24 h-24 gold-gradient text-black rounded-3xl flex items-center justify-center mx-auto shadow-[0_20px_40px_rgba(212,175,55,0.3)]">
-                                <CheckCircle2 size={48} />
-                            </div>
-                            <div>
-                                <h4 className="text-2xl font-black text-stone-900 tracking-tight">Gotowe!</h4>
-                                <p className="text-stone-500 font-medium mt-2">Projekt został pomyślnie zarejestrowany.</p>
-                            </div>
+                {success ? (
+                    <div className="px-6 py-16 text-center" role="status">
+                        <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-full bg-success-soft text-success">
+                            <CheckCircle2 size={28} aria-hidden="true" />
                         </div>
-                    ) : (
-                        <>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <h4 className="font-display text-2xl font-normal text-ink">Projekt zgłoszony</h4>
+                        <p className="mt-2 text-sm text-ink-2">Projekt został zarejestrowany. Opiekun WallDecor potwierdzi jego wartość po wycenie.</p>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                 {isStaff && (
-                                    <div className="md:col-span-2 space-y-2">
-                                        <label className="text-[10px] font-black text-stone-500 uppercase tracking-widest ml-1">Współpracownik (Architekt)</label>
+                                    <div className="flex flex-col gap-1.5 md:col-span-2">
+                                        <label htmlFor="pm-owner" className={LABEL}>Architekt</label>
                                         <select
+                                            id="pm-owner"
                                             required
-                                            className="w-full px-6 py-4 bg-black/5 border border-black/10 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-semibold appearance-none"
+                                            className={FIELD}
                                             value={formData.ownerId}
                                             onChange={e => setFormData({ ...formData, ownerId: e.target.value })}
                                         >
-                                            <option value="" className="bg-background">-- Wybierz Partnera --</option>
+                                            <option value="">Wybierz partnera</option>
                                             {architects.map(archi => (
-                                                <option key={archi.id} value={archi.id} className="bg-background">{archi.name}</option>
+                                                <option key={archi.id} value={archi.id}>{archi.name}</option>
                                             ))}
                                         </select>
                                     </div>
                                 )}
 
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-stone-500 uppercase tracking-widest ml-1">Nazwa Obiektu</label>
+                                <div className="flex flex-col gap-1.5">
+                                    <label htmlFor="pm-name" className={LABEL}>Nazwa obiektu</label>
                                     <input
+                                        id="pm-name"
                                         required
                                         type="text"
                                         placeholder="np. Apartament Gdańsk"
-                                        className="w-full px-6 py-4 bg-black/5 border border-black/10 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-semibold"
+                                        className={FIELD}
                                         value={formData.name}
                                         onChange={e => setFormData({ ...formData, name: e.target.value })}
                                     />
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-stone-500 uppercase tracking-widest ml-1">Etykieta Klienta</label>
+                                <div className="flex flex-col gap-1.5">
+                                    <label htmlFor="pm-client" className={LABEL}>Etykieta klienta</label>
                                     <input
+                                        id="pm-client"
                                         required
                                         type="text"
                                         placeholder="np. Nowak / P12"
-                                        className="w-full px-6 py-4 bg-black/5 border border-black/10 rounded-2xl text-stone-900 focus:outline-none focus:ring-4 focus:ring-brand-primary/5 focus:border-brand-primary/20 transition-all font-semibold"
+                                        className={FIELD}
                                         value={formData.client_label}
                                         onChange={e => setFormData({ ...formData, client_label: e.target.value })}
                                     />
                                 </div>
                             </div>
 
-                            <div className="space-y-6">
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black text-brand-primary uppercase tracking-[0.2em]">Kategorie i Wartości</h4>
-                                    <button
-                                        type="button"
-                                        onClick={addItem}
-                                        className="flex items-center gap-2 text-[10px] font-black text-stone-400 hover:text-stone-900 transition-colors"
-                                    >
-                                        <Plus size={14} /> DODAJ POZYCJĘ
-                                    </button>
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <h4 className="text-sm font-semibold text-ink">Kategorie i wartości</h4>
+                                    <Button type="button" variant="secondary" size="sm" icon={<Plus size={14} aria-hidden="true" />} onClick={addItem}>
+                                        Dodaj pozycję
+                                    </Button>
                                 </div>
 
-                                <div className="space-y-4">
+                                <div className="space-y-3">
                                     {formData.items.map((item, index) => (
-                                        <div key={index} className="p-6 bg-black/5 border border-black/10 rounded-3xl space-y-4 relative group">
+                                        <div key={index} className="relative space-y-3 rounded-md border border-border bg-surface-2 p-4">
                                             {formData.items.length > 1 && (
                                                 <button
                                                     type="button"
                                                     onClick={() => removeItem(index)}
-                                                    className="absolute top-4 right-4 text-stone-600 hover:text-red-600 transition-colors"
+                                                    aria-label={`Usuń pozycję ${index + 1}`}
+                                                    className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-sm text-ink-2 transition-colors hover:bg-danger-soft hover:text-danger"
                                                 >
-                                                    <X size={16} />
+                                                    <X size={16} aria-hidden="true" />
                                                 </button>
                                             )}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest ml-1">Kategoria</label>
+                                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                                <div className="flex flex-col gap-1.5">
+                                                    <label htmlFor={`pm-cat-${index}`} className={LABEL}>Kategoria</label>
                                                     <select
-                                                        className="w-full px-4 py-3 bg-black/5 border border-black/10 rounded-xl text-stone-900 focus:outline-none focus:border-brand-primary/30 transition-all font-bold appearance-none text-sm"
+                                                        id={`pm-cat-${index}`}
+                                                        className={FIELD}
                                                         value={item.category}
                                                         onChange={e => updateItem(index, 'category', e.target.value)}
                                                     >
-                                                        {categories.map(cat => <option key={cat} value={cat} className="bg-background">{cat}</option>)}
+                                                        {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                                     </select>
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest ml-1">
-                                                        {isStaff ? 'Wartość Netto (PLN)' : 'Szacunkowy budżet netto (opcjonalnie)'}
+                                                <div className="flex flex-col gap-1.5">
+                                                    <label htmlFor={`pm-amount-${index}`} className={LABEL}>
+                                                        {isStaff ? 'Wartość netto (PLN)' : 'Szacunkowy budżet netto (opcjonalnie)'}
                                                     </label>
                                                     <input
+                                                        id={`pm-amount-${index}`}
                                                         required={isStaff}
                                                         type="number"
                                                         min="0"
-                                                        placeholder={isStaff ? '0.00' : 'np. 5000 — możesz zostawić puste'}
-                                                        className="w-full px-4 py-3 bg-black/5 border border-black/10 rounded-xl text-stone-900 focus:outline-none focus:border-brand-primary/30 transition-all font-bold text-sm"
+                                                        placeholder={isStaff ? '0' : 'np. 5000, możesz zostawić puste'}
+                                                        className={cx(FIELD, 'tnum')}
                                                         value={item.amount_net}
                                                         onChange={e => updateItem(index, 'amount_net', e.target.value)}
                                                     />
-                                                    {!isStaff && (
-                                                        <p className="text-[9px] font-bold text-stone-400 ml-1 leading-snug">
-                                                            Kwota orientacyjna — finalną wartość projektu potwierdza opiekun WallDecor po wycenie i dopiero ona jest podstawą prowizji.
-                                                        </p>
-                                                    )}
                                                 </div>
-                                                <div className="md:col-span-2 space-y-2">
-                                                    <label className="text-[9px] font-black text-stone-600 uppercase tracking-widest ml-1">Opis (opcjonalnie)</label>
+                                                {!isStaff && (
+                                                    <p className="text-xs text-ink-2 md:col-span-2">
+                                                        Kwota orientacyjna. Finalną wartość projektu potwierdza opiekun WallDecor po wycenie i dopiero ona jest podstawą prowizji.
+                                                    </p>
+                                                )}
+                                                <div className="flex flex-col gap-1.5 md:col-span-2">
+                                                    <label htmlFor={`pm-desc-${index}`} className={LABEL}>Opis (opcjonalnie)</label>
                                                     <input
+                                                        id={`pm-desc-${index}`}
                                                         type="text"
                                                         placeholder="np. Wykończenie ścian w salonie"
-                                                        className="w-full px-4 py-3 bg-black/5 border border-black/10 rounded-xl text-stone-900 focus:outline-none focus:border-brand-primary/30 transition-all font-bold text-sm"
+                                                        className={FIELD}
                                                         value={item.description}
                                                         onChange={e => updateItem(index, 'description', e.target.value)}
                                                     />
@@ -234,28 +287,16 @@ export default function ProjectSubmissionModal({ isOpen, onClose, userRole }: Pr
                                 </div>
                             </div>
 
-                            {error && (
-                                <div className="flex items-center gap-3 p-5 bg-red-50 text-red-600 rounded-[2rem] text-xs font-bold border border-red-500/20">
-                                    <AlertCircle size={18} />
-                                    <span>{error}</span>
-                                </div>
-                            )}
+                            {error && <Banner tone="danger" title="Nie udało się zapisać projektu">{error}</Banner>}
+                        </div>
 
-                            <button
-                                disabled={loading}
-                                type="submit"
-                                className="w-full py-5 gold-gradient text-black rounded-[2rem] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:shadow-[0_20px_40px_rgba(212,175,55,0.2)] transition-all disabled:opacity-50"
-                            >
-                                {loading ? 'Zapisywanie...' : (
-                                    <>
-                                        <Plus size={20} />
-                                        Zarejestruj Projekt
-                                    </>
-                                )}
-                            </button>
-                        </>
-                    )}
-                </form>
+                        {/* Stopka */}
+                        <div className="flex items-center justify-end gap-2 border-t border-border bg-surface px-6 py-4">
+                            <Button type="button" variant="ghost" onClick={onClose}>Anuluj</Button>
+                            <Button type="submit" loading={loading}>{isStaff ? 'Zarejestruj projekt' : 'Zgłoś projekt'}</Button>
+                        </div>
+                    </form>
+                )}
             </div>
         </div>
     );

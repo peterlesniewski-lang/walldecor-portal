@@ -3,18 +3,29 @@
 import Link from 'next/link';
 import {
     ArrowLeft,
-    Calendar,
-    CreditCard,
+    Banknote,
     Package,
     Image as ImageIcon,
     Box,
     Lightbulb,
     Wind,
     Layout,
-    Clock,
-    BadgeCheck
 } from 'lucide-react';
-import { formatPLN } from "@/lib/utils";
+import {
+    Button,
+    Card,
+    CardBody,
+    CardHeader,
+    EmptyState,
+    KpiTile,
+    StatusPill,
+    cx,
+    formatDate,
+    formatNumber,
+    formatPLN,
+    type Tone,
+} from '@/components/ui';
+import { CASHBACK_RATE } from '@/lib/partnerProgram';
 import ProjectFilesSection, { ProjectFile } from "@/components/ProjectFilesSection";
 
 interface ProjectDetailClientProps {
@@ -32,76 +43,49 @@ const categoryIcons: any = {
     'Inne': Package
 };
 
-// Status-driven timeline entry
+// Wpis osi czasu zależny od statusu
 interface TimelineEvent {
     label: string;
     desc: string;
     date: string | null;
-    dotClass: string;
-    dotInnerClass: string;
+    tone: Tone;
 }
+
+const TONE_DOT: Partial<Record<Tone, string>> = {
+    danger: 'bg-danger',
+    success: 'bg-success',
+    info: 'bg-info',
+    accent: 'bg-brass',
+    neutral: 'bg-ink-3',
+};
 
 function buildTimeline(project: any): TimelineEvent[] {
     const events: TimelineEvent[] = [];
-    const submissionDate = new Date(project.created_at).toLocaleDateString('pl-PL');
+    const submissionDate = formatDate(project.created_at);
 
-    // Most recent event first
+    // Najnowsze zdarzenie na górze
     if (project.status === 'NIEZREALIZOWANY') {
-        events.push({
-            label: 'NIEZREALIZOWANY',
-            desc: 'Projekt odrzucony lub anulowany',
-            date: null,
-            dotClass: 'bg-red-500/20',
-            dotInnerClass: 'bg-red-500'
-        });
+        events.push({ label: 'Niezrealizowany', desc: 'Projekt odrzucony lub anulowany', date: null, tone: 'danger' });
     } else if (project.status === 'ZAKOŃCZONY') {
-        events.push({
-            label: 'ZAKOŃCZONO',
-            desc: 'Projekt zrealizowany pomyślnie',
-            date: null,
-            dotClass: 'bg-emerald-500/20',
-            dotInnerClass: 'bg-emerald-500'
-        });
+        events.push({ label: 'Zakończono', desc: 'Projekt zrealizowany pomyślnie', date: null, tone: 'success' });
     } else if (project.status === 'W_REALIZACJI') {
-        events.push({
-            label: 'W REALIZACJI',
-            desc: 'Projekt przekazany do realizacji',
-            date: null,
-            dotClass: 'bg-amber-500/20',
-            dotInnerClass: 'bg-amber-500'
-        });
+        events.push({ label: 'W realizacji', desc: 'Projekt przekazany do realizacji', date: null, tone: 'info' });
     } else if (project.status === 'PRZYJĘTY') {
-        events.push({
-            label: 'PRZYJĘTO',
-            desc: 'Projekt przyjęty przez WallDecor',
-            date: null,
-            dotClass: 'bg-blue-500/20',
-            dotInnerClass: 'bg-blue-500'
-        });
+        events.push({ label: 'Przyjęto', desc: 'Projekt przyjęty przez WallDecor', date: null, tone: 'accent' });
     }
 
-    // Submission always last
-    events.push({
-        label: 'ZGŁOSZONO',
-        desc: 'Przesłano formularz projektu',
-        date: submissionDate,
-        dotClass: 'bg-brand-primary/20',
-        dotInnerClass: 'bg-brand-primary'
-    });
+    // Zgłoszenie zawsze na końcu
+    events.push({ label: 'Zgłoszono', desc: 'Przesłano formularz projektu', date: submissionDate, tone: 'neutral' });
 
     return events;
 }
 
 export default function ProjectDetailClient({ project, initialFiles, currentUserId }: ProjectDetailClientProps) {
-    const statusColors: any = {
-        'ZGŁOSZONY': 'bg-stone-100 text-stone-400 border border-slate-700',
-        'PRZYJĘTY': 'bg-blue-900/30 text-blue-600 border border-blue-800/50',
-        'W_REALIZACJI': 'bg-amber-100/30 text-amber-500 border border-amber-800/50',
-        'ZAKOŃCZONY': 'bg-emerald-900/30 text-emerald-500 border border-emerald-800/50',
-        'NIEZREALIZOWANY': 'bg-red-50 text-red-600 border border-red-800/50'
-    };
-
-    const totalNet = project.items?.reduce((acc: number, item: any) => acc + (Number(item.amount_net) || 0), 0) || 0;
+    const items: any[] = project.items ?? [];
+    const totalNet = items.reduce((acc: number, item: any) => acc + (Number(item.amount_net) || 0), 0);
+    const productNet = items
+        .filter((item: any) => item.type !== 'INSTALLATION')
+        .reduce((acc: number, item: any) => acc + (Number(item.amount_net) || 0), 0);
     const commissions: any[] = project.commissions ?? [];
     const sumByStatus = (statuses: string[]) => commissions
         .filter((c: any) => statuses.includes(c.status))
@@ -109,201 +93,207 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
     const totalCommission = commissions.reduce((acc: number, c: any) => acc + (Number(c.amount_net) || 0), 0);
     const pendingCommission = sumByStatus(['PENDING']);
     const earnedCommission = sumByStatus(['EARNED']);
-    const settledCommission = sumByStatus(['IN_PAYMENT', 'PAID']);
-    const commissionStatusLabels: Record<string, string> = {
-        PENDING: 'PLANOWANA',
-        EARNED: 'ZAROBIONA',
-        IN_PAYMENT: 'W WYPŁACIE',
-        PAID: 'WYPŁACONA'
-    };
+    const inPaymentCommission = sumByStatus(['IN_PAYMENT']);
+    const paidCommission = sumByStatus(['PAID']);
+
+    const cashbackAmount = productNet * CASHBACK_RATE;
+    const cashbackCredited = project.status === 'ZAKOŃCZONY';
+
+    const payoutStatus = project.payout?.status ?? null;
+    let commissionNote = 'Netto do wypłaty';
+    if (project.status === 'NIEZREALIZOWANY') commissionNote = 'Projekt niezrealizowany';
+    else if (payoutStatus === 'PAID') commissionNote = 'Wypłacono';
+    else if (payoutStatus === 'IN_PAYMENT') commissionNote = 'W trakcie wypłaty';
+    else if (payoutStatus === 'PENDING') commissionNote = 'Wniosek złożony, oczekuje';
 
     const timeline = buildTimeline(project);
 
+    const breakdown: { label: string; value: number }[] = [
+        { label: 'Planowana', value: pendingCommission },
+        { label: 'Zarobiona', value: earnedCommission },
+        { label: 'W wypłacie', value: inPaymentCommission },
+        { label: 'Wypłacona', value: paidCommission },
+    ].filter((row) => row.value > 0);
+
     return (
-        <div className="space-y-10 pb-20">
-            {/* Navigation & Title */}
-            <div className="flex flex-col gap-6">
-                <Link
-                    href="/dashboard/projects"
-                    className="flex items-center gap-2 text-xs font-black text-stone-500 uppercase tracking-widest hover:text-stone-900 transition-colors w-fit"
-                >
-                    <ArrowLeft size={16} />
-                    Wróć do listy
-                </Link>
+        <div className="space-y-6 pb-16">
+            <Link
+                href="/dashboard/projects"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-2 transition-colors hover:text-ink"
+            >
+                <ArrowLeft size={16} aria-hidden="true" />
+                Wróć do listy
+            </Link>
 
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                    <div>
-                        <div className="flex items-center gap-4 mb-3">
-                            <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${statusColors[project.status]}`}>
-                                {project.status.replace('_', ' ')}
+            {/* Nagłówek projektu */}
+            <Card as="section">
+                <CardBody className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                    <div className="min-w-0">
+                        <div className="mb-3 flex flex-wrap items-center gap-3">
+                            <StatusPill kind="project" status={project.status} />
+                            <span className="font-mono text-xs text-ink-3">ID: {project.id}</span>
+                        </div>
+                        <h2 className="font-display text-[34px] font-normal leading-[1.1] tracking-[-0.01em] text-ink">{project.name}</h2>
+                        <p className="mt-2 text-sm text-ink-2">Klient: <span className="font-semibold text-ink">{project.client_label}</span></p>
+                    </div>
+                    <div className="shrink-0 md:text-right">
+                        <p className="label-caps mb-1">Data zgłoszenia</p>
+                        <p className="tnum text-base font-semibold text-ink">{formatDate(project.created_at)}</p>
+                    </div>
+                </CardBody>
+            </Card>
+
+            {/* Kafelki */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <KpiTile
+                    label="Wartość projektu"
+                    value={formatNumber(totalNet)}
+                    unit="PLN"
+                    description="Suma pozycji netto"
+                />
+                <KpiTile
+                    label="Prowizja"
+                    value={formatNumber(totalCommission)}
+                    unit="PLN"
+                    highlight={earnedCommission > 0}
+                    description={
+                        breakdown.length > 0 ? (
+                            <span className="block space-y-0.5">
+                                {breakdown.map((row) => (
+                                    <span key={row.label} className="tnum flex justify-between gap-3">
+                                        <span>{row.label}</span>
+                                        <span className="font-semibold text-ink">{formatPLN(row.value)}</span>
+                                    </span>
+                                ))}
                             </span>
-                            <span className="text-stone-600 font-bold text-xs uppercase tracking-widest">ID: {project.id}</span>
-                        </div>
-                        <h1 className="text-4xl font-black text-stone-900 leading-none tracking-tight">{project.name}</h1>
-                        <p className="text-stone-500 mt-2 font-bold text-sm uppercase tracking-widest">Klient: {project.client_label}</p>
-                    </div>
-
-                    <div className="flex gap-4">
-                        <div className="stat-card bg-card py-4 px-6 border border-black/5">
-                            <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest mb-1">DATA ZGŁOSZENIA</p>
-                            <div className="flex items-center gap-2 text-stone-900 font-black">
-                                <Calendar size={14} className="text-brand-primary" />
-                                {new Date(project.created_at).toLocaleDateString('pl-PL')}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                        ) : (
+                            commissionNote
+                        )
+                    }
+                />
+                <KpiTile
+                    label={`Cashback ${Math.round(CASHBACK_RATE * 100)}%`}
+                    value={formatNumber(cashbackAmount)}
+                    unit="PLN"
+                    description={cashbackCredited ? 'Naliczony po zakończeniu projektu, sprawdź w portfelu' : 'Naliczany od produktów po zakończeniu projektu'}
+                />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Items List */}
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-black text-stone-500 uppercase tracking-[0.3em]">Elementy Projektu</h3>
-                        <Package size={16} className="text-brand-primary" />
-                    </div>
-
-                    <div className="space-y-4">
-                        {project.items && project.items.length > 0 ? (
-                            project.items.map((item: any) => {
-                                const Icon = categoryIcons[item.category] || Package;
-                                const isInstallation = item.type === 'INSTALLATION';
-                                const comm = commissions.find((c: any) => c.project_item_id === item.id);
-                                const commRate = comm?.rate != null && comm.rate !== '' ? Math.round(Number(comm.rate) * 100) : null;
-                                return (
-                                    <div key={item.id} className="stat-card bg-card p-6 group hover:bg-stone-50 transition-all">
-                                        <div className="flex items-start gap-6">
-                                            <div className="w-14 h-14 rounded-2xl bg-black/5 border border-black/10 flex items-center justify-center text-brand-primary group-hover:scale-110 transition-transform">
-                                                <Icon size={24} />
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="flex justify-between items-start mb-1">
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        <h4 className="text-lg font-black text-stone-900">{item.category}</h4>
-                                                        {isInstallation && (
-                                                            <span className="px-2 py-0.5 rounded-md bg-stone-100 border border-black/5 text-[9px] font-black text-stone-500 uppercase tracking-widest">Montaż — bez prowizji</span>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                {/* Pozycje i prowizje per pozycja */}
+                <Card as="section" className="min-w-0 lg:col-span-2">
+                    <CardHeader title="Elementy projektu" />
+                    <CardBody flush>
+                        {items.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[620px] text-left text-sm">
+                                    <thead>
+                                        <tr className="border-b border-border bg-surface-2">
+                                            <th className="label-caps px-5 py-3">Pozycja</th>
+                                            <th className="label-caps px-3 py-3 text-right">Wartość netto</th>
+                                            <th className="label-caps px-3 py-3">Prowizja</th>
+                                            <th className="label-caps px-5 py-3 text-right">Kwota</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {items.map((item: any) => {
+                                            const Icon = categoryIcons[item.category] || Package;
+                                            const isInstallation = item.type === 'INSTALLATION';
+                                            const comm = commissions.find((c: any) => c.project_item_id === item.id);
+                                            const commRate = comm?.rate != null && comm.rate !== '' ? Math.round(Number(comm.rate) * 100) : null;
+                                            return (
+                                                <tr key={item.id}>
+                                                    <td className="px-5 py-3.5">
+                                                        <div className="flex items-start gap-3">
+                                                            <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-sm bg-brass-soft text-brass-ink">
+                                                                <Icon size={16} aria-hidden="true" />
+                                                            </span>
+                                                            <div className="min-w-0">
+                                                                <p className="font-semibold text-ink">{item.category}</p>
+                                                                <p className="text-[13px] text-ink-2">{item.description || 'Brak opisu elementu.'}</p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="tnum px-3 py-3.5 text-right font-semibold text-ink">{formatPLN(item.amount_net)}</td>
+                                                    <td className="px-3 py-3.5">
+                                                        {comm ? (
+                                                            <span className="inline-flex flex-wrap items-center gap-2">
+                                                                <StatusPill kind="commission" status={comm.status} />
+                                                                {commRate !== null && <span className="tnum text-[13px] text-ink-2">{commRate}%</span>}
+                                                            </span>
+                                                        ) : isInstallation ? (
+                                                            <span className="text-[13px] text-ink-2">Montaż — bez prowizji</span>
+                                                        ) : project.status === 'ZGŁOSZONY' ? (
+                                                            <span className="text-[13px] text-ink-2">Prowizja po akceptacji</span>
+                                                        ) : (
+                                                            <span className="text-[13px] text-ink-2">bez prowizji</span>
                                                         )}
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <p className="text-sm font-black text-stone-900">{formatPLN(item.amount_net)} PLN</p>
-                                                        <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Netto</p>
-                                                    </div>
-                                                </div>
-                                                <p className="text-sm font-bold text-stone-500 max-w-md">{item.description || 'Brak opisu elementu.'}</p>
-                                                <div className="mt-4 pt-4 border-t border-black/5 flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-1.5 h-1.5 bg-brand-primary rounded-full"></div>
-                                                        <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest">
-                                                            {comm
-                                                                ? `Prowizja${commRate !== null ? ` ${commRate}%` : ''} · ${commissionStatusLabels[comm.status] ?? comm.status}`
-                                                                : isInstallation
-                                                                    ? 'bez prowizji'
-                                                                    : project.status === 'ZGŁOSZONY'
-                                                                        ? 'Prowizja po akceptacji'
-                                                                        : 'bez prowizji'}
-                                                        </span>
-                                                    </div>
-                                                    {comm && (
-                                                        <p className="text-sm font-black text-brand-primary">
-                                                            {formatPLN(comm.amount_net)} PLN
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })
+                                                    </td>
+                                                    <td className={cx('tnum px-5 py-3.5 text-right font-semibold', comm ? 'text-ink' : 'text-ink-3')}>
+                                                        {comm ? formatPLN(comm.amount_net) : '—'}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         ) : (
-                            <div className="stat-card bg-card py-12 text-center border-dashed border-black/10">
-                                <p className="text-stone-500 font-bold uppercase tracking-widest text-xs">Brak zdefiniowanych elementów</p>
+                            <div className="p-5">
+                                <EmptyState title="Brak zdefiniowanych elementów" description="Opiekun WallDecor doda pozycje po wycenie projektu." />
                             </div>
                         )}
-                    </div>
-                </div>
+                    </CardBody>
+                </Card>
 
-                {/* Summary Sidebar */}
-                <div className="space-y-8">
-                    {(() => {
-                        const payoutStatus = project.payout?.status ?? null;
-                        const isPaid = payoutStatus === 'PAID';
-                        const isInPayment = payoutStatus === 'IN_PAYMENT';
-                        const isPending = payoutStatus === 'PENDING';
-
-                        let subtitle = 'Netto do wypłaty';
-                        if (project.status === 'NIEZREALIZOWANY') subtitle = 'Projekt niezrealizowany';
-                        else if (isPaid) subtitle = 'Wypłacono';
-                        else if (isInPayment) subtitle = 'W trakcie wypłaty';
-                        else if (isPending) subtitle = 'Wniosek złożony – oczekuje';
-
-                        return (
-                            <div className="stat-card bg-gradient-to-br from-brand-primary to-brand-accent p-8 text-black shadow-[0_20px_50px_rgba(212,175,55,0.2)]">
-                                <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-4 opacity-70 italic">Łączne Wynagrodzenie</p>
-                                <h3 className="text-5xl font-black mb-2 tracking-tighter">
-                                    {formatPLN(totalCommission)} <span className="text-2xl">PLN</span>
-                                </h3>
-                                <div className="flex items-center gap-2">
-                                    {isPaid && <BadgeCheck size={14} className="opacity-70" />}
-                                    {isInPayment && <Clock size={14} className="opacity-70" />}
-                                    <p className="text-xs font-bold opacity-60 uppercase tracking-widest">{subtitle}</p>
-                                </div>
-
-                                <div className="mt-8 pt-6 border-t border-black/10 flex flex-col gap-4">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-black uppercase tracking-widest">Obrót Netto</span>
-                                        <span className="font-black">{formatPLN(totalNet)} PLN</span>
-                                    </div>
-                                    {pendingCommission > 0 && (
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-black uppercase tracking-widest">Planowana</span>
-                                            <span className="font-black">{formatPLN(pendingCommission)} PLN</span>
-                                        </div>
-                                    )}
-                                    {earnedCommission > 0 && (
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-black uppercase tracking-widest">Zarobiona</span>
-                                            <span className="font-black">{formatPLN(earnedCommission)} PLN</span>
-                                        </div>
-                                    )}
-                                    {settledCommission > 0 && (
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-black uppercase tracking-widest">Wypłacona / w wypłacie</span>
-                                            <span className="font-black">{formatPLN(settledCommission)} PLN</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {earnedCommission > 0 && (
-                                    <Link
-                                        href="/dashboard/wallet"
-                                        className="w-full mt-8 py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black/90 transition-all flex items-center justify-center gap-2"
-                                    >
-                                        <CreditCard size={14} className="text-brand-primary" />
-                                        Wypłać Środki
-                                    </Link>
-                                )}
+                {/* Rozliczenie i historia */}
+                <div className="space-y-6">
+                    <Card as="section">
+                        <CardHeader title="Rozliczenie prowizji" />
+                        <CardBody className="space-y-3">
+                            <div className="flex items-baseline justify-between gap-3">
+                                <span className="text-sm text-ink-2">Obrót netto</span>
+                                <span className="tnum text-sm font-semibold text-ink">{formatPLN(totalNet)}</span>
                             </div>
-                        );
-                    })()}
-
-                    {/* Timeline / History */}
-                    <div className="stat-card bg-card p-8">
-                        <h3 className="text-xs font-black text-brand-primary uppercase tracking-[0.2em] mb-8">Historia Zdarzeń</h3>
-                        <div className="space-y-8 relative before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-px before:bg-black/5">
-                            {timeline.map((event, i) => (
-                                <div key={i} className="relative pl-10">
-                                    <div className={`absolute left-0 top-1 w-5 h-5 rounded-full ${event.dotClass} border-4 border-[#151518] flex items-center justify-center z-10`}>
-                                        <div className={`w-1.5 h-1.5 ${event.dotInnerClass} rounded-full`}></div>
-                                    </div>
-                                    <p className="text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">{event.label}</p>
-                                    <p className="text-sm font-bold text-stone-900">{event.desc}</p>
-                                    {event.date && (
-                                        <p className="text-[10px] text-stone-600 font-medium mt-1">{event.date}</p>
-                                    )}
+                            {breakdown.map((row) => (
+                                <div key={row.label} className="flex items-baseline justify-between gap-3">
+                                    <span className="text-sm text-ink-2">{row.label}</span>
+                                    <span className="tnum text-sm font-semibold text-ink">{formatPLN(row.value)}</span>
                                 </div>
                             ))}
-                        </div>
-                    </div>
+                            <div className="flex items-baseline justify-between gap-3 border-t border-border pt-3">
+                                <span className="text-sm font-semibold text-ink">Łącznie</span>
+                                <span className="tnum text-base font-semibold text-ink">{formatPLN(totalCommission)}</span>
+                            </div>
+                            <p className="text-xs text-ink-2">{commissionNote}</p>
+
+                            {earnedCommission > 0 && (
+                                <Button
+                                    href="/dashboard/wallet"
+                                    fullWidth
+                                    icon={<Banknote size={16} aria-hidden="true" />}
+                                >
+                                    Wypłać środki
+                                </Button>
+                            )}
+                        </CardBody>
+                    </Card>
+
+                    <Card as="section">
+                        <CardHeader title="Historia zdarzeń" />
+                        <CardBody>
+                            <ol className="relative space-y-6 before:absolute before:bottom-2 before:left-[5px] before:top-2 before:w-px before:bg-border">
+                                {timeline.map((event, i) => (
+                                    <li key={i} className="relative pl-7">
+                                        <span className={cx('absolute left-0 top-1.5 h-[11px] w-[11px] rounded-full ring-4 ring-surface', TONE_DOT[event.tone] ?? 'bg-ink-3')} aria-hidden="true" />
+                                        <p className="text-sm font-semibold text-ink">{event.label}</p>
+                                        <p className="text-[13px] text-ink-2">{event.desc}</p>
+                                        {event.date && <p className="tnum mt-0.5 text-xs text-ink-3">{event.date}</p>}
+                                    </li>
+                                ))}
+                            </ol>
+                        </CardBody>
+                    </Card>
                 </div>
             </div>
 

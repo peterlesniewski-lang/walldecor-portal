@@ -3,30 +3,33 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import {
-    CreditCard,
     CheckCircle2,
-    Clock,
-    CheckSquare,
-    Square,
-    Zap,
-    Loader2,
-    AlertTriangle,
-    XCircle,
-    PauseCircle,
-    CheckCircle,
-    Receipt,
-    FileText,
-    Copy,
     ChevronDown,
     ChevronUp,
+    Copy,
+    FileText,
     Landmark,
-    AlertCircle
+    Loader2,
+    Mail,
+    Receipt,
+    Check,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { handlePayoutRequest } from "@/app/actions/admin";
 import { updatePayoutInvoiceNumber } from "@/app/actions/projects";
 import { notifyArchitectProfileIncomplete } from "@/app/actions/architects";
-import { formatPLN } from "@/lib/utils";
+import {
+    Banner,
+    Button,
+    Card,
+    EmptyState,
+    InlineConfirm,
+    StatusPill,
+    cx,
+    formatDate,
+    formatNumber,
+    formatPLN,
+} from '@/components/ui';
 
 interface PayoutRequest {
     id: string;
@@ -46,24 +49,43 @@ interface PayoutRequest {
     is_vat_payer?: number | null;
 }
 
+type PayoutAction = 'APPROVE' | 'REJECT' | 'HOLD' | 'IN_PAYMENT' | 'PAID';
+
+const FIELD_CLASS =
+    'h-8 rounded-sm border border-border-strong bg-surface px-3 text-[13px] text-ink placeholder:text-ink-3 focus:border-ink focus:outline-none';
+
+function initials(name: string): string {
+    const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    const first = parts[0][0] || '';
+    const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+    return (first + last).toUpperCase();
+}
+
 function CopyField({ label, value }: { label: string; value: string }) {
     const [copied, setCopied] = useState(false);
-    const copy = () => {
-        navigator.clipboard.writeText(value);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
+    const copy = async () => {
+        try {
+            await navigator.clipboard.writeText(value);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        } catch {
+            // schowek niedostępny (np. brak HTTPS), użytkownik może zaznaczyć tekst ręcznie
+        }
     };
     return (
-        <div className="flex items-center justify-between gap-4 py-2.5 border-b border-black/5 last:border-0">
-            <span className="text-[10px] font-black text-stone-400 uppercase tracking-widest w-20 shrink-0">{label}</span>
-            <span className="text-[12px] font-bold text-stone-800 flex-1 font-mono">{value}</span>
-            <button
+        <div className="flex items-center justify-between gap-3 border-b border-border py-2.5 last:border-0">
+            <span className="label-caps w-24 shrink-0">{label}</span>
+            <span className="min-w-0 flex-1 break-words font-mono text-[13px] text-ink">{value}</span>
+            <Button
+                size="sm"
+                variant="ghost"
                 onClick={copy}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all shrink-0 ${copied ? 'bg-emerald-500/10 text-emerald-600' : 'bg-black/5 text-stone-400 hover:bg-black/10 hover:text-stone-700'}`}
+                icon={copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+                className={copied ? 'text-success' : undefined}
             >
-                {copied ? <CheckCircle size={11} /> : <Copy size={11} />}
-                {copied ? 'OK' : 'Kopiuj'}
-            </button>
+                {copied ? 'Skopiowano' : 'Kopiuj'}
+            </Button>
         </div>
     );
 }
@@ -73,15 +95,17 @@ function InvoiceNumberField({ payoutId, initialValue, isAdmin }: { payoutId: str
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState(initialValue || '');
     const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
 
     const save = async () => {
         setSaving(true);
+        setSaveError('');
         try {
             await updatePayoutInvoiceNumber(payoutId, value);
             setEditing(false);
             router.refresh();
         } catch {
-            // silent — keep editing open
+            setSaveError('Nie udało się zapisać numeru. Spróbuj ponownie.');
         } finally {
             setSaving(false);
         }
@@ -89,73 +113,75 @@ function InvoiceNumberField({ payoutId, initialValue, isAdmin }: { payoutId: str
 
     if (!isAdmin) {
         return (
-            <div className="flex items-center gap-1.5 text-[10px] font-mono text-stone-400">
-                <FileText size={11} className="shrink-0" />
-                {value ? <span className="font-bold text-stone-600">{value}</span> : <span className="italic">Brak nr faktury</span>}
+            <div className="flex items-center gap-1.5 text-[13px] text-ink-2">
+                <FileText size={13} className="shrink-0 text-ink-3" aria-hidden="true" />
+                {value ? <span className="font-mono text-ink">{value}</span> : <span>Brak nr faktury</span>}
             </div>
         );
     }
 
     if (editing) {
         return (
-            <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-wrap items-center gap-2">
                 <input
                     type="text"
                     value={value}
                     autoFocus
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
-                    placeholder="Nr faktury architekta…"
-                    className="w-44 bg-black/5 border border-black/10 rounded-lg px-2 py-1 text-[10px] font-mono text-stone-900 focus:outline-none focus:border-brand-primary/50"
+                    placeholder="Nr faktury architekta"
+                    aria-label="Numer faktury architekta"
+                    className={cx(FIELD_CLASS, 'w-48 font-mono')}
                 />
-                <button
-                    onClick={save}
-                    disabled={saving}
-                    className="px-2 py-1 rounded-lg bg-brand-primary/10 text-brand-primary hover:bg-brand-primary/20 transition-all text-[9px] font-black uppercase"
-                >
-                    {saving ? <Loader2 size={10} className="animate-spin" /> : 'OK'}
-                </button>
-                <button
-                    onClick={() => { setValue(initialValue || ''); setEditing(false); }}
-                    className="px-2 py-1 rounded-lg bg-black/5 text-stone-400 hover:bg-black/10 transition-all text-[9px] font-black uppercase"
-                >
+                <Button size="sm" variant="secondary" loading={saving} onClick={save}>Zapisz</Button>
+                <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setValue(initialValue || ''); setSaveError(''); setEditing(false); }}>
                     Anuluj
-                </button>
+                </Button>
+                {saveError && <p role="alert" className="w-full text-[13px] text-danger">{saveError}</p>}
             </div>
         );
     }
 
     return (
         <button
-            onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-            className="flex items-center gap-1.5 text-[10px] font-mono text-stone-400 hover:text-stone-700 transition-colors"
+            type="button"
+            onClick={() => setEditing(true)}
+            className="inline-flex items-center gap-1.5 rounded-sm text-[13px] text-ink-2 hover:text-ink"
             title="Kliknij, aby wpisać nr faktury architekta"
         >
-            <FileText size={11} className="shrink-0" />
-            {value ? (
-                <span className="font-bold text-stone-600">{value}</span>
-            ) : (
-                <span className="italic">Dodaj nr faktury</span>
-            )}
+            <FileText size={13} className="shrink-0 text-ink-3" aria-hidden="true" />
+            {value ? <span className="font-mono text-ink">{value}</span> : <span className="underline decoration-border-strong underline-offset-2">Dodaj nr faktury</span>}
         </button>
     );
 }
 
-export default function AdminPayoutsQueue({ initialPayouts, isAdmin }: { initialPayouts: PayoutRequest[]; isAdmin: boolean }) {
+export default function AdminPayoutsQueue({
+    initialPayouts,
+    isAdmin,
+    flush = false,
+}: {
+    initialPayouts: PayoutRequest[];
+    isAdmin: boolean;
+    /** true, gdy kolejka leży wewnątrz karty strony (bez własnej ramki). */
+    flush?: boolean;
+}) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     // 'idle' | 'confirming' | 'loading' | 'error'
     const [phase, setPhase] = useState<'idle' | 'confirming' | 'loading' | 'error'>('idle');
     const [errorMsg, setErrorMsg] = useState('');
     const [processedTotal, setProcessedTotal] = useState<number | null>(null);
     const [confirmingRejectId, setConfirmingRejectId] = useState<string | null>(null);
+    const [confirmingPaidId, setConfirmingPaidId] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [notifyingId, setNotifyingId] = useState<string | null>(null);
     const [notifiedIds, setNotifiedIds] = useState<string[]>([]);
     const router = useRouter();
 
+    const busy = phase === 'loading' || phase === 'confirming';
+
     const toggleExpand = (id: string) => {
-        if (phase !== 'idle') return;
-        setExpandedId(prev => prev === id ? null : id);
+        if (busy) return;
+        setExpandedId((prev) => (prev === id ? null : id));
     };
 
     const isSelectable = (status: string) => !['APPROVED', 'PAID', 'REJECTED'].includes(status);
@@ -163,23 +189,25 @@ export default function AdminPayoutsQueue({ initialPayouts, isAdmin }: { initial
     const toggleSelect = (id: string, status: string) => {
         if (!isSelectable(status)) return;
         if (selectedIds.includes(id)) {
-            setSelectedIds(selectedIds.filter(i => i !== id));
+            setSelectedIds(selectedIds.filter((i) => i !== id));
         } else {
             setSelectedIds([...selectedIds, id]);
         }
     };
 
+    const selectablePayouts = initialPayouts.filter((p) => isSelectable(p.status));
+    const allSelected = selectedIds.length > 0 && selectedIds.length === selectablePayouts.length;
+
     const toggleSelectAll = () => {
-        const selectablePayouts = initialPayouts.filter(p => isSelectable(p.status));
-        if (selectedIds.length === selectablePayouts.length) {
+        if (allSelected) {
             setSelectedIds([]);
         } else {
-            setSelectedIds(selectablePayouts.map(p => p.id));
+            setSelectedIds(selectablePayouts.map((p) => p.id));
         }
     };
 
     const selectedTotal = initialPayouts
-        .filter(p => selectedIds.includes(p.id))
+        .filter((p) => selectedIds.includes(p.id))
         .reduce((acc, p) => acc + Number(p.amount), 0);
 
     const executeBatch = async () => {
@@ -207,13 +235,17 @@ export default function AdminPayoutsQueue({ initialPayouts, isAdmin }: { initial
         }
     };
 
-    const onIndividualAction = async (id: string, action: 'APPROVE' | 'REJECT' | 'HOLD' | 'IN_PAYMENT' | 'PAID') => {
+    const onIndividualAction = async (id: string, action: PayoutAction) => {
         setPhase('loading');
+        setErrorMsg('');
         try {
             const res = await handlePayoutRequest(id, action);
             if (res.success) {
                 setPhase('idle');
                 router.refresh();
+            } else {
+                setErrorMsg('Operacja nie powiodła się. Odśwież stronę i spróbuj ponownie.');
+                setPhase('error');
             }
         } catch (err: any) {
             setErrorMsg(err.message || 'Błąd operacji');
@@ -223,372 +255,312 @@ export default function AdminPayoutsQueue({ initialPayouts, isAdmin }: { initial
 
     if (initialPayouts.length === 0) {
         return (
-            <div className="py-12 flex flex-col items-center justify-center bg-white/[0.01] rounded-3xl border border-dashed border-black/5">
-                <CheckCircle2 size={32} className="text-slate-800 mb-3" />
-                <p className="text-[10px] text-stone-600 font-bold uppercase tracking-[0.2em]">Kolejka wypłat jest pusta</p>
-            </div>
+            <EmptyState
+                icon={<CheckCircle2 size={22} aria-hidden="true" />}
+                title="Kolejka wypłat jest pusta"
+                description="Nowe wnioski o wypłatę pojawią się tutaj."
+            />
         );
     }
 
-    return (
-        <div className="space-y-6">
-            {/* Toolbar */}
-            {isAdmin ? (
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                    <div className="flex items-center gap-4">
-                        <button
-                            onClick={toggleSelectAll}
-                            className="flex items-center gap-2 text-[10px] font-black text-stone-500 uppercase tracking-widest hover:text-stone-900 transition-all"
-                        >
-                            {selectedIds.length > 0 && selectedIds.length === initialPayouts.filter(p => isSelectable(p.status)).length
-                                ? <CheckSquare size={16} className="text-brand-primary" />
-                                : <Square size={16} />}
+    const content = (
+        <div>
+            {/* Pasek narzędzi */}
+            <div className="space-y-3 px-5 py-3">
+                {isAdmin ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <label className="inline-flex cursor-pointer items-center gap-2.5 text-sm font-medium text-ink-2">
+                            <input
+                                type="checkbox"
+                                checked={allSelected}
+                                onChange={toggleSelectAll}
+                                disabled={busy || selectablePayouts.length === 0}
+                                className="h-4 w-4 accent-ink"
+                            />
                             Zaznacz wszystkie do wypłaty
-                        </button>
-                        {selectedIds.length > 0 && (
-                            <span className="text-[10px] font-black text-brand-primary uppercase tracking-widest bg-brand-primary/10 px-3 py-1 rounded-lg border border-brand-primary/20">
-                                Wybrano: {selectedIds.length} · {formatPLN(selectedTotal)} PLN
-                            </span>
+                        </label>
+                        {selectedIds.length > 0 && phase === 'idle' && (
+                            <div className="flex flex-wrap items-center gap-3">
+                                <span className="tnum text-sm text-ink-2">
+                                    Wybrano: <strong className="font-semibold text-ink">{selectedIds.length}</strong> · {formatPLN(selectedTotal)}
+                                </span>
+                                <Button size="sm" onClick={() => setPhase('confirming')}>
+                                    Zatwierdź wybrane ({selectedIds.length})
+                                </Button>
+                            </div>
                         )}
                     </div>
+                ) : (
+                    <Banner tone="info">Podgląd tylko do odczytu. Wypłaty może rozliczać wyłącznie administrator.</Banner>
+                )}
 
-                    {selectedIds.length > 0 && phase === 'idle' && (
-                        <button
-                            onClick={() => setPhase('confirming')}
-                            className="bg-brand-primary hover:bg-brand-secondary text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-[0_8px_20px_rgba(212,175,55,0.2)] active:scale-95"
-                        >
-                            <Zap size={14} fill="currentColor" />
-                            Zatwierdź Wybrane ({selectedIds.length})
-                        </button>
-                    )}
-                </div>
-            ) : (
-                <div className="bg-black/5 border border-black/10 rounded-3xl px-6 py-4">
-                    <p className="text-[10px] font-black text-stone-500 uppercase tracking-widest">
-                        Podgląd tylko do odczytu. Wypłaty może rozliczać wyłącznie ADMIN.
-                    </p>
-                </div>
-            )}
+                {phase === 'confirming' && (
+                    <InlineConfirm
+                        question={<span className="tnum">Wypłacić {selectedIds.length} {selectedIds.length === 1 ? 'wniosek' : 'wnioski'} na łączną kwotę {formatPLN(selectedTotal)}?</span>}
+                        confirmLabel="Wypłać"
+                        cancelLabel="Anuluj"
+                        onConfirm={executeBatch}
+                        onCancel={() => setPhase('idle')}
+                    />
+                )}
 
-            {/* Inline confirmation banner */}
-            {phase === 'confirming' && (
-                <div className="flex items-center justify-between gap-4 bg-brand-primary/5 border border-brand-primary/30 rounded-3xl px-6 py-4">
-                    <div>
-                        <p className="text-[10px] font-black text-brand-primary uppercase tracking-widest mb-0.5">Potwierdź wypłatę</p>
-                        <p className="text-sm font-black text-stone-900">
-                            {selectedIds.length} wniosków · {formatPLN(selectedTotal)} PLN
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => setPhase('idle')}
-                            className="px-5 py-2 rounded-xl bg-black/5 text-stone-400 text-[10px] font-black uppercase tracking-widest hover:bg-black/10 transition-all"
-                        >
-                            Anuluj
-                        </button>
-                        <button
-                            onClick={executeBatch}
-                            className="bg-brand-primary hover:bg-brand-secondary text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"
-                        >
-                            <Zap size={14} fill="currentColor" />
-                            Tak, wypłać
-                        </button>
-                    </div>
-                </div>
-            )}
+                {phase === 'loading' && (
+                    <Banner tone="info">
+                        <span className="inline-flex items-center gap-2">
+                            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                            Przetwarzanie wypłat…
+                        </span>
+                    </Banner>
+                )}
 
-            {/* Loading banner */}
-            {phase === 'loading' && (
-                <div className="flex items-center gap-3 bg-black/5 border border-black/10 rounded-3xl px-6 py-4">
-                    <Loader2 size={16} className="animate-spin text-brand-primary" />
-                    <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Przetwarzanie wypłat…</p>
-                </div>
-            )}
-
-            {/* Error banner */}
-            {phase === 'error' && (
-                <div className="flex items-center justify-between gap-4 bg-red-900/10 border border-red-800/30 rounded-3xl px-6 py-4">
-                    <div className="flex items-center gap-3">
-                        <AlertTriangle size={16} className="text-red-600 shrink-0" />
-                        <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">{errorMsg}</p>
-                    </div>
-                    <button
-                        onClick={() => setPhase('idle')}
-                        className="px-4 py-2 rounded-xl bg-black/5 text-stone-400 text-[10px] font-black uppercase tracking-widest hover:bg-black/10 transition-all"
+                {phase === 'error' && (
+                    <Banner
+                        tone="danger"
+                        title="Nie udało się wykonać operacji"
+                        action={<Button size="sm" variant="secondary" onClick={() => setPhase('idle')}>Zamknij</Button>}
                     >
-                        Zamknij
-                    </button>
-                </div>
-            )}
+                        {errorMsg}
+                    </Banner>
+                )}
 
-            {/* Success flash (processedTotal set, payouts removed from list after refresh) */}
-            {processedTotal !== null && (
-                <div className="flex items-center gap-3 bg-emerald-900/10 border border-emerald-800/30 rounded-3xl px-6 py-4">
-                    <CheckCircle2 size={16} className="text-emerald-600" />
-                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                        Wypłacono {formatPLN(processedTotal)} PLN
-                    </p>
-                </div>
-            )}
+                {processedTotal !== null && (
+                    <Banner
+                        tone="success"
+                        title={`Wypłacono ${formatPLN(processedTotal)}`}
+                        action={<Button size="sm" variant="ghost" onClick={() => setProcessedTotal(null)}>Ukryj</Button>}
+                    />
+                )}
+            </div>
 
-            {/* Payout list */}
-            <div className="grid grid-cols-1 gap-4">
-                {initialPayouts.map((p) => (
-                    <div
-                        key={p.id}
-                        className={`stat-card border transition-all ${phase !== 'idle' ? 'opacity-50 pointer-events-none' : ''
-                            } ${selectedIds.includes(p.id)
-                                ? 'bg-brand-primary/5 border-brand-primary/30'
-                                : expandedId === p.id
-                                    ? 'bg-stone-50 border-black/10'
-                                    : 'bg-black/[0.02] border-black/5 hover:border-black/10'
-                            }`}
-                    >
-                    <div
-                        onClick={() => toggleExpand(p.id)}
-                        className={`flex items-center justify-between group ${phase !== 'idle' ? '' : 'cursor-pointer'}`}
-                    >
-                        <div className="flex items-center gap-6">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${selectedIds.includes(p.id)
-                                ? 'bg-brand-primary text-black border-brand-primary'
-                                : isSelectable(p.status)
-                                    ? 'bg-black/5 text-stone-500 border-black/5 group-hover:border-black/20'
-                                    : 'bg-black/5 text-stone-700 border-transparent'
-                                }`}>
-                                {selectedIds.includes(p.id) ? <CheckSquare size={18} /> : isSelectable(p.status) ? <CreditCard size={18} /> : <div className="w-1.5 h-1.5 rounded-full bg-stone-200" />}
-                            </div>
-                            <div>
-                                <div className="flex items-center gap-3 mb-1">
-                                    <Link
-                                        href={`/dashboard/admin/architects/${p.architect_id}`}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="text-sm font-black text-stone-900 hover:text-brand-primary transition-colors underline-offset-2 hover:underline"
-                                    >
-                                        {p.architect_name}
-                                    </Link>
-                                    {p.invoice_url && (
-                                        <a
-                                            href={p.invoice_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="p-1 rounded-md bg-black/5 text-stone-400 hover:text-brand-primary hover:bg-black/10 transition-all flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter"
-                                            title="Pobierz Fakturę / Rachunek"
-                                        >
-                                            <Receipt size={12} />
-                                            FV
-                                        </a>
+            {/* Lista wniosków */}
+            <ul className={cx('border-t border-border', busy && 'pointer-events-none opacity-60')}>
+                {initialPayouts.map((p) => {
+                    const selectable = isSelectable(p.status);
+                    const selected = selectedIds.includes(p.id);
+                    const expanded = expandedId === p.id;
+                    const actionable = isAdmin && selectable;
+                    const names = p.project_names ? p.project_names.split(',') : [];
+                    const ids = p.project_ids ? p.project_ids.split(',') : [];
+
+                    return (
+                        <li key={p.id} className={cx('border-b border-border last:border-b-0', selected && 'bg-brass-soft/40')}>
+                            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 px-5 py-3.5 md:grid-cols-[auto_minmax(0,1fr)_auto]">
+                                <div className="flex items-center gap-3">
+                                    {isAdmin && (
+                                        <input
+                                            type="checkbox"
+                                            checked={selected}
+                                            disabled={!selectable || busy}
+                                            onChange={() => toggleSelect(p.id, p.status)}
+                                            aria-label={`Zaznacz wniosek ${p.architect_name}`}
+                                            className="h-4 w-4 accent-ink"
+                                        />
                                     )}
+                                    <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brass-soft text-xs font-bold text-brass-ink">
+                                        {initials(p.architect_name)}
+                                    </span>
                                 </div>
-                                <div className="flex flex-col gap-1">
-                                    {p.project_names && (
-                                        <div className="flex flex-wrap gap-x-2 gap-y-0.5 line-clamp-1">
-                                            {p.project_names.split(',').map((name, i) => {
-                                                const id = p.project_ids?.split(',')[i];
-                                                return id ? (
+
+                                <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Link
+                                            href={`/dashboard/admin/architects/${p.architect_id}`}
+                                            className="font-semibold text-ink hover:underline hover:underline-offset-2"
+                                        >
+                                            {p.architect_name}
+                                        </Link>
+                                        <StatusPill kind="payout" status={p.status} />
+                                        {p.invoice_url && (
+                                            <a
+                                                href={p.invoice_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 rounded-sm text-[13px] text-brass-ink hover:underline"
+                                                title="Pobierz fakturę lub rachunek"
+                                            >
+                                                <Receipt size={13} aria-hidden="true" />
+                                                Faktura
+                                            </a>
+                                        )}
+                                    </div>
+                                    {names.length > 0 && (
+                                        <div className="mt-0.5 flex flex-wrap gap-x-2 text-[13px]">
+                                            {names.map((name, i) => {
+                                                const projectId = ids[i];
+                                                const label = `${name.trim()}${i < names.length - 1 ? ',' : ''}`;
+                                                return projectId ? (
                                                     <Link
-                                                        key={id}
-                                                        href={`/dashboard/admin/projects/${id}`}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="text-[10px] text-brand-primary font-bold uppercase tracking-widest hover:underline underline-offset-2"
+                                                        key={projectId}
+                                                        href={`/dashboard/admin/projects/${projectId}`}
+                                                        className="text-brass-ink hover:underline"
                                                     >
-                                                        {name.trim()}{i < p.project_names!.split(',').length - 1 ? ' •' : ''}
+                                                        {label}
                                                     </Link>
                                                 ) : (
-                                                    <span key={i} className="text-[10px] text-brand-primary font-bold uppercase tracking-widest">
-                                                        {name.trim()}{i < p.project_names!.split(',').length - 1 ? ' •' : ''}
-                                                    </span>
+                                                    <span key={i} className="text-brass-ink">{label}</span>
                                                 );
                                             })}
                                         </div>
                                     )}
-                                    <InvoiceNumberField payoutId={p.id} initialValue={p.invoice_number} isAdmin={isAdmin} />
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-[10px] text-stone-500 font-bold uppercase tracking-widest">
-                                            ID: {p.id.substring(0, 8)}
-                                        </span>
-                                        <span className="text-stone-700">•</span>
-                                        <span className="text-[10px] text-stone-500 flex items-center gap-1.5 uppercase font-bold">
-                                            <Clock size={12} />
-                                            {new Date(p.created_at).toLocaleDateString('pl-PL')}
-                                        </span>
-                                        <span className="text-stone-700">•</span>
-                                        <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${p.status === 'PENDING' ? 'bg-amber-50 text-amber-600 border-amber-800/30' :
-                                            p.status === 'IN_PAYMENT' ? 'bg-blue-50 text-blue-600 border-blue-800/30' :
-                                                p.status === 'HOLD' ? 'bg-stone-200/20 text-stone-400 border-slate-600/30' :
-                                                    p.status === 'REJECTED' ? 'bg-red-50 text-red-600 border-red-800/30' :
-                                                        'bg-emerald-50 text-emerald-600 border-emerald-800/30'
-                                            }`}>
-                                            {p.status === 'PENDING' ? 'Oczekuje' :
-                                                p.status === 'IN_PAYMENT' ? 'W Realizacji' :
-                                                    p.status === 'HOLD' ? 'Wstrzymana' :
-                                                        p.status === 'REJECTED' ? 'Odrzucona' :
-                                                            'Zapłacona'}
-                                        </span>
+                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-2">
+                                        <span className="font-mono text-ink-3">{p.id.substring(0, 8)}</span>
+                                        <span className="tnum text-ink-3">{formatDate(p.created_at)}</span>
+                                        <InvoiceNumberField payoutId={p.id} initialValue={p.invoice_number} isAdmin={isAdmin} />
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <div className="text-right">
-                                <p className="text-xl font-black text-stone-900">
-                                    {formatPLN(p.amount)} <span className="text-[10px] text-stone-500">PLN</span>
-                                </p>
-                                <p className="text-[9px] text-stone-500 font-black uppercase tracking-widest">Kwota wniosku</p>
+
+                                <div className="col-start-2 text-left md:col-start-3 md:row-start-1 md:text-right">
+                                    <span className="font-display text-2xl tnum text-ink">{formatNumber(p.amount)}</span>
+                                    <small className="ml-1 text-xs text-ink-3">PLN</small>
+                                </div>
+
+                                <div className="col-span-2 flex flex-wrap items-center gap-2 md:col-start-2 md:col-span-2">
+                                    {actionable && (
+                                        confirmingRejectId === p.id ? (
+                                            <InlineConfirm
+                                                question={`Odrzucić wniosek ${p.id.substring(0, 8)}?`}
+                                                confirmLabel="Odrzuć"
+                                                cancelLabel="Zostaw"
+                                                danger
+                                                onConfirm={() => { setConfirmingRejectId(null); onIndividualAction(p.id, 'REJECT'); }}
+                                                onCancel={() => setConfirmingRejectId(null)}
+                                            />
+                                        ) : confirmingPaidId === p.id ? (
+                                            <InlineConfirm
+                                                question={<span className="tnum">Oznaczyć {formatPLN(p.amount)} jako wypłacone?</span>}
+                                                confirmLabel="Oznacz jako wypłacone"
+                                                cancelLabel="Anuluj"
+                                                onConfirm={() => { setConfirmingPaidId(null); onIndividualAction(p.id, 'PAID'); }}
+                                                onCancel={() => setConfirmingPaidId(null)}
+                                            />
+                                        ) : (
+                                            <>
+                                                {p.status !== 'IN_PAYMENT' && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        title="Przekaż do płatności"
+                                                        onClick={() => onIndividualAction(p.id, 'IN_PAYMENT')}
+                                                    >
+                                                        Przekaż
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    size="sm"
+                                                    variant="secondary"
+                                                    title="Oznacz jako opłacone"
+                                                    onClick={() => setConfirmingPaidId(p.id)}
+                                                >
+                                                    Opłacone
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    title="Wstrzymaj wypłatę"
+                                                    onClick={() => onIndividualAction(p.id, 'HOLD')}
+                                                >
+                                                    Wstrzymaj
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="danger"
+                                                    title="Odrzuć wniosek"
+                                                    onClick={() => setConfirmingRejectId(p.id)}
+                                                >
+                                                    Odrzuć
+                                                </Button>
+                                            </>
+                                        )
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleExpand(p.id)}
+                                        aria-expanded={expanded}
+                                        aria-label={expanded ? 'Ukryj dane do przelewu' : 'Pokaż dane do przelewu'}
+                                        className="ml-auto grid h-8 w-8 place-items-center rounded-sm text-ink-2 hover:bg-ink/5 hover:text-ink"
+                                    >
+                                        {expanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+                                    </button>
+                                </div>
                             </div>
 
-                            {isAdmin && (
-                                <div className="flex items-center gap-1.5 border-l border-black/5 pl-4 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {!(p.status === 'APPROVED' || p.status === 'PAID' || p.status === 'REJECTED') && (
-                                    <>
-                                        {p.status !== 'IN_PAYMENT' && (
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); onIndividualAction(p.id, 'IN_PAYMENT'); }}
-                                                className="px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-all font-black text-[9px] uppercase tracking-widest flex items-center gap-1.5"
-                                                title="Przekaż do płatności"
-                                            >
-                                                <Zap size={12} />
-                                                Przekaż
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onIndividualAction(p.id, 'PAID'); }}
-                                            className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition-all font-black text-[9px] uppercase tracking-widest flex items-center gap-1.5"
-                                            title="Oznacz jako zapłacona"
+                            {/* Panel danych do przelewu */}
+                            {expanded && (
+                                <div className="border-t border-border bg-surface-2 px-5 py-4">
+                                    <div className="mb-3 flex items-center gap-2">
+                                        <Landmark size={14} className="text-brass-ink" aria-hidden="true" />
+                                        <span className="label-caps">Dane do przelewu</span>
+                                    </div>
+
+                                    {p.bank_account ? (
+                                        <div className="mb-4">
+                                            <CopyField label="Odbiorca" value={p.studio_name || p.architect_name} />
+                                            <CopyField label="Nr konta" value={p.bank_account} />
+                                            <CopyField
+                                                label="Kwota"
+                                                value={`${Number(p.amount).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} PLN`}
+                                            />
+                                            <CopyField
+                                                label="Tytuł"
+                                                value={`Konsultacja projektowa${p.project_names ? ` – ${p.project_names}` : ''}`}
+                                            />
+                                            {p.nip && <CopyField label="NIP" value={p.nip} />}
+                                        </div>
+                                    ) : (
+                                        <Banner
+                                            tone="warning"
+                                            title="Brak danych bankowych w profilu architekta"
+                                            className="mb-4"
+                                            action={
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <Button size="sm" variant="secondary" href={`/dashboard/admin/architects/${p.architect_id}`}>
+                                                        Profil architekta
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        disabled={notifiedIds.includes(p.id)}
+                                                        loading={notifyingId === p.id}
+                                                        icon={notifiedIds.includes(p.id) ? <Check size={14} aria-hidden="true" /> : <Mail size={14} aria-hidden="true" />}
+                                                        onClick={async () => {
+                                                            setNotifyingId(p.id);
+                                                            try {
+                                                                await notifyArchitectProfileIncomplete(p.architect_id);
+                                                                setNotifiedIds((prev) => [...prev, p.id]);
+                                                            } catch {
+                                                                // brak potwierdzenia wysyłki, przycisk pozostaje aktywny
+                                                            } finally {
+                                                                setNotifyingId(null);
+                                                            }
+                                                        }}
+                                                    >
+                                                        {notifiedIds.includes(p.id) ? 'Wysłano' : 'Wyślij email'}
+                                                    </Button>
+                                                </div>
+                                            }
                                         >
-                                            <CheckCircle size={12} />
-                                            Zapłacona
-                                        </button>
-                                        {confirmingRejectId === p.id ? (
-                                            <>
-                                                <span className="text-[9px] font-black text-red-600 uppercase tracking-widest">Odrzucić?</span>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); setConfirmingRejectId(null); onIndividualAction(p.id, 'REJECT'); }}
-                                                    className="px-2 py-1 rounded-lg bg-red-500/20 text-red-600 hover:bg-red-500/30 transition-all font-black text-[9px] uppercase tracking-widest"
-                                                >
-                                                    Tak
-                                                </button>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); setConfirmingRejectId(null); }}
-                                                    className="px-2 py-1 rounded-lg bg-black/5 text-stone-400 hover:bg-black/10 transition-all font-black text-[9px] uppercase tracking-widest"
-                                                >
-                                                    Nie
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); setConfirmingRejectId(p.id); }}
-                                                className="p-1.5 rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500/20 transition-all"
-                                                title="Odrzuć"
-                                            >
-                                                <XCircle size={14} />
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onIndividualAction(p.id, 'HOLD'); }}
-                                            className="p-1.5 rounded-lg bg-slate-500/10 text-stone-400 hover:bg-slate-500/20 transition-all"
-                                            title="Wstrzymaj"
+                                            Wypłata nie może zostać zrealizowana, dopóki partner nie uzupełni numeru konta.
+                                        </Banner>
+                                    )}
+
+                                    {actionable && (
+                                        <Button
+                                            variant="secondary"
+                                            fullWidth
+                                            icon={<CheckCircle2 size={16} aria-hidden="true" />}
+                                            onClick={() => { setConfirmingPaidId(p.id); setExpandedId(null); }}
                                         >
-                                            <PauseCircle size={14} />
-                                        </button>
-                                    </>
+                                            Oznacz jako opłacone
+                                        </Button>
                                     )}
                                 </div>
                             )}
-                        </div>
-                        {/* Expand/collapse indicator */}
-                        <div className="ml-3 text-stone-300">
-                            {expandedId === p.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                        </div>
-                    </div>
-
-                        {/* Expandable transfer panel */}
-                        {expandedId === p.id && (
-                            <div className="border-t border-black/5 px-6 py-5 bg-white/60">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Landmark size={13} className="text-brand-primary" />
-                                    <span className="text-[10px] font-black text-brand-primary uppercase tracking-widest">Dane do przelewu</span>
-                                </div>
-
-                                {p.bank_account ? (
-                                    <div className="space-y-0 mb-5">
-                                        <CopyField
-                                            label="Odbiorca"
-                                            value={p.studio_name || p.architect_name}
-                                        />
-                                        <CopyField
-                                            label="Nr konta"
-                                            value={p.bank_account}
-                                        />
-                                        <CopyField
-                                            label="Kwota"
-                                            value={`${Number(p.amount).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} PLN`}
-                                        />
-                                        <CopyField
-                                            label="Tytuł"
-                                            value={`Konsultacja projektowa${p.project_names ? ` – ${p.project_names}` : ''}`}
-                                        />
-                                        {p.nip && (
-                                            <CopyField label="NIP" value={p.nip} />
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="flex items-start justify-between gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 mb-5">
-                                        <div className="flex items-center gap-3">
-                                            <AlertCircle size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                                            <p className="text-[11px] font-bold text-amber-700">
-                                                Brak danych bankowych w profilu architekta.
-                                            </p>
-                                        </div>
-                                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                            <Link
-                                                href={`/dashboard/admin/architects/${p.architect_id}`}
-                                                className="text-[9px] font-black uppercase tracking-widest text-amber-600 hover:text-amber-800 underline"
-                                            >
-                                                Profil →
-                                            </Link>
-                                            <span className="text-amber-300">|</span>
-                                            <button
-                                                disabled={notifyingId === p.id || notifiedIds.includes(p.id)}
-                                                onClick={async () => {
-                                                    setNotifyingId(p.id);
-                                                    try {
-                                                        await notifyArchitectProfileIncomplete(p.architect_id);
-                                                        setNotifiedIds(prev => [...prev, p.id]);
-                                                    } catch {
-                                                        // silent
-                                                    } finally {
-                                                        setNotifyingId(null);
-                                                    }
-                                                }}
-                                                className={`text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1 ${notifiedIds.includes(p.id) ? 'text-emerald-600' : 'text-amber-600 hover:text-amber-800'} disabled:opacity-50`}
-                                            >
-                                                {notifyingId === p.id ? (
-                                                    <Loader2 size={10} className="animate-spin" />
-                                                ) : notifiedIds.includes(p.id) ? (
-                                                    <><CheckCircle size={10} /> Wysłano</>
-                                                ) : (
-                                                    '📧 Wyślij email'
-                                                )}
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {isAdmin && !(p.status === 'APPROVED' || p.status === 'PAID' || p.status === 'REJECTED') && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onIndividualAction(p.id, 'PAID'); setExpandedId(null); }}
-                                        className="w-full py-3 rounded-xl bg-emerald-500 text-black font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-400 transition-all shadow-[0_4px_16px_rgba(16,185,129,0.2)]"
-                                    >
-                                        <CheckCircle size={14} />
-                                        Oznacz jako ZAPŁACONE
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
+                        </li>
+                    );
+                })}
+            </ul>
         </div>
     );
+
+    return flush ? content : <Card>{content}</Card>;
 }

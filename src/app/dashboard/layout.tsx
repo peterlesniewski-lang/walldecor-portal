@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { query } from "@/lib/db";
 import Sidebar from "@/components/Sidebar";
-import HeaderActions from "@/components/HeaderActions";
+import ShellHeader from "@/components/ShellHeader";
 
 export default async function DashboardLayout({
     children,
@@ -26,30 +26,18 @@ export default async function DashboardLayout({
         redirect("/auth/change-password");
     }
 
-    const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'STAFF';
-    const title = isAdmin ? 'Centrum operacyjne' : 'Panel architekta';
-    const subtitle = isAdmin
-        ? 'Wypłaty, projekty i partnerzy w jednym widoku roboczym.'
-        : 'Projekty, prowizje i cashback bez zbędnego szumu.';
-
     return (
-        <div className="flex flex-col lg:flex-row min-h-screen bg-background">
-            {/* Sidebar */}
+        <div className="flex min-h-screen flex-col bg-bg lg:flex-row">
+            {/* Sidebar (desktop) i pasek górny z szufladą (mobile) */}
             <Sidebar user={session.user} />
 
-            {/* Main Content */}
-            <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-10 overflow-y-auto">
-                <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8 lg:mb-12">
-                    <div>
-                        <h1 className="text-2xl lg:text-3xl font-black text-foreground tracking-tight">
-                            {title}
-                        </h1>
-                        <p className="text-stone-500 mt-1 font-medium">{subtitle}</p>
-                    </div>
-                    <HeaderActions userRole={session.user.role} />
-                </header>
+            {/* Treść: padding 24 px (16 px na mobile), maksymalnie 1280 px */}
+            <main className="min-w-0 flex-1">
+                <div className="mx-auto w-full max-w-[1280px] p-4 sm:p-6">
+                    <ShellHeader userRole={session.user.role} />
 
-                {children}
+                    {children}
+                </div>
             </main>
         </div>
     );

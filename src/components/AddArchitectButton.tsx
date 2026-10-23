@@ -3,7 +3,11 @@
 import React, { useState } from 'react';
 import { UserPlus } from 'lucide-react';
 import ArchitectRegistrationModal from './ArchitectRegistrationModal';
+import { Button } from './ui/Button';
 
+/**
+ * Rejestracja architekta jako akcja drugorzędna (secondary): przycisk główny jest w nagłówku powłoki.
+ */
 export default function AddArchitectButton({ canRegisterArchitects }: { canRegisterArchitects: boolean }) {
     const [isOpen, setIsOpen] = useState(false);
 
@@ -11,13 +15,14 @@ export default function AddArchitectButton({ canRegisterArchitects }: { canRegis
 
     return (
         <>
-            <button
+            <Button
+                variant="secondary"
+                size="sm"
+                icon={<UserPlus size={14} aria-hidden="true" />}
                 onClick={() => setIsOpen(true)}
-                className="bg-black/5 border border-black/5 text-stone-400 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black/10 hover:text-stone-900 transition-all flex items-center gap-2"
             >
-                <UserPlus size={14} className="text-brand-primary" />
-                Rejestruj Architekta
-            </button>
+                Zarejestruj architekta
+            </Button>
             <ArchitectRegistrationModal
                 isOpen={isOpen}
                 onClose={() => setIsOpen(false)}

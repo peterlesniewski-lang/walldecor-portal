@@ -17,18 +17,18 @@ export default async function EmailSettingsPage() {
     const templates = await getEmailTemplates();
 
     return (
-        <div className="space-y-6 pb-20">
+        <div className="space-y-6 pb-16">
             {/* Breadcrumbs / Back */}
             <div>
                 <Link
                     href="/dashboard/admin/settings"
-                    className="flex items-center gap-1.5 text-[10px] font-black text-stone-400 uppercase tracking-widest hover:text-orange-600 transition-colors mb-4 group"
+                    className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-brass-ink hover:underline"
                 >
-                    <ChevronLeft size={12} className="group-hover:-translate-x-0.5 transition-transform" />
+                    <ChevronLeft size={14} aria-hidden="true" />
                     Powrót do ustawień
                 </Link>
-                <h1 className="text-2xl font-black text-stone-900 tracking-tight">Powiadomienia Email</h1>
-                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-1">
+                <h2 className="font-display text-[28px] font-normal leading-tight tracking-[-0.01em] text-ink">Powiadomienia email</h2>
+                <p className="mt-1 text-sm text-ink-2">
                     Zarządzanie automatycznymi wiadomościami systemowymi
                 </p>
             </div>
