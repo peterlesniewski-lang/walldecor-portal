@@ -2,12 +2,14 @@
 
 import ProjectFilesSection, { ProjectFile } from '@/components/ProjectFilesSection';
 import SubiektChangesCard from '@/components/SubiektChangesCard';
-import type { ProjectZkChange } from '@/lib/subiekt/queries';
+import type { ProjectDocChain, ProjectZkChange } from '@/lib/subiekt/queries';
 import CommissionsCard from './CommissionsCard';
 import ItemsCard from './ItemsCard';
+import MergeProjectsCard from './MergeProjectsCard';
 import PartnerCard from './PartnerCard';
 import PayoutCard from './PayoutCard';
 import ProjectStatusCard from './ProjectStatusCard';
+import SubiektDocumentsCard from './SubiektDocumentsCard';
 import type { Commission, Project, ProjectItem } from './types';
 
 interface Props {
@@ -19,6 +21,14 @@ interface Props {
     canChangeStatus: boolean;
     initialFiles: ProjectFile[];
     zkChanges: ProjectZkChange[];
+    subiekt: {
+        chains: ProjectDocChain[];
+        summary: { zkTotal: number; fsTotal: number; remainingToInvoice: number };
+        /** getMergeCandidates — cele „Przenieś do…” i źródła „Połącz projekty”. */
+        mergeCandidates: Array<{ id: string; name: string; status: string; itemsTotal: number }>;
+    };
+    /** canManageFinancialOperations (połącz, przenieś łańcuch, zmień typ pozycji). */
+    canManageFinancial: boolean;
 }
 
 export default function AdminProjectDetailClient({
@@ -30,6 +40,8 @@ export default function AdminProjectDetailClient({
     canChangeStatus,
     initialFiles,
     zkChanges,
+    subiekt,
+    canManageFinancial,
 }: Props) {
     const isFinalized = project.status === 'ZAKOŃCZONY';
 
@@ -53,9 +65,24 @@ export default function AdminProjectDetailClient({
 
             <ProjectStatusCard project={project} canChangeStatus={canChangeStatus} allowPrimary={!payoutActionable} />
 
-            <ItemsCard projectId={project.id} items={items} isAdmin={isAdmin} isFinalized={isFinalized} />
+            <ItemsCard
+                projectId={project.id}
+                items={items}
+                isAdmin={isAdmin}
+                isFinalized={isFinalized}
+                canOverrideType={canManageFinancial && project.status !== 'NIEZREALIZOWANY'}
+            />
+
+            <SubiektDocumentsCard
+                chains={subiekt.chains}
+                summary={subiekt.summary}
+                moveTargets={subiekt.mergeCandidates}
+                canMoveDocuments={canManageFinancial}
+            />
 
             <SubiektChangesCard changes={zkChanges} />
+
+            {canManageFinancial && <MergeProjectsCard projectId={project.id} candidates={subiekt.mergeCandidates} />}
 
             {commissions.length > 0 && <CommissionsCard commissions={commissions} />}
 

@@ -20,7 +20,8 @@ import {
     overrideItemTypeOp,
 } from "@/lib/subiekt/adminOps";
 import { computeSuggestedStatus } from "@/lib/subiekt/status";
-import { moveProjectFileDirs } from "@/lib/projectFilesStorage";
+import { moveProjectFileDirs, type FileDirMoveResult } from "@/lib/projectFilesStorage";
+import { logActivity } from "@/lib/services";
 import { updateProjectStatus } from "@/app/actions/projects";
 
 const SUBIEKT_PAGE = '/dashboard/admin/integrations/subiekt';
@@ -35,6 +36,16 @@ function revalidateSubiekt(projectIds: string[]) {
     revalidatePath('/dashboard/projects');
     revalidatePath('/dashboard/wallet');
     revalidatePath('/dashboard');
+}
+
+/** Błędy przenoszenia plików pogrupowane po parze projektów (jeden wpis w logu na parę). */
+function groupFileMoveFailures(failed: FileDirMoveResult['failed']): Map<string, FileDirMoveResult['failed']> {
+    const groups = new Map<string, FileDirMoveResult['failed']>();
+    for (const failure of failed) {
+        const key = `${failure.from}\u0000${failure.to}`;
+        groups.set(key, [...(groups.get(key) ?? []), failure]);
+    }
+    return groups;
 }
 
 export async function assignDocumentToProject(documentId: string, projectId: string): Promise<{ success: true }> {
@@ -69,8 +80,19 @@ export async function mergeProjects(targetProjectId: string, sourceProjectIds: s
     if (!session || !canManageFinancialOperations(session.user.role)) throw new Error("Unauthorized");
 
     const { affectedProjectIds, movedFileDirs } = await mergeProjectsOp(targetProjectId, sourceProjectIds, session.user.id);
-    // Po COMMIT: pliki projektów źródłowych do katalogu docelowego (błąd = ostrzeżenie w logu, baza już spójna).
-    await moveProjectFileDirs(movedFileDirs);
+    // Po COMMIT: pliki projektów źródłowych do katalogu docelowego (błąd = wpis w logu aktywności, baza już spójna).
+    const filesResult = await moveProjectFileDirs(movedFileDirs);
+    for (const [key, failures] of groupFileMoveFailures(filesResult.failed)) {
+        const [from, to] = key.split('\u0000');
+        // Połączenie jest już zapisane — błąd samego wpisu do logu nie może zgłosić adminowi porażki.
+        await logActivity(
+            session.user.id,
+            'SUBIEKT_FILES_MOVE_FAILED',
+            `Nie udało się przenieść plików projektu ${from} → ${to}`,
+            { from, to, failures: failures.map((f) => ({ file: f.file, error: f.error })) },
+            targetProjectId
+        ).catch((error) => console.error('[subiekt] Nie udało się zapisać SUBIEKT_FILES_MOVE_FAILED', error));
+    }
     revalidateSubiekt(affectedProjectIds);
     return { success: true };
 }

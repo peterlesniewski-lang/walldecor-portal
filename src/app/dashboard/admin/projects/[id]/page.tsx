@@ -6,8 +6,12 @@ import { ProjectFile } from "@/components/ProjectFilesSection";
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { Banner, Card, KpiTile, StatusPill, formatDate, formatNumber } from '@/components/ui';
-import { getProjectZkChanges } from '@/lib/subiekt/queries';
+import { getMergeCandidates, getProjectSubiektDocuments, getProjectZkChanges } from '@/lib/subiekt/queries';
+import { computeSuggestedStatus, getProjectSubiektSummary } from '@/lib/subiekt/status';
+import { nextStatusSteps } from '@/lib/subiekt/adminOps';
+import { canManageFinancialOperations, canManageOperationalProjects } from '@/lib/rbac';
 import AdminProjectDetailClient from './AdminProjectDetailClient';
+import SuggestedStatusBanner from './SuggestedStatusBanner';
 
 export default async function AdminProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -96,6 +100,23 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
     // 5. Zmiany ZK/FP z Subiekta (log synchronizacji)
     const zkChanges = await getProjectZkChanges(id);
 
+    // 6. Dokumenty Subiekt, sugerowany status, kandydaci do połączenia / przeniesienia
+    const [subiektChains, subiektSummary, suggested, mergeCandidates] = await Promise.all([
+        getProjectSubiektDocuments(id),
+        getProjectSubiektSummary(id),
+        computeSuggestedStatus(id),
+        getMergeCandidates(id),
+    ]);
+    // Baner tylko wtedy, gdy „Zastosuj” może się udać (to samo sprawdzenie przejść co applySuggestedStatus).
+    let suggestedStatus: string | null = null;
+    if (suggested && suggested !== project.status) {
+        try {
+            suggestedStatus = nextStatusSteps(project.status, suggested).length > 0 ? suggested : null;
+        } catch {
+            suggestedStatus = null;
+        }
+    }
+
     const sumBy = (status: string) =>
         commissionsRes
             .filter((c: any) => c.status === status)
@@ -131,6 +152,14 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
                 <ArrowLeft size={16} aria-hidden="true" />
                 Powrót do panelu admin
             </Link>
+
+            {suggestedStatus && (
+                <SuggestedStatusBanner
+                    projectId={project.id}
+                    suggested={suggestedStatus}
+                    canApply={canManageOperationalProjects(session.user.role)}
+                />
+            )}
 
             {/* Nagłówek projektu */}
             <Card as="section" className="p-5 sm:p-6">
@@ -184,6 +213,8 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
                 canChangeStatus={canChangeStatus}
                 initialFiles={files}
                 zkChanges={zkChanges}
+                subiekt={{ chains: subiektChains, summary: subiektSummary, mergeCandidates }}
+                canManageFinancial={canManageFinancialOperations(session.user.role)}
             />
         </div>
     );

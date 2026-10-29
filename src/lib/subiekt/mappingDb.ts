@@ -14,6 +14,7 @@ import { clearDocumentItems, removeSubiektItem } from './chainOps';
 import { findDocumentById, findDocumentByExternalId, findProject, type ProjectRow, type SubiektDocumentRow } from './repo';
 import { AMOUNT_EPSILON as EPSILON, ROOT_IGNORED, buildItemInput, leadingDocType, positionToItemType, resolveArchitectCode, resolveRoot } from './mapping';
 import type { SubiektDocumentPayload, SubiektPositionPayload } from './types';
+import { toDateOnly } from './dates';
 
 export type UpsertOutcome = 'INSERTED' | 'UNCHANGED' | 'CHANGED';
 /** Wynik dla liczników strony: ASSIGNED = AUTO lub MANUAL, UNASSIGNED = skrzynka, IGNORED = odrzucony przez admina. */
@@ -73,7 +74,7 @@ function rowToPayload(row: StoredDoc): SubiektDocumentPayload {
         external_id: Number(row.external_id),
         type: row.type,
         number: row.number,
-        issued_at: String(row.issued_at),
+        issued_at: toDateOnly(row.issued_at),
         contractor_name: row.contractor_name,
         contractor_nip: row.contractor_nip ?? null,
         architect_code: row.architect_code ?? null,

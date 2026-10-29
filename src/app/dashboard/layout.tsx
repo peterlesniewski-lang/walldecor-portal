@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { query } from "@/lib/db";
 import Sidebar from "@/components/Sidebar";
 import ShellHeader from "@/components/ShellHeader";
+import { canManageOperationalProjects } from "@/lib/rbac";
+import { getUnassignedCount } from "@/lib/subiekt/queries";
 
 export default async function DashboardLayout({
     children,
@@ -26,10 +28,20 @@ export default async function DashboardLayout({
         redirect("/auth/change-password");
     }
 
+    // Licznik skrzynki Subiekt w sidebarze (ADMIN/STAFF). Badge nie może zablokować panelu, więc błąd → 0.
+    let subiektUnassignedCount = 0;
+    if (canManageOperationalProjects(session.user.role)) {
+        try {
+            subiektUnassignedCount = await getUnassignedCount();
+        } catch (error) {
+            console.error("[subiekt] Nie udało się policzyć nieprzypisanych dokumentów", error);
+        }
+    }
+
     return (
         <div className="flex min-h-screen flex-col bg-bg lg:flex-row">
             {/* Sidebar (desktop) i pasek górny z szufladą (mobile) */}
-            <Sidebar user={session.user} />
+            <Sidebar user={session.user} subiektUnassignedCount={subiektUnassignedCount} />
 
             {/* Treść: padding 24 px (16 px na mobile), maksymalnie 1280 px */}
             <main className="min-w-0 flex-1">

@@ -115,3 +115,18 @@ test('getRecentSyncRuns: newest first, ISO dates, numeric counters, limit clampe
     assert.equal((await q.getRecentSyncRuns(0)).length, 1);
     assert.equal((await q.getRecentSyncRuns()).length, 4);
 });
+
+test('inbox helpers: can_create_project, architect options, projects for documents without architect', async () => {
+    const rows = await q.getUnassignedDocuments();
+    const canCreate = Object.fromEntries(rows.map((r) => [r.external_id, r.can_create_project]));
+    assert.deepEqual(canCreate, { 300: true, 310: true, 311: true, 320: true, 330: false }, 'pochodna znanego ZK (330) — projekt tylko z korzenia');
+
+    assert.deepEqual(await q.getArchitectOptions(), [
+        { id: ARCHI_A, name: 'Architekt A', subiekt_code: 'A-001' },
+        { id: 'u_archi_c', name: 'Architekt C', subiekt_code: 'C-003' },
+    ]);
+
+    const assignable = await q.getAssignableProjects();
+    assert.ok(!assignable.some((p) => p.id === 'p_lost'), 'bez NIEZREALIZOWANY');
+    assert.deepEqual(assignable.find((p) => p.id === 'p_done'), { id: 'p_done', name: 'Zakończony', status: 'ZAKOŃCZONY', owner_name: 'Architekt A' });
+});

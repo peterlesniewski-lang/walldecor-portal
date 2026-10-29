@@ -35,6 +35,12 @@ export function resolveShellTitle(pathname: string, isAdmin: boolean): ShellTitl
             return { title: 'Zaproszenia', subtitle: 'Masowe dodawanie architektów: każdy dostaje link i sam ustawia hasło.' };
         }
         if (path.startsWith('/dashboard/admin/projects/')) return { title: 'Projekt' };
+        if (path === '/dashboard/admin/integrations/subiekt') {
+            return {
+                title: 'Integracja Subiekt',
+                subtitle: 'Dokumenty z Subiekta GT trafiają tu co wieczór; czego portal nie przypisał sam, obsłużysz w skrzynce.',
+            };
+        }
         if (path === '/dashboard/admin/settings' || path.startsWith('/dashboard/admin/settings/')) {
             return { title: 'Ustawienia', subtitle: 'Zarządzanie dostępem i użytkownikami systemu.' };
         }

@@ -14,6 +14,8 @@ export interface NavLinkItem {
     name: string;
     href: string;
     icon: React.ComponentType<{ size?: number; className?: string; 'aria-hidden'?: boolean }>;
+    /** Licznik po prawej (np. dokumenty do obsłużenia). 0 lub brak = bez licznika. */
+    badge?: { count: number; label: string };
 }
 
 export interface NavGroup {
@@ -72,6 +74,15 @@ export function NavGroupList({ groups, onNavigate }: { groups: NavGroup[]; onNav
                             >
                                 <Icon size={16} aria-hidden={true} className={isActive ? 'text-brass-ink' : undefined} />
                                 <span>{link.name}</span>
+                                {link.badge && link.badge.count > 0 && (
+                                    <span
+                                        aria-label={link.badge.label}
+                                        title={link.badge.label}
+                                        className="ml-auto grid h-5 min-w-5 place-items-center rounded-pill bg-brass px-1.5 text-[11px] font-bold leading-none tnum text-ink"
+                                    >
+                                        {link.badge.count}
+                                    </span>
+                                )}
                             </Link>
                         );
                     })}

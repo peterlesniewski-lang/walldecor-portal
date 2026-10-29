@@ -35,6 +35,8 @@ export interface ProjectItem {
     is_paid: number | boolean;
     /** 'MANUAL' (panel, import) lub 'SUBIEKT' (synchronizacja — bez edycji ręcznej). */
     source?: string | null;
+    /** 1, gdy admin ręcznie zmienił typ pozycji z Subiekta (synchronizacja go nie nadpisuje). */
+    type_overridden?: number | boolean | null;
 }
 
 export interface Commission {

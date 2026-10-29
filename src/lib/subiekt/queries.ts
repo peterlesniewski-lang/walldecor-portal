@@ -127,15 +127,22 @@ export interface UnassignedDocRow {
     project_id: string | null;
     /** Projekty architekta dokumentu poza NIEZREALIZOWANY (od najnowszego); pusta, gdy architekt nieznany. */
     candidateProjects: CandidateProject[];
+    /**
+     * Czy z dokumentu da się założyć projekt (createProjectFromDocumentOp): nie KFS i dokument nie pochodzi
+     * ze znanego dokumentu nadrzędnego (wtedy projekt zakłada się z korzenia albo przypisuje do istniejącego).
+     */
+    can_create_project: boolean;
 }
 
 /** Skrzynka: dokumenty UNASSIGNED, od najnowszej daty wystawienia. */
 export async function getUnassignedDocuments(): Promise<UnassignedDocRow[]> {
     const rows = await query<Record<string, unknown>>(
         `SELECT d.id, d.external_id, d.type, d.number, d.issued_at, d.contractor_name, d.net_total, d.architect_code,
-                d.architect_id, d.assignment_note, d.root_external_id, d.project_id, u.name AS architect_name
+                d.architect_id, d.assignment_note, d.root_external_id, d.project_id, u.name AS architect_name,
+                r.id AS root_id
          FROM subiekt_documents d
          LEFT JOIN users u ON u.id = d.architect_id
+         LEFT JOIN subiekt_documents r ON r.external_id = d.root_external_id AND r.id <> d.id
          WHERE d.assignment_status = 'UNASSIGNED'
          ORDER BY d.issued_at DESC, d.external_id DESC`
     );
@@ -173,8 +180,42 @@ export async function getUnassignedDocuments(): Promise<UnassignedDocRow[]> {
             root_external_id: nullableNumber(r.root_external_id),
             project_id: nullableString(r.project_id),
             candidateProjects: architectId ? projectsByOwner.get(architectId) ?? [] : [],
+            can_create_project: String(r.type) !== 'KFS' && (r.root_id === null || r.root_id === undefined),
         };
     });
+}
+
+/** Projekt do przypisania dokumentu bez znanego architekta (wszystkie projekty poza NIEZREALIZOWANY). */
+export interface AssignableProject extends CandidateProject {
+    owner_name: string | null;
+}
+
+/**
+ * Projekty dla dokumentów bez architekta (NO_ARCHITECT, nieznany kod): assignDocumentToProjectOp sprawdza
+ * właściciela tylko wtedy, gdy dokument ma architekta, więc taki dokument można przypisać do dowolnego
+ * projektu poza NIEZREALIZOWANY. Od najnowszego.
+ */
+export async function getAssignableProjects(): Promise<AssignableProject[]> {
+    const rows = await query<{ id: string; name: string; status: string; owner_name: string | null }>(
+        `SELECT p.id, p.name, p.status, u.name AS owner_name
+         FROM projects p
+         LEFT JOIN users u ON u.id = p.owner_id
+         WHERE p.status <> 'NIEZREALIZOWANY'
+         ORDER BY p.created_at DESC, p.id DESC`
+    );
+    return rows.map((r) => ({ id: String(r.id), name: String(r.name ?? ''), status: String(r.status), owner_name: nullableString(r.owner_name) }));
+}
+
+/** Architekci (rola ARCHI) do wyboru właściciela nowego projektu z dokumentu, po nazwisku. */
+export async function getArchitectOptions(): Promise<Array<{ id: string; name: string; subiekt_code: string | null }>> {
+    const rows = await query<{ id: string; name: string | null; email: string | null; subiekt_code: string | null }>(
+        "SELECT id, name, email, subiekt_code FROM users WHERE role = 'ARCHI' ORDER BY name, id"
+    );
+    return rows.map((r) => ({
+        id: String(r.id),
+        name: String(r.name || r.email || r.id),
+        subiekt_code: nullableString(r.subiekt_code),
+    }));
 }
 
 const UNKNOWN_CODE_PREFIX = 'UNKNOWN_ARCHITECT_CODE:';

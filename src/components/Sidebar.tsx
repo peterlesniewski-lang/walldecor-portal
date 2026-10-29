@@ -7,7 +7,8 @@ import {
     Settings,
     Users,
     MailPlus,
-    CircleHelp
+    CircleHelp,
+    Plug
 } from 'lucide-react';
 import MobileNav from './MobileNav';
 import { Logo } from './ui/Logo';
@@ -22,7 +23,11 @@ interface SidebarUser {
  * Jasny sidebar (lg+), 240 px: logo, grupy linków, użytkownik z rolą po polsku i wylogowanie.
  * Na węższych ekranach zamiast niego działa MobileNav (ten sam układ grup).
  */
-export default function Sidebar({ user }: { user: SidebarUser }) {
+export default function Sidebar({ user, subiektUnassignedCount = 0 }: {
+    user: SidebarUser;
+    /** Dokumenty w skrzynce „Nieprzypisane” (liczone w layoucie tylko dla ADMIN/STAFF). */
+    subiektUnassignedCount?: number;
+}) {
     const groups: NavGroup[] = user.role === 'ADMIN' || user.role === 'STAFF'
         ? [
             {
@@ -31,6 +36,12 @@ export default function Sidebar({ user }: { user: SidebarUser }) {
                     { name: 'Dashboard', href: '/dashboard/admin', icon: LayoutDashboard },
                     { name: 'Architekci', href: '/dashboard/admin/architects', icon: Users },
                     { name: 'Zaproszenia', href: '/dashboard/admin/invitations', icon: MailPlus },
+                    {
+                        name: 'Subiekt',
+                        href: '/dashboard/admin/integrations/subiekt',
+                        icon: Plug,
+                        badge: { count: subiektUnassignedCount, label: `Nieprzypisane dokumenty Subiekt: ${subiektUnassignedCount}` },
+                    },
                 ],
             },
             {
