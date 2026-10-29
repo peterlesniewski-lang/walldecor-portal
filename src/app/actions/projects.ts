@@ -18,42 +18,7 @@ import { assertFullCommissionPayoutAmount } from "@/lib/payoutWorkflow";
 import { formatSqlDateTime } from "@/lib/dbDate";
 import { getCommissionRateForTurnover, CASHBACK_RATE } from "@/lib/partnerProgram";
 import { validatePasswordStrength } from "@/lib/passwordPolicy";
-
-// Obrót netto kwalifikowany architekta (PRODUCT w projektach ZAKOŃCZONYCH),
-// opcjonalnie z wyłączeniem wskazanego projektu — status awansuje "od kolejnego projektu".
-async function getQualifiedTurnover(architectId: string, excludeProjectId?: string): Promise<number> {
-    const res = await query<any>(`
-        SELECT COALESCE(SUM(i.amount_net), 0) as total
-        FROM project_items i
-        JOIN projects p ON i.project_id = p.id
-        WHERE p.owner_id = ?
-          AND i.type = 'PRODUCT'
-          AND p.status = 'ZAKOŃCZONY'
-          ${excludeProjectId ? 'AND p.id != ?' : ''}
-    `, excludeProjectId ? [architectId, excludeProjectId] : [architectId]);
-    return Number(res[0]?.total || 0);
-}
-
-// Aktualna stawka prowizji architekta wg programu partnerskiego (z ręcznym override admina).
-async function getArchitectCommissionRate(architectId: string, excludeProjectId?: string): Promise<number> {
-    const [turnover, userRes] = await Promise.all([
-        getQualifiedTurnover(architectId, excludeProjectId),
-        query<any>("SELECT tier_override FROM users WHERE id = ?", [architectId]),
-    ]);
-    return getCommissionRateForTurnover(turnover, userRes[0]?.tier_override);
-}
-
-// Stawka użyta przy rozliczeniu projektu: najpierw stawka zapisana na prowizjach projektu
-// (historyczna, nie zmienia się po awansie architekta), w razie braku — stawka bieżąca.
-async function getProjectCommissionRate(projectId: string, architectId: string): Promise<number> {
-    const res = await query<any>(
-        "SELECT rate FROM commissions WHERE project_id = ? AND rate IS NOT NULL LIMIT 1",
-        [projectId]
-    );
-    if (res.length > 0 && res[0].rate != null) return Number(res[0].rate);
-    return getArchitectCommissionRate(architectId, projectId);
-}
-
+import { addItemCore, deleteItemCore, getArchitectCommissionRate, updateItemAmountCore } from "@/lib/projectItems";
 
 function generateTempPassword(): string {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -723,148 +688,15 @@ export async function updatePayoutStatus(payoutId: string, newStatus: string) {
 }
 
 // ─── Admin: project item management ──────────────────────────────────────────
+// Cienkie wrappery: sesja + uprawnienia → rdzeń src/lib/projectItems.ts → revalidatePath.
 export async function updateProjectItem(itemId: string, amount_net: number, note?: string) {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
 
-    if (amount_net < 0) throw new Error("Kwota nie może być ujemna");
+    await updateItemAmountCore(itemId, amount_net, { actorId: session.user.id, note });
 
-    // Get current item and project info
-    const itemRes = await query<any>(`
-        SELECT i.*, p.status, p.owner_id 
-        FROM project_items i
-        JOIN projects p ON i.project_id = p.id
-        WHERE i.id = ?
-    `, [itemId]);
-
-    if (itemRes.length === 0) throw new Error("Pozycja nie istnieje");
-    const item = itemRes[0];
-    const oldAmount = Number(item.amount_net);
-    const projectId = item.project_id;
-    const status = item.status;
-    const ownerId = item.owner_id;
-
-    // Odczyty stawek (poza transakcją) — nie zmieniają się w trakcie korekty.
-    let pendingRate = 0;
-    let projectRate = 0;
-    if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
-        // Zachowaj stawkę zapisaną na prowizji PENDING; dla starych rekordów bez stawki użyj bieżącej.
-        const pendingRes = await query<any>(
-            "SELECT rate FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
-            [itemId]
-        );
-        pendingRate = pendingRes.length > 0 && pendingRes[0].rate != null
-            ? Number(pendingRes[0].rate)
-            : await getArchitectCommissionRate(ownerId);
-    } else if (status === 'ZAKOŃCZONY' && item.type === 'PRODUCT') {
-        // Korekta pozycji rozliczonego projektu: prowizja liczona płaską stawką historyczną
-        // projektu (zapisaną przy rozliczeniu) — zmiana statusu architekta nie zmienia stawki wstecz.
-        projectRate = await getProjectCommissionRate(projectId, ownerId);
-    }
-
-    // Korekta cashbacku w dół, której nie da się pokryć (architekt już wydał środki) — logowana po transakcji.
-    let uncoveredCashback = 0;
-
-    // 1 + 2. Aktualizacja pozycji oraz prowizji/cashbacku — atomowo w jednej transakcji.
-    await withTransaction(async (queryFn) => {
-        await queryFn("UPDATE project_items SET amount_net = ? WHERE id = ?", [amount_net, itemId]);
-
-        if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
-            // Prowizja planowana (PENDING) dotyczy wyłącznie pozycji PRODUCT; INSTALLATION nie generuje prowizji.
-            if (item.type === 'PRODUCT') {
-                const newCommAmount = amount_net * pendingRate;
-                const pendingExisting = await queryFn<any>(
-                    "SELECT id FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
-                    [itemId]
-                );
-
-                if (pendingExisting.length === 0) {
-                    // Pozycja zgłoszona bez kwoty (0) — prowizja planowana powstaje dopiero przy wycenie.
-                    if (newCommAmount > 0) {
-                        await queryFn(
-                            "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)",
-                            [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, ownerId, newCommAmount, pendingRate, 'Wycena pozycji po akceptacji']
-                        );
-                    }
-                } else if (newCommAmount > 0) {
-                    await queryFn(
-                        "UPDATE commissions SET amount_net = ?, rate = ?, note = ? WHERE project_item_id = ? AND status = 'PENDING'",
-                        [newCommAmount, pendingRate, note || 'Korekta kwoty', itemId]
-                    );
-                } else {
-                    // Nowa kwota = 0 — usuwamy prowizję planowaną tej pozycji.
-                    await queryFn(
-                        "DELETE FROM commissions WHERE project_item_id = ? AND status = 'PENDING'",
-                        [itemId]
-                    );
-                }
-            }
-        } else if (status === 'ZAKOŃCZONY' && item.type === 'PRODUCT') {
-            const targetComm = amount_net * projectRate;
-
-            // Suma WSZYSTKICH istniejących (rozliczonych) rekordów prowizji pozycji: EARNED + IN_PAYMENT + PAID
-            // (rekord początkowy + dotychczasowe korekty). PENDING wykluczony. Bez IN_PAYMENT/PAID suma byłaby 0
-            // po wypłacie i korekta wstawiłaby drugą pełną prowizję (podwójna wypłata).
-            const existingCommRes = await queryFn<any>(
-                "SELECT COALESCE(SUM(amount_net), 0) as total FROM commissions WHERE project_item_id = ? AND status IN ('EARNED', 'IN_PAYMENT', 'PAID')",
-                [itemId]
-            );
-            const existingComm = Number(existingCommRes[0]?.total || 0);
-            const diffComm = targetComm - existingComm;
-
-            if (Math.abs(diffComm) > 0.001) {
-                await queryFn(
-                    "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'EARNED', ?, ?)",
-                    [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, ownerId, diffComm, projectRate, note || 'Korekta kwoty (przeliczenie pozycji)']
-                );
-            }
-
-            // Cashback: flat 2% delta for the edited item only
-            const oldCashback = oldAmount * CASHBACK_RATE;
-            const newCashback = amount_net * CASHBACK_RATE;
-            const diffCashback = newCashback - oldCashback;
-
-            if (diffCashback > 0.01) {
-                const expiresAt = new Date();
-                expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-
-                await queryFn(
-                    "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [`t_${uuidv4().substring(0, 8)}`, ownerId, 'EARN', diffCashback, itemId, note || 'Korekta: zwiększenie kwoty', formatSqlDateTime(expiresAt)]
-                );
-            } else if (diffCashback < -0.01) {
-                // SPEND musi wskazywać na ID transakcji EARN (nie pozycji projektu) — robi to FIFO spendCashback.
-                try {
-                    await spendCashback(ownerId, Math.abs(diffCashback), note || 'Korekta: pomniejszenie kwoty pozycji', itemId, queryFn);
-                } catch (err) {
-                    // Architekt już wydał cashback — nie przerywamy korekty, zgłaszamy niepokrytą różnicę.
-                    if (err instanceof Error && err.message.includes('Insufficient cashback balance')) {
-                        uncoveredCashback = Math.abs(diffCashback);
-                    } else {
-                        throw err;
-                    }
-                }
-            }
-        }
-    });
-
-    if (uncoveredCashback > 0) {
-        await logActivity(
-            session.user.id,
-            'CASHBACK_CORRECTION_UNCOVERED',
-            `Korekta pozycji ${itemId}: brak środków cashback na pokrycie pomniejszenia o ${uncoveredCashback} PLN (architekt wydał już cashback)`,
-            { projectId, itemId, amount: uncoveredCashback }
-        );
-    }
-
-    await logActivity(
-        session.user.id,
-        'PROJECT_ITEM_VALUE_CHANGED',
-        `Zmieniono wartość pozycji ${itemId} z ${oldAmount} PLN na ${amount_net} PLN`,
-        { projectId, itemId, oldAmount, newAmount: amount_net, note: note || null }
-    );
-
-    revalidatePath(`/dashboard/admin/projects/${projectId}`);
+    const itemRes = await query<any>("SELECT project_id FROM project_items WHERE id = ?", [itemId]);
+    revalidatePath(`/dashboard/admin/projects/${itemRes[0]?.project_id}`);
     revalidatePath('/dashboard/admin');
     revalidatePath('/dashboard/wallet');
 
@@ -883,64 +715,17 @@ export async function addProjectItem(projectId: string, data: {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
 
-    if (!data.category || !data.category.trim()) throw new Error("Kategoria pozycji jest wymagana.");
-    if (typeof data.amount_net !== 'number' || !Number.isFinite(data.amount_net) || data.amount_net <= 0) {
-        throw new Error("Kwota musi być większa od 0");
-    }
-    if (data.type !== 'PRODUCT' && data.type !== 'INSTALLATION') throw new Error("Nieprawidłowy typ pozycji.");
-
-    const projRes = await query<any>("SELECT status, owner_id FROM projects WHERE id = ?", [projectId]);
-    if (projRes.length === 0) throw new Error("Projekt nie istnieje.");
-    const { status, owner_id } = projRes[0];
-
-    if (status === 'NIEZREALIZOWANY') {
-        throw new Error("Nie można dodawać pozycji do projektu niezrealizowanego.");
-    }
-
-    const itemId = `i_${uuidv4().substring(0, 8)}`;
-    await query(
-        "INSERT INTO project_items (id, project_id, type, category, description, amount_net, order_number, invoice_number, is_paid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [itemId, projectId, data.type, data.category.trim(), data.description || null, data.amount_net, data.order_number || null, data.invoice_number || null, data.is_paid ? 1 : 0]
-    );
-
-    if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
-        const rate = await getArchitectCommissionRate(owner_id);
-        const commAmount = data.amount_net * rate;
-        if (commAmount > 0) {
-            await query(
-                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)",
-                [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, owner_id, commAmount, rate, note || 'Nowa pozycja po akceptacji']
-            );
-        }
-    } else if (status === 'ZAKOŃCZONY' && data.type === 'PRODUCT') {
-        // Immediate EARNED commission (historyczna stawka projektu) and EARN cashback
-        const rate = await getProjectCommissionRate(projectId, owner_id);
-        const commAmount = data.amount_net * rate;
-
-        if (commAmount > 0) {
-            await query(
-                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate, note) VALUES (?, ?, ?, ?, ?, 'EARNED', ?, ?)",
-                [`c_${uuidv4().substring(0, 8)}`, projectId, itemId, owner_id, commAmount, rate, note || 'Nowa pozycja po rozliczeniu']
-            );
-        }
-
-        const cashbackAmount = data.amount_net * CASHBACK_RATE;
-        if (cashbackAmount > 0) {
-            const expiresAt = new Date();
-            expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-            await query(
-                "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, itemId, note || 'Cashback: nowa pozycja po rozliczeniu', formatSqlDateTime(expiresAt)]
-            );
-        }
-    }
-
-    await logActivity(
-        session.user.id,
-        'PROJECT_ITEM_ADDED',
-        `Dodano pozycję ${itemId} (${data.type}, ${data.amount_net} PLN) do projektu ${projectId}`,
-        { projectId, itemId, type: data.type, amount: data.amount_net, note: note || null }
-    );
+    // Pozycja z panelu jest zawsze ręczna — pola Subiekta nie przechodzą z formularza.
+    const { itemId } = await addItemCore(projectId, {
+        type: data.type,
+        category: data.category,
+        description: data.description,
+        amount_net: data.amount_net,
+        order_number: data.order_number,
+        invoice_number: data.invoice_number,
+        is_paid: data.is_paid,
+        source: 'MANUAL',
+    }, { actorId: session.user.id, note });
 
     revalidatePath(`/dashboard/admin/projects/${projectId}`);
     revalidatePath('/dashboard/admin');
@@ -954,35 +739,20 @@ export async function deleteProjectItem(itemId: string, note?: string) {
     if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
 
     const itemRes = await query<any>(`
-        SELECT i.*, p.status, p.owner_id 
+        SELECT i.project_id, p.status
         FROM project_items i
         JOIN projects p ON i.project_id = p.id
         WHERE i.id = ?
     `, [itemId]);
     if (itemRes.length === 0) return { success: true };
+    const { project_id: projectId, status } = itemRes[0];
 
-    const item = itemRes[0];
-    const projectId = item.project_id;
-    const status = item.status;
-
-    if (status === 'ZAKOŃCZONY') {
-        // Adjust amount to 0 — generates correction entries for commission and cashback
-        return await updateProjectItem(itemId, 0, note || 'Usunięcie pozycji (korekta do 0)');
-    }
-
-    // For other statuses, we can delete and also cleanup PENDING commissions
-    await query("DELETE FROM commissions WHERE project_item_id = ? AND status = 'PENDING'", [itemId]);
-    await query("DELETE FROM project_items WHERE id = ?", [itemId]);
-
-    await logActivity(
-        session.user.id,
-        'PROJECT_ITEM_DELETED',
-        `Usunięto pozycję ${itemId} (${item.amount_net} PLN) z projektu ${projectId}`,
-        { projectId, itemId, amount: item.amount_net, note: note || null }
-    );
+    await deleteItemCore(itemId, { actorId: session.user.id, note });
 
     revalidatePath(`/dashboard/admin/projects/${projectId}`);
     revalidatePath('/dashboard/admin');
+    // ZAKOŃCZONY: usunięcie = korekta do 0, więc zmienia się też cashback architekta.
+    if (status === 'ZAKOŃCZONY') revalidatePath('/dashboard/wallet');
 
     return { success: true };
 }

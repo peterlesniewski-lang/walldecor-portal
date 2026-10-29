@@ -36,7 +36,8 @@ CREATE TABLE projects (
 );
 CREATE TABLE project_items (
   id TEXT PRIMARY KEY, project_id TEXT, type TEXT NOT NULL, amount_net REAL NOT NULL, category TEXT,
-  description TEXT, commission_rate REAL DEFAULT 0.15, order_number TEXT, invoice_number TEXT, is_paid INTEGER NOT NULL DEFAULT 0
+  description TEXT, commission_rate REAL DEFAULT 0.15, order_number TEXT, invoice_number TEXT, is_paid INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'MANUAL', subiekt_document_id TEXT, subiekt_position_id INTEGER
 );
 CREATE TABLE commissions (
   id TEXT PRIMARY KEY, project_item_id TEXT, architect_id TEXT, amount_net REAL NOT NULL, status TEXT DEFAULT 'EARNED',

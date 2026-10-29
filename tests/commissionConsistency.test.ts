@@ -32,8 +32,13 @@ test('admin architect list and profile count turnover only from ZAKOŃCZONY proj
 });
 
 test('updateProjectItem creates a PENDING commission when a zero-amount item is priced after acceptance', async () => {
-    const source = await load('../src/app/actions/projects.ts');
-    const action = sliceBetween(source, 'export async function updateProjectItem', 'export async function addProjectItem');
+    // Akcja deleguje do rdzenia src/lib/projectItems.ts (Loop 0 integracji Subiekt).
+    const actions = await load('../src/app/actions/projects.ts');
+    const wrapper = sliceBetween(actions, 'export async function updateProjectItem', 'export async function addProjectItem');
+    assert.match(wrapper, /updateItemAmountCore\(itemId, amount_net, \{ actorId: session\.user\.id, note \}\)/);
+
+    const source = await load('../src/lib/projectItems.ts');
+    const action = sliceBetween(source, 'export async function updateItemAmountCore', 'export async function addItemCore');
 
     assert.match(action, /INSERT INTO commissions[^"]*'PENDING'[^"]*"[\s\S]{0,200}'Wycena pozycji po akceptacji'/);
     assert.match(action, /item\.type === 'PRODUCT'/);

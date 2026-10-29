@@ -13,6 +13,10 @@ const requiredColumns = [
     // 016: wymuszenie zmiany hasła po pierwszym logowaniu
     { table: 'users', name: 'must_change_password', definition: 'TINYINT(1) NOT NULL DEFAULT 0' },
     { table: 'users', name: 'password_changed_at', definition: 'DATETIME NULL' },
+    // 019: integracja Subiekt GT — pochodzenie pozycji projektu
+    { table: 'project_items', name: 'source', definition: "VARCHAR(16) NOT NULL DEFAULT 'MANUAL'" },
+    { table: 'project_items', name: 'subiekt_document_id', definition: 'VARCHAR(36) NULL' },
+    { table: 'project_items', name: 'subiekt_position_id', definition: 'INTEGER NULL' },
 ];
 
 // 017: jednorazowa aktualizacja szablonu maila powitalnego (tylko jeśli nie był ręcznie edytowany —

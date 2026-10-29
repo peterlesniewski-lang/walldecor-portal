@@ -435,3 +435,13 @@ migrations/
 - Portal nie ma dziś żadnego wejścia maszynowego (wszystkie route handlery i server actions wymagają sesji); logika pozycji/prowizji zaszyta w `actions/projects.ts` — loop 0 planu wydziela ją do `src/lib/projectItems.ts`.
 - Plan: `PLAN-SUBIEKT-2026-10-29.md` (8 loopów z DoD wg zachowania użytkownika, bramka testy+tsc+build+walidator, checklist audytu atrap). `CLAUDE.md` przełączony z trybu audytu na to zadanie.
 - Do weryfikacji w biurze przed loopem 5: pola własne na ZK/FS w GT, wartości `dok_Typ`, kolumna powiązań dokumentów. Uwagi kopiują się z ZK na FS (potwierdzone) — plan B dla znacznika architekta.
+
+## 2026-10-29 — Subiekt loop 0: rdzeń pozycji i prowizji (`src/lib/projectItems.ts`)
+
+- Logika `addProjectItem` / `updateProjectItem` / `deleteProjectItem` przeniesiona 1:1 do `addItemCore` / `updateItemAmountCore` / `deleteItemCore` (wraz z `getArchitectCommissionRate`, `getProjectCommissionRate`); akcje to wrappery: sesja ADMIN → rdzeń → `revalidatePath`. Zachowanie panelu bez zmian.
+- Rdzeń nie jest plikiem `'use server'` (nie może być wywołany z klienta), nie importuje `next-auth` ani `next/cache`; autor jako `actor.actorId` (null = system), notatka jako `actor.note`.
+- `queryFn` w rdzeniu: domyślny `query` → `updateItemAmountCore` otwiera własną transakcję; przekazany transakcyjny `queryFn` → wywołujący trzyma transakcję. Uwaga na loop 1/2: w SQLite `withTransaction` przekazuje sam `query`, więc zagnieżdżenie da „cannot start a transaction within a transaction” — trzeba to rozwiązać przed wołaniem rdzenia z transakcji sync.
+- Migracja `019_subiekt_integration.sql` (na razie tylko `project_items.source/subiekt_document_id/subiekt_position_id`), kolumny dodane też do `ensure-production-schema.mjs` i `seed-dev.mjs`. Akcja admina zawsze zapisuje `source = 'MANUAL'`.
+- Testy integracyjne na prawdziwym SQLite: `tests/helpers/sqliteTestDb.ts` (schemat wycinany z `seed-dev.mjs`) + `tests/helpers/srcResolveHooks.ts` (hook Node mapujący `@/…` i importy bez rozszerzenia na `.ts`). Uruchamiać pod Node 25 (natywny `better-sqlite3`).
+- Testy źródłowe (`commissionCorrections`, `commissionConsistency`, `accountValidation`) czytają teraz rdzeń, asercje zachowane.
+- `updateProjectStatus` nietknięty — nadal ma 2× `INSERT INTO commissions` (finalizacja i PENDING przy akceptacji), więc walidator planu `grep -c` daje 2, nie 0.

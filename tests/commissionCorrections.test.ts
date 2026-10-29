@@ -2,8 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-async function loadSource() {
-    return readFile(new URL('../src/app/actions/projects.ts', import.meta.url), 'utf8');
+async function loadSource(path = '../src/app/actions/projects.ts') {
+    return readFile(new URL(path, import.meta.url), 'utf8');
+}
+
+// Logika korekty pozycji żyje w rdzeniu src/lib/projectItems.ts (akcja updateProjectItem to wrapper).
+async function loadItemAmountCore() {
+    const source = await loadSource('../src/lib/projectItems.ts');
+    return sliceBetween(source, 'export async function updateItemAmountCore', 'export async function addItemCore');
 }
 
 function sliceBetween(source: string, startMarker: string, endMarker: string): string {
@@ -15,8 +21,7 @@ function sliceBetween(source: string, startMarker: string, endMarker: string): s
 }
 
 test('item correction sums EARNED, IN_PAYMENT and PAID commissions but not PENDING', async () => {
-    const source = await loadSource();
-    const action = sliceBetween(source, 'export async function updateProjectItem', 'export async function addProjectItem');
+    const action = await loadItemAmountCore();
 
     assert.match(
         action,
@@ -27,18 +32,17 @@ test('item correction sums EARNED, IN_PAYMENT and PAID commissions but not PENDI
 });
 
 test('item correction runs item update, commission and cashback in one transaction', async () => {
-    const source = await loadSource();
-    const action = sliceBetween(source, 'export async function updateProjectItem', 'export async function addProjectItem');
+    const action = await loadItemAmountCore();
 
-    assert.match(action, /await withTransaction\(async \(queryFn\) => \{[\s\S]*UPDATE project_items SET amount_net = \?[\s\S]*INSERT INTO commissions[\s\S]*spendCashback\(/);
-    assert.doesNotMatch(action, /await query\("UPDATE project_items SET amount_net/);
+    // Wszystkie zapisy w jednym callbacku transakcyjnym; własna transakcja, chyba że wywołujący podał swój queryFn.
+    assert.match(action, /const applyCorrection = async \(txQuery: typeof query\) => \{[\s\S]*txQuery\("UPDATE project_items SET amount_net = \?[\s\S]*INSERT INTO commissions[\s\S]*spendCashback\([\s\S]*\};\s*if \(queryFn === query\) \{\s*await withTransaction\(applyCorrection\);\s*\} else \{\s*await applyCorrection\(queryFn\);\s*\}/);
+    assert.doesNotMatch(action, /await (query|queryFn)\("UPDATE project_items SET amount_net/);
 });
 
 test('negative cashback correction uses FIFO spendCashback instead of a SPEND row pointing at the item', async () => {
-    const source = await loadSource();
-    const action = sliceBetween(source, 'export async function updateProjectItem', 'export async function addProjectItem');
+    const action = await loadItemAmountCore();
 
-    assert.match(action, /spendCashback\(ownerId, Math\.abs\(diffCashback\), note \|\| 'Korekta: pomniejszenie kwoty pozycji', itemId, queryFn\)/);
+    assert.match(action, /spendCashback\(ownerId, Math\.abs\(diffCashback\), actor\.note \|\| 'Korekta: pomniejszenie kwoty pozycji', itemId, txQuery\)/);
     // No direct SPEND insert (the old code linked SPEND to the project item id, which the balance formula never matches)
     assert.doesNotMatch(action, /'SPEND'/);
     assert.doesNotMatch(action, /diffCashback > 0 \? 'EARN' : 'SPEND'/);
@@ -47,11 +51,10 @@ test('negative cashback correction uses FIFO spendCashback instead of a SPEND ro
 });
 
 test('uncovered negative cashback correction is logged and does not abort the correction', async () => {
-    const source = await loadSource();
-    const action = sliceBetween(source, 'export async function updateProjectItem', 'export async function addProjectItem');
+    const action = await loadItemAmountCore();
 
     assert.match(action, /Insufficient cashback balance/);
-    assert.match(action, /logActivity\(\s*session\.user\.id,\s*'CASHBACK_CORRECTION_UNCOVERED'[\s\S]*\{ projectId, itemId, amount: uncoveredCashback \}/);
+    assert.match(action, /logActivity\(\s*actor\.actorId,\s*'CASHBACK_CORRECTION_UNCOVERED'[\s\S]*\{ projectId, itemId, amount: uncoveredCashback \}/);
 });
 
 test('project finalization guard also skips grants when settled commissions already exist', async () => {
