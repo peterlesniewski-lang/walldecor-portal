@@ -8,16 +8,22 @@
 // synchronizacje go nie widziały. Wiersz zostaje `source = 'SUBIEKT'`, więc nadal nie podlega edycji ręcznej.
 import { query } from '@/lib/db';
 import { deleteItemCore, type ItemActor } from '@/lib/projectItems';
-
-const EPSILON = 0.005;
+import { AMOUNT_EPSILON } from './mapping';
 
 interface LinkedItem { id: string; amount_net: number; status: string }
 
+/**
+ * Usuwa pozycję z Subiekta przez rdzeń. W projekcie ZAKOŃCZONY rdzeń zostawia pozycję z kwotą 0 (korekta) —
+ * pozycję już wyzerowaną pomijamy, żeby kolejne wywołania (każdy sync) nie dopisywały pustych korekt do logu.
+ */
+export async function removeSubiektItem(item: { id: string; amount_net: number }, projectStatus: string, actor: ItemActor): Promise<void> {
+    if (projectStatus === 'ZAKOŃCZONY' && Math.abs(Number(item.amount_net)) < AMOUNT_EPSILON) return;
+    await deleteItemCore(item.id, actor);
+}
+
 async function clearItems(items: LinkedItem[], actor: ItemActor): Promise<void> {
     for (const item of items) {
-        // Pozycja już wyzerowana w projekcie ZAKOŃCZONY: kolejna korekta do 0 dałaby tylko pusty wpis w logu.
-        const alreadyZero = item.status === 'ZAKOŃCZONY' && Math.abs(Number(item.amount_net)) < EPSILON;
-        if (!alreadyZero) await deleteItemCore(item.id, actor);
+        await removeSubiektItem(item, item.status, actor);
         // Po DELETE (projekt w toku) UPDATE nic nie zmienia; po korekcie do 0 odpina wiersz od dokumentu.
         await query('UPDATE project_items SET subiekt_document_id = NULL, subiekt_position_id = NULL WHERE id = ?', [item.id]);
     }

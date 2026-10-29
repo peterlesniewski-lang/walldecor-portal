@@ -9,32 +9,34 @@
 import { query, withTransaction } from '@/lib/db';
 import { logActivity } from '@/lib/services';
 import { addItemCore, deleteItemCore, updateItemAmountCore, type ItemActor } from '@/lib/projectItems';
-import { sortDocumentsForProcessing, subiektCategory } from './mapping';
+import type { FileDirMove } from '@/lib/projectFilesStorage';
+import { ROOT_IGNORED, sortDocumentsForProcessing, subiektCategory } from './mapping';
 import { insertProjectForDocument, kfsMatchesProject, remapDocument, resyncProjectInvoices, syncChainItems } from './mappingDb';
 import { clearChainItems, clearDocumentItems } from './chainOps';
+import { findChainDocuments, findDocumentByExternalId, findDocumentById, findProject, normalizeDocument, type ProjectRow, type SubiektDocumentRow } from './repo';
 import type { SuggestedStatus } from './status';
 import type { SubiektDocType } from './types';
 
-interface DocRow {
-    id: string;
-    external_id: number;
-    type: SubiektDocType;
-    number: string;
-    issued_at: string;
-    contractor_name: string;
-    architect_id: string | null;
-    parent_external_id: number | null;
-    root_external_id: number | null;
-    project_id: string | null;
-    assignment_status: string;
-    assignment_note: string | null;
-}
-
-interface ProjectRow { id: string; name: string; status: string; owner_id: string }
+type DocRow = SubiektDocumentRow;
 
 export interface AdminOpResult {
     /** Projekty, których widoki trzeba odświeżyć (docelowy + projekty, z których coś zabrano). */
     affectedProjectIds: string[];
+}
+
+/** Pozycja z Subiekta odtwarzana z tymi samymi danymi (zmiana typu, przeniesienie z ręcznym typem). */
+interface SubiektItemRow {
+    id: string;
+    project_id: string;
+    type: 'PRODUCT' | 'INSTALLATION';
+    amount_net: number;
+    description: string | null;
+    order_number: string | null;
+    invoice_number: string | null;
+    is_paid: number;
+    source: string;
+    subiekt_document_id: string | null;
+    subiekt_position_id: number | null;
 }
 
 const ASSIGNED = new Set(['AUTO', 'MANUAL']);
@@ -42,36 +44,42 @@ const CLOSED_STATUSES = new Set(['ZAKOŃCZONY', 'NIEZREALIZOWANY']);
 const MAX_NOTE_LENGTH = 500;
 const MAX_MERGE_SOURCES = 20;
 
-const ROOT_IGNORED = 'ROOT_IGNORED';
 const isRootType = (type: SubiektDocType) => type === 'ZK' || type === 'FP';
 const isRootIgnored = (doc: Pick<DocRow, 'assignment_status' | 'assignment_note'>) =>
     doc.assignment_status === 'IGNORED' && doc.assignment_note === ROOT_IGNORED;
+const isOwnerMismatch = (doc: Pick<DocRow, 'assignment_note'>) => (doc.assignment_note ?? '').startsWith('OWNER_MISMATCH:');
 const toNumberOrNull = (value: unknown) => (value === null || value === undefined ? null : Number(value));
 const unique = (ids: Array<string | null | undefined>) => [...new Set(ids.filter((id): id is string => Boolean(id)))];
-
-const normalizeDoc = (row: DocRow): DocRow => ({
-    ...row,
-    external_id: Number(row.external_id),
-    issued_at: String(row.issued_at),
-    root_external_id: toNumberOrNull(row.root_external_id),
-    parent_external_id: toNumberOrNull(row.parent_external_id),
-});
+const placeholders = (values: unknown[]) => values.map(() => '?').join(', ');
 
 async function loadDoc(documentId: string): Promise<DocRow> {
-    const [row] = await query<DocRow>('SELECT * FROM subiekt_documents WHERE id = ?', [documentId]);
+    const row = await findDocumentById(documentId);
     if (!row) throw new Error('Dokument nie istnieje.');
-    return normalizeDoc(row);
-}
-
-async function loadDocByExternalId(externalId: number): Promise<DocRow | undefined> {
-    const [row] = await query<DocRow>('SELECT * FROM subiekt_documents WHERE external_id = ?', [externalId]);
-    return row ? normalizeDoc(row) : undefined;
+    return row;
 }
 
 async function loadProject(projectId: string): Promise<ProjectRow> {
-    const [row] = await query<ProjectRow>('SELECT id, name, status, owner_id FROM projects WHERE id = ?', [projectId]);
+    const row = await findProject(projectId);
     if (!row) throw new Error('Projekt nie istnieje.');
     return row;
+}
+
+/** Nowa pozycja z Subiekta z typem ustawionym przez admina (type_overridden = 1) — prowizja przez rdzeń. */
+async function addOverriddenItem(projectId: string, source: SubiektItemRow, type: 'PRODUCT' | 'INSTALLATION', actor: ItemActor): Promise<string> {
+    const { itemId } = await addItemCore(projectId, {
+        type,
+        category: subiektCategory(type),
+        description: source.description,
+        amount_net: Number(source.amount_net),
+        order_number: source.order_number,
+        invoice_number: source.invoice_number,
+        is_paid: Number(source.is_paid) === 1,
+        source: 'SUBIEKT',
+        subiekt_document_id: source.subiekt_document_id,
+        subiekt_position_id: toNumberOrNull(source.subiekt_position_id),
+    }, actor);
+    await query('UPDATE project_items SET type_overridden = 1 WHERE id = ?', [itemId]);
+    return itemId;
 }
 
 /**
@@ -87,13 +95,17 @@ async function loadProject(projectId: string): Promise<ProjectRow> {
  *    (OWNER_MISMATCH), a KFS trafia do mapy korekt tylko wtedy, gdy pasuje do faktur projektu.
  *    Korzeń innego architekta (lub w jego projekcie) blokuje przeniesienie całego łańcucha. Dokumenty
  *    zignorowane razem z korzeniem (ROOT_IGNORED) wracają tą samą drogą — przypisanie korzenia je przywraca.
- * 4. Pozycje odtwarzane w projekcie docelowym (syncChainItems), faktury starych projektów resynchronizowane
+ *    Dokumenty z OWNER_MISMATCH (poza wskazanym i korzeniem) też idą przez reguły — rozjazd zostaje widoczny.
+ * 4. Pozycje z ręcznie zmienionym typem (type_overridden = 1) dokumentów przechodzących jako MANUAL są zakładane
+ *    w nowym projekcie z tym samym typem, zanim syncChainItems odtworzy resztę (sync trzyma typ istniejącej
+ *    pozycji). Gdy w nowym projekcie wiodą FS zamiast ZK, ręczny typ pozycji ZK nie przechodzi (inne pozycje).
+ * 5. Pozycje odtwarzane w projekcie docelowym (syncChainItems), faktury starych projektów resynchronizowane
  *    (korekty KFS, które odeszły z łańcuchem). Zwraca stare projekty.
  */
 async function reassignChain(selected: DocRow, target: ProjectRow, actor: ItemActor): Promise<string[]> {
     const rootExternalId = isRootType(selected.type) ? selected.external_id : selected.root_external_id;
     const rootRow = rootExternalId === null ? undefined
-        : rootExternalId === selected.external_id ? selected : await loadDocByExternalId(rootExternalId);
+        : rootExternalId === selected.external_id ? selected : await findDocumentByExternalId(rootExternalId);
     const wholeChain = rootExternalId !== null && rootRow !== undefined && (rootRow.id === selected.id || rootRow.project_id !== target.id);
 
     if (wholeChain && rootRow.id !== selected.id && rootRow.assignment_status !== 'IGNORED') {
@@ -103,16 +115,25 @@ async function reassignChain(selected: DocRow, target: ProjectRow, actor: ItemAc
         }
     }
 
-    const chain = wholeChain
-        ? (await query<DocRow>(
-            'SELECT * FROM subiekt_documents WHERE root_external_id = ? OR external_id = ? ORDER BY issued_at, external_id',
-            [rootExternalId, rootExternalId]
-        )).map(normalizeDoc)
-        : [selected];
+    const chain = wholeChain ? await findChainDocuments(rootExternalId as number) : [selected];
     if (!chain.some((d) => d.id === selected.id)) chain.push(selected);
     const moving = chain.filter((d) => d.id === selected.id || d.assignment_status !== 'IGNORED' || isRootIgnored(d));
+    const becomesManual = (doc: DocRow) =>
+        doc.id === selected.id || doc.id === rootRow?.id || (ASSIGNED.has(doc.assignment_status) && !isOwnerMismatch(doc));
 
+    // Ręczne typy pozycji w starych projektach — odczyt PRZED sprzątaniem (krok 4).
     const oldProjectIds = unique(moving.map((d) => d.project_id)).filter((id) => id !== target.id);
+    const manualIds = moving.filter(becomesManual).map((d) => d.id);
+    const overridden = oldProjectIds.length > 0 && manualIds.length > 0
+        ? await query<SubiektItemRow>(
+            `SELECT * FROM project_items
+             WHERE source = 'SUBIEKT' AND type_overridden = 1 AND amount_net > 0
+               AND project_id IN (${placeholders(oldProjectIds)}) AND subiekt_document_id IN (${placeholders(manualIds)})`,
+            [...oldProjectIds, ...manualIds]
+        )
+        : [];
+
+    // Jedyne miejsce sprzątania starych projektów (także dla moveDocumentToProjectOp).
     for (const projectId of oldProjectIds) {
         if (wholeChain) await clearChainItems(rootExternalId as number, projectId, actor);
         else await clearDocumentItems(selected.id, projectId, actor);
@@ -120,7 +141,7 @@ async function reassignChain(selected: DocRow, target: ProjectRow, actor: ItemAc
 
     const toRemap: DocRow[] = [];
     for (const doc of moving) {
-        if (doc.id === selected.id || doc.id === rootRow?.id || ASSIGNED.has(doc.assignment_status)) {
+        if (becomesManual(doc)) {
             await query(
                 `UPDATE subiekt_documents SET project_id = ?, assignment_status = 'MANUAL', assignment_note = NULL,
                     root_external_id = COALESCE(root_external_id, ?), architect_id = COALESCE(architect_id, ?)
@@ -128,7 +149,8 @@ async function reassignChain(selected: DocRow, target: ProjectRow, actor: ItemAc
                 [target.id, rootExternalId, target.owner_id, doc.id]
             );
         } else {
-            // ROOT_IGNORED (korzeń był zignorowany) wraca do skrzynki i dalej idzie zwykłymi regułami.
+            // ROOT_IGNORED (korzeń był zignorowany) wraca do skrzynki; tak jak nieprzypisane i OWNER_MISMATCH
+            // przechodzi dalej zwykłe reguły mapowania.
             await query(
                 isRootIgnored(doc)
                     ? "UPDATE subiekt_documents SET project_id = NULL, assignment_status = 'UNASSIGNED', assignment_note = NULL WHERE id = ?"
@@ -143,6 +165,7 @@ async function reassignChain(selected: DocRow, target: ProjectRow, actor: ItemAc
         throw new Error('Korekta nie pasuje do pozycji faktur tego projektu.');
     }
 
+    for (const item of overridden) await addOverriddenItem(target.id, item, item.type, actor);
     await syncChainItems(selected.id, actor);
     for (const doc of sortDocumentsForProcessing(toRemap)) {
         await remapDocument(doc.id);
@@ -191,7 +214,7 @@ export async function createProjectFromDocumentOp(documentId: string, ownerId: s
         if (doc.type === 'KFS') throw new Error('Z korekty (KFS) nie można utworzyć projektu — przypisz ją do projektu faktury.');
         if (doc.architect_id && doc.architect_id !== ownerId) throw new Error('Dokument wskazuje innego architekta.');
         if (doc.root_external_id !== null && doc.root_external_id !== doc.external_id) {
-            const root = await loadDocByExternalId(doc.root_external_id);
+            const root = await findDocumentByExternalId(doc.root_external_id);
             if (root) {
                 throw new Error(`Dokument pochodzi z ${root.number} — utwórz projekt z tego dokumentu albo przypisz go do istniejącego projektu.`);
             }
@@ -233,7 +256,7 @@ export async function ignoreDocumentOp(documentId: string, note: string, actorId
                 `SELECT * FROM subiekt_documents
                  WHERE root_external_id = ? AND id <> ? AND assignment_status IN ('AUTO', 'UNASSIGNED')`,
                 [doc.external_id, doc.id]
-            )).map(normalizeDoc);
+            )).map(normalizeDocument);
             for (const child of chain) {
                 if (child.project_id) {
                     await clearDocumentItems(child.id, child.project_id, actor);
@@ -252,7 +275,7 @@ export async function ignoreDocumentOp(documentId: string, note: string, actorId
         if (doc.project_id) {
             await clearDocumentItems(doc.id, doc.project_id, actor);
             const root = doc.root_external_id === null || doc.root_external_id === doc.external_id
-                ? undefined : await loadDocByExternalId(doc.root_external_id);
+                ? undefined : await findDocumentByExternalId(doc.root_external_id);
             if (root && root.project_id === doc.project_id && ASSIGNED.has(root.assignment_status)) {
                 await syncChainItems(root.id, actor);
             }
@@ -273,8 +296,10 @@ export async function ignoreDocumentOp(documentId: string, note: string, actorId
  * innych zgłoszonych. Pozycje PRODUCT ze zgłoszonych źródeł (bez prowizji) dostają PENDING przez rdzeń, gdy
  * cel jest już przyjęty. Pozycje ręczne zostają (decyzję o duplikatach podejmuje admin, pytanie 3 planu).
  * Historia ZK podąża za dokumentami (activity_logs.subject_id), więc logów nie przepisujemy.
+ * Pliki na dysku leżą w katalogu wyliczanym z project_id — `movedFileDirs` (źródła z plikami → cel) wołający
+ * przenosi PO zatwierdzeniu transakcji (moveProjectFileDirs w src/lib/projectFilesStorage.ts).
  */
-export async function mergeProjectsOp(targetProjectId: string, sourceProjectIds: string[], actorId: string): Promise<AdminOpResult> {
+export async function mergeProjectsOp(targetProjectId: string, sourceProjectIds: string[], actorId: string): Promise<AdminOpResult & { movedFileDirs: FileDirMove[] }> {
     const sources = Array.isArray(sourceProjectIds) ? unique(sourceProjectIds.map(String)) : [];
     if (sources.length === 0) throw new Error('Wybierz co najmniej jeden projekt do połączenia.');
     if (sources.length > MAX_MERGE_SOURCES) throw new Error(`Jednorazowo można połączyć najwyżej ${MAX_MERGE_SOURCES} projektów.`);
@@ -292,32 +317,40 @@ export async function mergeProjectsOp(targetProjectId: string, sourceProjectIds:
             throw new Error('Projekt docelowy jest tylko zgłoszony — jako docelowy wybierz projekt przyjęty.');
         }
 
-        const placeholders = sources.map(() => '?').join(', ');
+        const marks = placeholders(sources);
+        const withFiles = await query<{ project_id: string }>(
+            `SELECT DISTINCT project_id FROM project_files WHERE project_id IN (${marks})`,
+            sources
+        );
         const needPending = target.status !== 'ZGŁOSZONY'
             ? await query<{ id: string; amount_net: number }>(
                 `SELECT i.id, i.amount_net FROM project_items i JOIN projects p ON p.id = i.project_id
-                 WHERE i.project_id IN (${placeholders}) AND p.status = 'ZGŁOSZONY' AND i.type = 'PRODUCT' AND i.amount_net > 0
+                 WHERE i.project_id IN (${marks}) AND p.status = 'ZGŁOSZONY' AND i.type = 'PRODUCT' AND i.amount_net > 0
                    AND NOT EXISTS (SELECT 1 FROM commissions c WHERE c.project_item_id = i.id)`,
                 sources
             )
             : [];
 
         for (const table of ['subiekt_documents', 'project_items', 'commissions', 'project_files']) {
-            await query(`UPDATE ${table} SET project_id = ? WHERE project_id IN (${placeholders})`, [target.id, ...sources]);
+            await query(`UPDATE ${table} SET project_id = ? WHERE project_id IN (${marks})`, [target.id, ...sources]);
         }
         // Cashback zastosowany do projektu (spendCashback z reference_id = id projektu) wskazuje dalej istniejący projekt.
-        await query(`UPDATE wallet_transactions SET reference_id = ? WHERE reference_id IN (${placeholders})`, [target.id, ...sources]);
+        await query(`UPDATE wallet_transactions SET reference_id = ? WHERE reference_id IN (${marks})`, [target.id, ...sources]);
 
         const actor: ItemActor = { actorId, note: `Połączenie projektów → ${target.name}` };
         for (const item of needPending) await updateItemAmountCore(item.id, Number(item.amount_net), actor);
 
-        await query(`DELETE FROM projects WHERE id IN (${placeholders})`, sources);
+        await query(`DELETE FROM projects WHERE id IN (${marks})`, sources);
+        await query('UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [target.id]);
 
         const sourceNames = sourceRows.map((p) => p.name);
         await logActivity(actorId, 'PROJECTS_MERGED', `Połączono projekty ${sourceNames.join(', ')} → ${target.name}`, {
             targetProjectId: target.id, sourceProjectIds: sources, sourceNames,
         }, target.id);
-        return { affectedProjectIds: [target.id, ...sources] };
+        return {
+            affectedProjectIds: [target.id, ...sources],
+            movedFileDirs: withFiles.map((row) => ({ from: String(row.project_id), to: target.id })),
+        };
     });
 }
 
@@ -339,7 +372,7 @@ export async function moveDocumentToProjectOp(documentId: string, targetProjectI
         if (target.owner_id !== current.owner_id) throw new Error('Projekt docelowy należy do innego architekta.');
 
         const actor: ItemActor = { actorId, note: `Subiekt: przeniesienie ${doc.number}` };
-        await clearChainItems(doc.external_id, current.id, actor);
+        // Pozycje łańcucha znikają ze starego projektu w reassignChain (clearChainItems) — jedno miejsce sprzątania.
         const previous = await reassignChain(doc, target, actor);
 
         await logActivity(actorId, 'SUBIEKT_CHAIN_MOVED', `Przeniesiono ${doc.number} z projektu ${current.name} do ${target.name}`, {
@@ -359,7 +392,7 @@ export async function overrideItemTypeOp(itemId: string, type: 'PRODUCT' | 'INST
     if (type !== 'PRODUCT' && type !== 'INSTALLATION') throw new Error('Nieprawidłowy typ pozycji.');
 
     return withTransaction(async () => {
-        const [item] = await query<any>(
+        const [item] = await query<SubiektItemRow & { project_status: string }>(
             'SELECT i.*, p.status AS project_status FROM project_items i JOIN projects p ON p.id = i.project_id WHERE i.id = ?',
             [itemId]
         );
@@ -376,19 +409,7 @@ export async function overrideItemTypeOp(itemId: string, type: 'PRODUCT' | 'INST
         // ZAKOŃCZONY: wiersz został z kwotą 0 — odpinamy go, żeby sync widział tylko nową pozycję.
         await query('UPDATE project_items SET subiekt_document_id = NULL, subiekt_position_id = NULL WHERE id = ?', [item.id]);
 
-        const { itemId: newItemId } = await addItemCore(item.project_id, {
-            type,
-            category: subiektCategory(type),
-            description: item.description,
-            amount_net: amount,
-            order_number: item.order_number,
-            invoice_number: item.invoice_number,
-            is_paid: Number(item.is_paid) === 1,
-            source: 'SUBIEKT',
-            subiekt_document_id: item.subiekt_document_id,
-            subiekt_position_id: toNumberOrNull(item.subiekt_position_id),
-        }, actor);
-        await query('UPDATE project_items SET type_overridden = 1 WHERE id = ?', [newItemId]);
+        const newItemId = await addOverriddenItem(item.project_id, item, type, actor);
 
         await logActivity(actorId, 'SUBIEKT_ITEM_TYPE_OVERRIDDEN', `Zmieniono typ pozycji „${item.description ?? newItemId}” z ${item.type} na ${type}`, {
             projectId: item.project_id, oldItemId: item.id, itemId: newItemId, from: item.type, to: type,

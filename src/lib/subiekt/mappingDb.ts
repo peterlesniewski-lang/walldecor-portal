@@ -9,36 +9,17 @@
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '@/lib/db';
 import { logActivity } from '@/lib/services';
-import { addItemCore, deleteItemCore, updateItemAmountCore, type ItemActor } from '@/lib/projectItems';
-import { clearDocumentItems } from './chainOps';
-import { buildItemInput, leadingDocType, positionToItemType, resolveArchitectCode, resolveRoot } from './mapping';
-import type { SubiektDocType, SubiektDocumentPayload, SubiektPositionPayload } from './types';
+import { addItemCore, updateItemAmountCore, type ItemActor } from '@/lib/projectItems';
+import { clearDocumentItems, removeSubiektItem } from './chainOps';
+import { findDocumentById, findDocumentByExternalId, findProject, type ProjectRow, type SubiektDocumentRow } from './repo';
+import { AMOUNT_EPSILON as EPSILON, ROOT_IGNORED, buildItemInput, leadingDocType, positionToItemType, resolveArchitectCode, resolveRoot } from './mapping';
+import type { SubiektDocumentPayload, SubiektPositionPayload } from './types';
 
 export type UpsertOutcome = 'INSERTED' | 'UNCHANGED' | 'CHANGED';
 /** Wynik dla liczników strony: ASSIGNED = AUTO lub MANUAL, UNASSIGNED = skrzynka, IGNORED = odrzucony przez admina. */
 export type AssignmentResult = 'ASSIGNED' | 'UNASSIGNED' | 'IGNORED';
 
-interface StoredDoc {
-    id: string;
-    external_id: number;
-    type: SubiektDocType;
-    number: string;
-    issued_at: string;
-    contractor_name: string;
-    contractor_nip: string | null;
-    architect_code: string | null;
-    architect_id: string | null;
-    parent_external_id: number | null;
-    root_external_id: number | null;
-    project_id: string | null;
-    net_total: number;
-    gross_total: number;
-    is_paid: number;
-    remarks: string | null;
-    positions_json: string;
-    assignment_status: string;
-    assignment_note: string | null;
-}
+type StoredDoc = SubiektDocumentRow;
 
 interface StoredItem {
     id: string;
@@ -52,11 +33,10 @@ interface StoredItem {
     subiekt_position_id: number | null;
 }
 
-interface ProjectRef { id: string; status: string; owner_id: string }
+type ProjectRef = ProjectRow;
 
 const MAX_CHAIN_STEPS = 32;
 const MAX_LABEL_LENGTH = 200; // jak walidacja nazwy / klienta w createProject
-const EPSILON = 0.005;
 const ASSIGNED_STATUSES = "('AUTO', 'MANUAL')";
 
 /** Kwoty z payloadu do 2 miejsc — jak DECIMAL(12,2) w MySQL, żeby porównania nie zależały od silnika. */
@@ -72,18 +52,15 @@ function actorFor(doc: Pick<StoredDoc, 'type' | 'number'>): ItemActor {
 }
 
 async function loadDocById(id: string): Promise<StoredDoc> {
-    const [row] = await query<StoredDoc>('SELECT * FROM subiekt_documents WHERE id = ?', [id]);
+    const row = await findDocumentById(id);
     if (!row) throw new Error(`Dokument Subiekta ${id} nie istnieje`);
     return row;
 }
 
-async function loadDocByExternalId(externalId: number): Promise<StoredDoc | undefined> {
-    const [row] = await query<StoredDoc>('SELECT * FROM subiekt_documents WHERE external_id = ?', [externalId]);
-    return row;
-}
+const loadDocByExternalId = findDocumentByExternalId;
 
 async function loadProject(projectId: string, documentNumber: string): Promise<ProjectRef> {
-    const [project] = await query<ProjectRef>('SELECT id, status, owner_id FROM projects WHERE id = ?', [projectId]);
+    const project = await findProject(projectId);
     if (!project) throw new Error(`Projekt ${projectId} dokumentu ${documentNumber} nie istnieje`);
     return project;
 }
@@ -211,14 +188,7 @@ async function loadItemsOfDocument(documentId: string, projectId: string): Promi
     );
 }
 
-/**
- * Usuwa pozycję przez rdzeń. W projekcie ZAKOŃCZONY rdzeń zostawia pozycję z kwotą 0 (korekta) — taką
- * pozycję pomijamy, żeby każdy kolejny sync nie dopisywał pustej korekty do logu.
- */
-async function removeItem(item: Pick<StoredItem, 'id' | 'amount_net'>, projectStatus: string, actor: ItemActor) {
-    if (projectStatus === 'ZAKOŃCZONY' && Math.abs(Number(item.amount_net)) < EPSILON) return;
-    await deleteItemCore(item.id, actor);
-}
+const removeItem = removeSubiektItem;
 
 /**
  * Korekty KFS projektu jako widok pochodny: ob_Id pozycji FS → kwota po korekcie. Źródło = wszystkie
@@ -247,7 +217,7 @@ async function loadCorrections(projectId: string): Promise<Map<number, number>> 
 /**
  * Upsert pozycji jednego dokumentu wiodącego po kluczu (subiekt_document_id, subiekt_position_id), kwota =
  * po korekcie KFS (jeśli jest) albo z pozycji: nowa → addItemCore, zmieniona kwota → updateItemAmountCore,
- * kwota ≤ 0 lub pozycja zniknęła z dokumentu → deleteItemCore (w ZAKOŃCZONY: korekta do 0).
+ * kwota ≤ 0 lub pozycja zniknęła z dokumentu → removeSubiektItem → deleteItemCore (w ZAKOŃCZONY: korekta do 0).
  * Pola bez wpływu na prowizję (opis, numery, zapłata) odświeżamy bezpośrednim UPDATE. Typ istniejącej
  * pozycji się nie zmienia (type_overridden = decyzja admina; zmiana typu wymagałaby przeliczenia prowizji).
  */
@@ -456,9 +426,9 @@ async function remapRules(current: StoredDoc): Promise<AssignmentResult> {
     if (root && root.id !== current.id && root.assignment_status === 'IGNORED') {
         if (current.project_id) await clearDocumentItems(current.id, current.project_id, actorFor(current));
         await query(
-            `UPDATE subiekt_documents SET assignment_status = 'IGNORED', assignment_note = 'ROOT_IGNORED',
+            `UPDATE subiekt_documents SET assignment_status = 'IGNORED', assignment_note = ?,
                 architect_code = ?, architect_id = ?, root_external_id = ?, project_id = NULL WHERE id = ?`,
-            [architect.ownCode, architect.architectId, rootExternalId, current.id]
+            [ROOT_IGNORED, architect.ownCode, architect.architectId, rootExternalId, current.id]
         );
         return 'IGNORED';
     }

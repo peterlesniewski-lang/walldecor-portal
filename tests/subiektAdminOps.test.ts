@@ -3,16 +3,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 type TestDbModule = typeof import('./helpers/sqliteTestDb');
 type SyncModule = typeof import('../src/lib/subiekt/sync');
 type AdminOpsModule = typeof import('../src/lib/subiekt/adminOps');
+type StorageModule = typeof import('../src/lib/projectFilesStorage');
 
 await import(new URL('./helpers/srcResolveHooks.ts', import.meta.url).href);
 const { createTestDb }: TestDbModule = await import(new URL('./helpers/sqliteTestDb.ts', import.meta.url).href);
 const testDb = createTestDb();
 const { processSyncPage }: SyncModule = await import(new URL('../src/lib/subiekt/sync.ts', import.meta.url).href);
 const ops: AdminOpsModule = await import(new URL('../src/lib/subiekt/adminOps.ts', import.meta.url).href);
+const storage: StorageModule = await import(new URL('../src/lib/projectFilesStorage.ts', import.meta.url).href);
 const db = testDb.db;
 
 test.after(() => testDb.cleanup());
@@ -331,6 +336,20 @@ test('merge: two projects with items → one project, item and PENDING sums kept
 
     const result = await ops.mergeProjectsOp(target, [source], ADMIN);
     assert.deepEqual(result.affectedProjectIds, [target, source]);
+    assert.deepEqual(result.movedFileDirs, [{ from: source, to: target }], 'tylko źródła z plikami');
+    assert.ok(projectRow(target).updated_at, 'updated_at celu ustawione');
+
+    // Plik na dysku źródła → po przeniesieniu (jak w akcji, po COMMIT) wiersz wskazuje istniejący plik.
+    const filesRoot = mkdtempSync(join(tmpdir(), 'walldecor-merge-'));
+    try {
+        mkdirSync(storage.projectFilesDir(source, filesRoot), { recursive: true });
+        writeFileSync(join(storage.projectFilesDir(source, filesRoot), 's.pdf'), 'pdf');
+        await storage.moveProjectFileDirs(result.movedFileDirs, filesRoot);
+        const file = db.prepare("SELECT project_id, stored_name FROM project_files WHERE id = 'f_1'").get() as any;
+        assert.ok(existsSync(join(storage.projectFilesDir(file.project_id, filesRoot), file.stored_name)));
+    } finally {
+        rmSync(filesRoot, { recursive: true, force: true });
+    }
     assert.equal(projectRow(source), undefined, 'źródło usunięte');
     approx(itemsSum(target), items, 'suma pozycji');
     approx(pendingSum(target), pending, 'suma PENDING');
@@ -420,6 +439,48 @@ test('move: from a ZAKOŃCZONY project → old items zeroed with corrections and
     approx(Number((db.prepare('SELECT SUM(amount_net) AS s FROM commissions WHERE project_id = ?').get(oldProject) as any).s), 0);
     assert.equal(subiektItems('p_move2').length, 1);
     approx(pendingSum('p_move2'), 1000 * RATE);
+});
+
+test('move: ZK item with type overridden to PRODUCT keeps PRODUCT + type_overridden and PENDING in the new project', async () => {
+    await sync([doc(530, 'ZK', { positions: [pos(5300, { product_id: null, name: 'Montaż', net_total: 500 })] })]);
+    const oldProject = docRow(530).project_id;
+    const [item] = subiektItems(oldProject);
+    assert.equal(item.type, 'INSTALLATION');
+    await ops.overrideItemTypeOp(item.id, 'PRODUCT', ADMIN);
+    newProject('p_move_override');
+
+    await ops.moveDocumentToProjectOp(docRow(530).id, 'p_move_override', ADMIN);
+    assert.equal(itemsOfProject(oldProject).length, 0);
+    const [moved] = subiektItems('p_move_override');
+    assert.equal(moved.type, 'PRODUCT');
+    assert.equal(moved.type_overridden, 1);
+    assert.equal(moved.category, 'Produkt (Subiekt)');
+    approx(moved.amount_net, 500);
+    assert.ok(pendingSum('p_move_override') > 0);
+    approx(pendingSum('p_move_override'), 500 * RATE);
+    assert.equal(subiektItems('p_move_override').length, 1, 'bez duplikatu po syncChainItems');
+
+    await sync([doc(530, 'ZK', { positions: [pos(5300, { product_id: null, name: 'Montaż', net_total: 450 })] })]);
+    const [after] = subiektItems('p_move_override');
+    assert.equal(after.type, 'PRODUCT');
+    approx(after.amount_net, 450);
+});
+
+test('move: AUTO document with OWNER_MISMATCH goes through mapping (stays visible in the inbox), not forced to MANUAL', async () => {
+    await sync([doc(540, 'ZK'), doc(541, 'FS', { parent_external_id: 540 })]);
+    const oldProject = docRow(540).project_id;
+    await sync([doc(541, 'FS', { parent_external_id: 540, architect_code: 'C-003', positions: [pos(5410, { net_total: 900 })] })]);
+    assert.deepEqual([docRow(541).assignment_status, docRow(541).assignment_note], ['AUTO', 'OWNER_MISMATCH:C-003']);
+    newProject('p_move_mismatch');
+
+    await ops.moveDocumentToProjectOp(docRow(540).id, 'p_move_mismatch', ADMIN);
+    const fs = docRow(541);
+    assert.equal(fs.assignment_status, 'UNASSIGNED');
+    assert.equal(fs.assignment_note, 'OWNER_MISMATCH:C-003');
+    assert.equal(fs.project_id, null);
+    assert.equal(itemsOfProject(oldProject).length, 0);
+    const items = subiektItems('p_move_mismatch');
+    assert.deepEqual(items.map((i) => i.subiekt_document_id), [docRow(540).id], 'bez FS wiodą pozycje ZK');
 });
 
 test('move: only roots with a project, same owner, live target', async () => {

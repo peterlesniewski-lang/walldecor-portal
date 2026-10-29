@@ -1,5 +1,6 @@
 // Zapytania odczytowe integracji Subiekt: status dla agenta i widoki panelu admina (Loop 4).
 import { query } from '@/lib/db';
+import { toDateOnly, toIsoString } from './dates';
 
 /** Wiersz subiekt_sync_runs po normalizacji: daty ISO 8601 (UTC), liczniki jako number. */
 export interface SubiektSyncRunRow {
@@ -20,18 +21,6 @@ export interface SubiektSyncRunRow {
 export interface SubiektSyncStatus {
     last_run: SubiektSyncRunRow | null;
     unassigned_count: number;
-}
-
-/**
- * Data z bazy jako ISO 8601 UTC. MySQL (mysql2) zwraca `Date`, SQLite tekst 'YYYY-MM-DD HH:MM:SS' w UTC
- * (CURRENT_TIMESTAMP) — po normalizacji JSON statusu jest taki sam na obu silnikach.
- */
-function toIsoString(value: unknown): string | null {
-    if (value === null || value === undefined) return null;
-    if (value instanceof Date) return value.toISOString();
-    const text = String(value);
-    const sqlite = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(text);
-    return sqlite ? new Date(`${sqlite[1]}T${sqlite[2]}Z`).toISOString() : text;
 }
 
 function normalizeRun(row: Record<string, unknown>): SubiektSyncRunRow {
@@ -95,15 +84,6 @@ export async function getProjectZkChanges(projectId: string): Promise<ProjectZkC
 
 /** Alias dla widoków admina: wiersz subiekt_sync_runs po normalizacji (daty ISO, liczniki number). */
 export type SyncRunRow = SubiektSyncRunRow;
-
-/** Data dokumentu (kolumna DATE) jako 'YYYY-MM-DD'. mysql2 zwraca `Date` o północy czasu lokalnego. */
-function toDateOnly(value: unknown): string {
-    if (value instanceof Date) {
-        const pad = (n: number) => String(n).padStart(2, '0');
-        return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
-    }
-    return String(value ?? '').slice(0, 10);
-}
 
 const nullableString = (value: unknown) => (value === null || value === undefined ? null : String(value));
 const nullableNumber = (value: unknown) => (value === null || value === undefined ? null : Number(value));

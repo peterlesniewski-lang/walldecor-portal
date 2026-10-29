@@ -1,12 +1,12 @@
 // Podpowiedź statusu projektu z dokumentów Subiekta (PLAN-SUBIEKT-2026-10-29.md, 2.4 pkt 6).
 // Tylko odczyt: wynik nie jest zapisywany w projects.status — admin stosuje go ręcznie (loop 4).
 import { query } from '@/lib/db';
+import { AMOUNT_EPSILON as EPSILON } from './mapping';
 
 export type SuggestedStatus = 'PRZYJĘTY' | 'W_REALIZACJI' | 'ZAKOŃCZONY';
 
 interface ProjectDocRow { type: string; net_total: number; is_paid: number }
 
-const EPSILON = 0.005;
 
 async function loadAssignedDocuments(projectId: string): Promise<ProjectDocRow[]> {
     return query<ProjectDocRow>(

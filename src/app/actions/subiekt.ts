@@ -20,6 +20,7 @@ import {
     overrideItemTypeOp,
 } from "@/lib/subiekt/adminOps";
 import { computeSuggestedStatus } from "@/lib/subiekt/status";
+import { moveProjectFileDirs } from "@/lib/projectFilesStorage";
 import { updateProjectStatus } from "@/app/actions/projects";
 
 const SUBIEKT_PAGE = '/dashboard/admin/integrations/subiekt';
@@ -67,7 +68,9 @@ export async function mergeProjects(targetProjectId: string, sourceProjectIds: s
     const session = await getServerSession(authOptions);
     if (!session || !canManageFinancialOperations(session.user.role)) throw new Error("Unauthorized");
 
-    const { affectedProjectIds } = await mergeProjectsOp(targetProjectId, sourceProjectIds, session.user.id);
+    const { affectedProjectIds, movedFileDirs } = await mergeProjectsOp(targetProjectId, sourceProjectIds, session.user.id);
+    // Po COMMIT: pliki projektów źródłowych do katalogu docelowego (błąd = ostrzeżenie w logu, baza już spójna).
+    await moveProjectFileDirs(movedFileDirs);
     revalidateSubiekt(affectedProjectIds);
     return { success: true };
 }

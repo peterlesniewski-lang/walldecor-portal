@@ -3,6 +3,11 @@
 import type { SubiektDocumentPayload, SubiektPositionPayload, SubiektDocType } from './types';
 import type { NewItemInput } from '@/lib/projectItems';
 
+/** Tolerancja porównań kwot (DECIMAL(12,2)) w mapowaniu, pozycjach i podpowiedzi statusu. */
+export const AMOUNT_EPSILON = 0.005;
+/** assignment_note dokumentu pochodnego, który dziedziczy IGNORED po zignorowanym korzeniu łańcucha. */
+export const ROOT_IGNORED = 'ROOT_IGNORED';
+
 const REMARKS_MARKER = /#A[-_]?([A-Za-z0-9]{1,16})/i;
 const MAX_CHAIN_STEPS = 32;
 

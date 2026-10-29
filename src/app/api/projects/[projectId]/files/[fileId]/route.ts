@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { query } from '@/lib/db';
+import { projectFilesDir } from '@/lib/projectFilesStorage';
 import { NextRequest, NextResponse } from 'next/server';
 import { join } from 'path';
 import { readFile, unlink } from 'fs/promises';
@@ -44,7 +45,7 @@ export async function GET(
         return NextResponse.json({ error: 'Invalid file record' }, { status: 400 });
     }
 
-    const filePath = join(process.cwd(), 'private_uploads', 'projects', projectId, fileRecord.stored_name);
+    const filePath = join(projectFilesDir(projectId), fileRecord.stored_name);
 
     try {
         const fileBuffer = await readFile(filePath);
@@ -89,7 +90,7 @@ export async function DELETE(
         return NextResponse.json({ error: 'Invalid file record' }, { status: 400 });
     }
 
-    const filePath = join(process.cwd(), 'private_uploads', 'projects', projectId, fileRecord.stored_name);
+    const filePath = join(projectFilesDir(projectId), fileRecord.stored_name);
 
     try {
         await unlink(filePath);

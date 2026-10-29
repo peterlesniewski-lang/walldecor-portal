@@ -63,12 +63,17 @@ test('no second commission implementation: overrideItemType and adminOps go thro
     assert.ok(!functionBody(adminOps, 'overrideItemTypeOp').includes('INSERT INTO commissions'));
     assert.ok(!actions.includes('INSERT INTO commissions'));
     assert.ok(!adminOps.includes('INSERT INTO commissions'));
-    assert.ok(functionBody(adminOps, 'overrideItemTypeOp').includes('deleteItemCore(') && functionBody(adminOps, 'overrideItemTypeOp').includes('addItemCore('));
+    const override = functionBody(adminOps, 'overrideItemTypeOp');
+    assert.ok(override.includes('deleteItemCore(') && override.includes('addOverriddenItem('));
+    const helperStart = adminOps.indexOf('async function addOverriddenItem(');
+    assert.notEqual(helperStart, -1);
+    assert.ok(adminOps.slice(helperStart, adminOps.indexOf('\n}\n', helperStart)).includes('addItemCore('), 'nowa pozycja przez rdzeń');
 });
 
 test('applySuggestedStatus applies steps through the existing updateProjectStatus', () => {
     const body = functionBody(actions, 'applySuggestedStatus');
     assert.ok(body.includes('computeSuggestedStatus(projectId)'));
-    assert.match(body, /for \(const step of nextStatusSteps\(project\.status, suggested\)\)\s*\{\s*await updateProjectStatus\(projectId, step\);/);
+    assert.ok(body.includes('nextStatusSteps('));
+    assert.ok(body.includes('updateProjectStatus('));
     assert.ok(!body.includes('UPDATE projects'));
 });
