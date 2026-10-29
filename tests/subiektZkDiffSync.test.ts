@@ -179,3 +179,43 @@ test('9. ZK change inside an outer transaction that throws → no SUBIEKT_ZK_CHA
     assert.equal(changeLogs().length, before);
     assert.equal(JSON.parse(docRow(400).positions_json)[0].quantity, 8);
 });
+
+// --- Loop 6 (scenariusz „dzień z życia”, krok 8): korekta KFS widoczna w logu projektu dla admina i architekta ---
+
+const correctionLogs = () =>
+    db.prepare("SELECT * FROM activity_logs WHERE event_type = 'SUBIEKT_CORRECTION' ORDER BY rowid").all() as any[];
+const kfs = (overrides: Partial<Pos> = {}, docOverrides: Partial<Doc> = {}) =>
+    doc(102, 'KFS', {
+        parent_external_id: 101, net_total: -200,
+        positions: [pos(1020, { quantity: 5, net_total: 500, corrects_position_external_id: 1010, ...overrides })],
+        ...docOverrides,
+    });
+
+test('10. KFS → one SUBIEKT_CORRECTION row "FS qty → KFS qty", visible in getProjectZkChanges of the project', async () => {
+    // Stan z testu 5: FS 101 (rodzic ZK 100) ma pozycję 1010: 7 szt × 100 = 700.
+    const response = await sync([kfs()]);
+    assert.equal(response.accepted, 1);
+    assert.equal(docRow(102).assignment_status, 'AUTO');
+
+    const logs = correctionLogs();
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].user_id, null);
+    assert.equal(logs[0].subject_id, docRow(102).id);
+    assert.equal(logs[0].description, 'KFS 102/10/2026 (korekta FS 101/10/2026): Tapeta Test 7 → 5 szt; wartość korekty -200,00 zł');
+    assert.equal(JSON.parse(logs[0].metadata).projectId, docRow(100).project_id);
+
+    const changes = await getProjectZkChanges(docRow(100).project_id);
+    assert.ok(changes.some((c) => c.id === logs[0].id), 'korekta w historii projektu (admin i architekt)');
+    assert.equal(changeLogs().filter((l) => l.subject_id === docRow(102).id).length, 0, 'KFS nie udaje zmiany ZK');
+});
+
+test('11. KFS re-sent unchanged or with remarks only → no new row; changed correction → new row', async () => {
+    assert.equal((await sync([kfs()])).unchanged, 1);
+    assert.equal((await sync([kfs({}, { remarks: 'korekta ilości' })])).accepted, 1, 'hash się zmienił');
+    assert.equal(correctionLogs().length, 1);
+
+    await sync([kfs({ quantity: 4, net_total: 400 }, { net_total: -300, remarks: 'korekta ilości' })]);
+    const logs = correctionLogs();
+    assert.equal(logs.length, 2);
+    assert.equal(logs[1].description, 'KFS 102/10/2026 (korekta FS 101/10/2026): Tapeta Test 7 → 4 szt; wartość korekty -300,00 zł');
+});

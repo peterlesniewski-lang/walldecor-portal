@@ -102,3 +102,14 @@ export function formatDiffForLog(docNumber: string, lines: PositionDiffLine[], n
     const parts = [...lines.map(fragment), `wartość ${formatPLNFixed(netBefore)} → ${formatPLNFixed(netAfter)} zł`];
     return `${docNumber}: ${parts.join('; ')}`;
 }
+
+/**
+ * Tekst wpisu SUBIEKT_CORRECTION (korekta KFS), np.
+ * "KFS 3/10/2026 (korekta FS 7/10/2026): Tapeta Test 8 → 6 szt; wartość korekty -200,00 zł".
+ * `lines` = diffPositions(pozycje korygowanej FS, pozycje KFS) — agent wysyła w KFS stan PO korekcie.
+ */
+export function formatCorrectionForLog(docNumber: string, invoiceNumber: string | null, lines: PositionDiffLine[], netTotal: number): string {
+    const head = invoiceNumber ? `${docNumber} (korekta ${invoiceNumber})` : docNumber;
+    const parts = [...lines.map(fragment), `wartość korekty ${formatPLNFixed(netTotal)} zł`];
+    return `${head}: ${parts.join('; ')}`;
+}
