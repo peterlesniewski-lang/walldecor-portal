@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useId } from 'react';
 import { X, CheckCircle2, Loader2 } from 'lucide-react';
 import { getArchitectById, updateArchitect } from '@/app/actions/projects';
+import { updateArchitectAdminFields } from '@/app/actions/architects';
 import { Banner, Button, cx } from '@/components/ui';
 
 interface EditArchitectModalProps {
@@ -11,7 +12,7 @@ interface EditArchitectModalProps {
     architectId: string | null;
 }
 
-type FieldKey = 'first_name' | 'last_name' | 'email' | 'nip';
+type FieldKey = 'first_name' | 'last_name' | 'email' | 'nip' | 'subiekt_code';
 
 /** Przypisuje komunikat z serwera do pola, którego dotyczy (bez zmiany walidacji po stronie serwera). */
 function fieldForError(message: string): FieldKey | null {
@@ -19,6 +20,7 @@ function fieldForError(message: string): FieldKey | null {
     if (/imię/i.test(message)) return 'first_name';
     if (/nazwisko/i.test(message)) return 'last_name';
     if (/\bnip\b/i.test(message)) return 'nip';
+    if (/\bkod\b/i.test(message)) return 'subiekt_code';
     return null;
 }
 
@@ -40,7 +42,8 @@ export default function EditArchitectModal({ isOpen, onClose, architectId }: Edi
         nip: '',
         address: '',
         bank_account: '',
-        is_vat_payer: false
+        is_vat_payer: false,
+        subiekt_code: ''
     });
 
     useEffect(() => {
@@ -58,7 +61,8 @@ export default function EditArchitectModal({ isOpen, onClose, architectId }: Edi
                             nip: data.nip || '',
                             address: data.address || '',
                             bank_account: data.bank_account || '',
-                            is_vat_payer: data.is_vat_payer === 1 || data.is_vat_payer === true
+                            is_vat_payer: data.is_vat_payer === 1 || data.is_vat_payer === true,
+                            subiekt_code: data.subiekt_code || ''
                         });
                     }
                 })
@@ -88,7 +92,11 @@ export default function EditArchitectModal({ isOpen, onClose, architectId }: Edi
         setError(null);
 
         try {
-            await updateArchitect(architectId, formData);
+            // Kod najpierw: jego błąd (zajęty / zły format) nie zostawia częściowo zapisanych danych profilu.
+            const { subiekt_code, ...profile } = formData;
+            const saved = await updateArchitectAdminFields(architectId, { subiekt_code });
+            await updateArchitect(architectId, profile);
+            setFormData(prev => ({ ...prev, subiekt_code: saved.subiekt_code ?? '' }));
             setSuccess(true);
             setTimeout(() => {
                 setSuccess(false);
@@ -262,6 +270,30 @@ export default function EditArchitectModal({ isOpen, onClose, architectId }: Edi
                                         />
                                     </button>
                                     <span id={`${titleId}-vat`} className="text-[13px] font-semibold text-ink">Płatnik VAT (faktura)</span>
+                                </div>
+                            </fieldset>
+
+                            {/* Integracja Subiekt GT */}
+                            <fieldset className="min-w-0 md:col-span-2">
+                                <legend className="label-caps mb-4">Integracja Subiekt GT</legend>
+                                <div className="md:max-w-[50%] md:pr-4">
+                                    <label className={LABEL} htmlFor={`${titleId}-subiekt_code`}>Kod w Subiekcie</label>
+                                    <input
+                                        id={`${titleId}-subiekt_code`}
+                                        type="text"
+                                        maxLength={64}
+                                        autoComplete="off"
+                                        placeholder="np. A-001"
+                                        aria-describedby={`${titleId}-subiekt_code-hint${fieldError('subiekt_code') ? ` ${titleId}-subiekt_code-err` : ''}`}
+                                        aria-invalid={fieldError('subiekt_code') ? true : undefined}
+                                        className={cx(INPUT, 'tnum', fieldError('subiekt_code') ? 'border-danger' : 'border-border-strong')}
+                                        value={formData.subiekt_code}
+                                        onChange={e => setFormData({ ...formData, subiekt_code: e.target.value })}
+                                    />
+                                    <p id={`${titleId}-subiekt_code-hint`} className="mt-1.5 text-[13px] text-ink-2">
+                                        Wartość pola własnego «Architekt» w Subiekcie, np. A-001. Dokumenty z tym kodem trafiają do tego architekta.
+                                    </p>
+                                    {renderError('subiekt_code')}
                                 </div>
                             </fieldset>
                         </div>

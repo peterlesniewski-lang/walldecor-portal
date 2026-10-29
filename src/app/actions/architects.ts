@@ -9,39 +9,77 @@ import { sendEmail } from "@/lib/email";
 import { logActivity } from "@/lib/services";
 import { validatePasswordStrength } from "@/lib/passwordPolicy";
 
+const SUBIEKT_CODE_PATTERN = /^[A-Z0-9_-]{1,64}$/;
+
+// Kod architekta w Subiekcie GT (wartość pola własnego „Architekt”): trim + uppercase, pusty → NULL.
+function normalizeSubiektCode(raw: string | null): string | null {
+    const code = (raw ?? '').trim().toUpperCase();
+    if (!code) return null;
+    if (!SUBIEKT_CODE_PATTERN.test(code)) {
+        throw new Error("Kod w Subiekcie może mieć 1–64 znaki: litery A–Z, cyfry, myślnik i podkreślenie.");
+    }
+    return code;
+}
+
+// Pola tylko dla admina. Pole pominięte w `data` nie jest zmieniane.
 export async function updateArchitectAdminFields(
     architectId: string,
-    data: { tier_override: string | null }
+    data: { tier_override?: string | null; subiekt_code?: string | null }
 ) {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') {
         throw new Error("Unauthorized");
     }
 
+    const changesTier = data.tier_override !== undefined;
+    const changesCode = data.subiekt_code !== undefined;
+
     const VALID_TIER_OVERRIDES = [null, 'PARTNER', 'PARTNER_PLUS', 'PARTNER_PREMIUM'];
-    if (!VALID_TIER_OVERRIDES.includes(data.tier_override)) {
+    if (changesTier && !VALID_TIER_OVERRIDES.includes(data.tier_override as string | null)) {
         throw new Error("Nieprawidłowa wartość statusu. Dozwolone: PARTNER, PARTNER_PLUS, PARTNER_PREMIUM lub brak (Auto).");
     }
+    const nextCode = changesCode ? normalizeSubiektCode(data.subiekt_code ?? null) : null;
 
-    const prevRes = await query<any>("SELECT tier_override FROM users WHERE id = ?", [architectId]);
-    const previous = prevRes[0]?.tier_override ?? null;
+    const prevRes = await query<any>("SELECT tier_override, subiekt_code FROM users WHERE id = ?", [architectId]);
+    if (prevRes.length === 0) throw new Error("Nie znaleziono architekta.");
+    const previous = prevRes[0].tier_override ?? null;
+    const previousCode = prevRes[0].subiekt_code ?? null;
 
-    await query(
-        "UPDATE users SET tier_override = ? WHERE id = ?",
-        [data.tier_override, architectId]
-    );
+    if (changesCode && nextCode) {
+        const taken = await query<any>("SELECT id FROM users WHERE subiekt_code = ? AND id != ?", [nextCode, architectId]);
+        if (taken.length > 0) throw new Error("Ten kod ma już inny architekt.");
+    }
 
-    await logActivity(
-        session.user.id,
-        'ARCHITECT_STATUS_OVERRIDE',
-        `Zmieniono override statusu architekta ${architectId}: ${previous ?? 'AUTO'} → ${data.tier_override ?? 'AUTO'}`,
-        { architectId, previous, next: data.tier_override }
-    );
+    if (changesTier) {
+        await query(
+            "UPDATE users SET tier_override = ? WHERE id = ?",
+            [data.tier_override, architectId]
+        );
+
+        await logActivity(
+            session.user.id,
+            'ARCHITECT_STATUS_OVERRIDE',
+            `Zmieniono override statusu architekta ${architectId}: ${previous ?? 'AUTO'} → ${data.tier_override ?? 'AUTO'}`,
+            { architectId, previous, next: data.tier_override }
+        );
+    }
+
+    if (changesCode && nextCode !== previousCode) {
+        await query("UPDATE users SET subiekt_code = ? WHERE id = ?", [nextCode, architectId]);
+
+        await logActivity(
+            session.user.id,
+            'ARCHITECT_SUBIEKT_CODE',
+            `Zmieniono kod Subiekt architekta ${architectId}: ${previousCode ?? 'brak'} → ${nextCode ?? 'brak'}`,
+            { architectId, previous: previousCode, next: nextCode }
+        );
+    }
 
     revalidatePath(`/dashboard/admin/architects/${architectId}`);
     revalidatePath('/dashboard/admin');
 
-    return { success: true };
+    // Znormalizowany kod (trim + uppercase) — formularz pokazuje to, co faktycznie zapisano.
+    return { success: true, subiekt_code: changesCode ? nextCode : undefined };
 }
 
 export async function updateProfile(data: {

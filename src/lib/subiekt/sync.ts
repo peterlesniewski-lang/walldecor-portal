@@ -1,16 +1,16 @@
-// Orkiestracja jednej strony paczki od agenta Subiekt GT (PLAN-SUBIEKT-2026-10-29.md, Loop 1).
-// Bez HTTP: route handler weryfikuje podpis i schemat, tu tylko zapis do tabel pośrednich.
+// Orkiestracja jednej strony paczki od agenta Subiekt GT (PLAN-SUBIEKT-2026-10-29.md, Loop 1–2).
+// Bez HTTP: route handler weryfikuje podpis i schemat, tu zapis do tabel pośrednich + mapowanie.
 //
-// Granica transakcji = jeden dokument. Zagnieżdżony withTransaction dołącza do zewnętrznej transakcji
-// bez savepointu, dlatego processSyncPage trzeba wołać POZA transakcją — tylko wtedy błąd jednego
-// dokumentu wycofuje wyłącznie jego zapisy, a reszta strony przechodzi.
-// Loop 1: brak mapowania na projekty — każdy dokument zostaje UNASSIGNED (MAPPING_NOT_ENABLED).
+// Granica transakcji = jeden dokument (processDocument): upsert → mapowanie na architekta, projekt
+// i pozycje (mappingDb.ts). Błąd w dowolnym kroku wycofuje cały dokument, łącznie z upsertem.
+// Zagnieżdżony withTransaction dołącza do zewnętrznej transakcji bez savepointu, dlatego processSyncPage
+// trzeba wołać POZA transakcją — tylko wtedy błąd jednego dokumentu wycofuje wyłącznie jego zapisy.
 import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction } from '@/lib/db';
 import { hashDocument } from './hash';
+import { sortDocumentsForProcessing } from './mapping';
+import { mapDocument, type AssignmentResult, type UpsertOutcome } from './mappingDb';
 import type { SubiektDocumentPayload, SubiektSyncRequest, SubiektSyncResponse } from './types';
-
-type DocumentOutcome = 'ACCEPTED' | 'UNCHANGED';
 
 const shortId = (prefix: string) => `${prefix}_${uuidv4().replace(/-/g, '').slice(0, 12)}`;
 
@@ -87,7 +87,7 @@ async function insertSnapshot(documentId: string, runId: string, contentHash: st
 }
 
 /** Zapis jednego dokumentu (wywoływany wewnątrz withTransaction). */
-async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promise<DocumentOutcome> {
+async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promise<{ id: string; outcome: UpsertOutcome }> {
     const contentHash = hashDocument(doc);
     const positionsJson = JSON.stringify(doc.positions);
     const isPaid = doc.is_paid ? 1 : 0;
@@ -106,7 +106,7 @@ async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promi
                 id, external_id, type, number, issued_at, contractor_name, contractor_nip, architect_code,
                 architect_id, parent_external_id, root_external_id, project_id, net_total, gross_total, is_paid,
                 remarks, content_hash, positions_json, assignment_status, assignment_note, last_run_id
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, 'UNASSIGNED', 'MAPPING_NOT_ENABLED', ?)`,
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, 'UNASSIGNED', NULL, ?)`,
             [
                 id, doc.external_id, doc.type, doc.number, doc.issued_at, doc.contractor_name, doc.contractor_nip,
                 doc.architect_code, doc.parent_external_id, doc.net_total, doc.gross_total, isPaid, doc.remarks,
@@ -114,7 +114,7 @@ async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promi
             ]
         );
         await insertSnapshot(id, runId, contentHash, positionsJson, doc.net_total);
-        return 'ACCEPTED';
+        return { id, outcome: 'INSERTED' };
     }
 
     if (existing.content_hash === contentHash) {
@@ -123,7 +123,7 @@ async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promi
             'UPDATE subiekt_documents SET last_seen_at = CURRENT_TIMESTAMP, last_run_id = ?, is_paid = ? WHERE id = ?',
             [runId, isPaid, existing.id]
         );
-        return 'UNCHANGED';
+        return { id: existing.id, outcome: 'UNCHANGED' };
     }
 
     await query(
@@ -140,11 +140,31 @@ async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promi
         ]
     );
     await insertSnapshot(existing.id, runId, contentHash, positionsJson, doc.net_total);
-    return 'ACCEPTED';
+    return { id: existing.id, outcome: 'CHANGED' };
+}
+
+export interface ProcessedDocument {
+    id: string;
+    outcome: UpsertOutcome;
+    assignment: AssignmentResult;
 }
 
 /**
- * Przetwarza jedną stronę paczki: run + strona → dokumenty (każdy we własnej transakcji) → liczniki runu.
+ * Jeden dokument w JEDNEJ transakcji: upsert (hash, snapshot) → mapowanie (architekt, projekt, pozycje,
+ * prowizje przez rdzeń projectItems). Wyjątek wycofuje wszystkie zapisy dokumentu.
+ */
+export async function processDocument(doc: SubiektDocumentPayload, runId: string): Promise<ProcessedDocument> {
+    return withTransaction(async () => {
+        const { id, outcome } = await upsertDocument(doc, runId);
+        const assignment = await mapDocument(id, outcome);
+        return { id, outcome, assignment };
+    });
+}
+
+/**
+ * Przetwarza jedną stronę paczki: run + strona → dokumenty posortowane rodzic przed dzieckiem, każdy przez
+ * processDocument we własnej transakcji → liczniki runu. `accepted` = INSERTED + CHANGED, `unchanged` =
+ * UNCHANGED, `unassigned` = dokumenty, które po mapowaniu są w skrzynce (UNASSIGNED).
  * Błąd pojedynczego dokumentu trafia do `rejected` (INTERNAL_ERROR:<komunikat>), reszta strony idzie dalej;
  * odrzucenia z walidacji (VALIDATION:…) przychodzą w `options.preRejected` i są na początku `rejected`.
  * Powtórzona strona (ten sam run_id + page) jest przetwarzana ponownie — upsert jest idempotentny, więc
@@ -174,14 +194,13 @@ export async function processSyncPage(
         unassigned: 0,
     };
 
-    // Kolejność wejściowa; sortowanie po typie dokumentu (ZK przed FS) dochodzi w loopie 2.
-    for (const doc of request.documents) {
+    // Rodzice przed dziećmi (ZK/FP → WZ → FS → KFS), żeby dokument pochodny znalazł korzeń z tej samej strony.
+    for (const doc of sortDocumentsForProcessing(request.documents)) {
         try {
-            const outcome = await withTransaction(() => upsertDocument(doc, request.run_id));
-            if (outcome === 'ACCEPTED') response.accepted++;
-            else response.unchanged++;
-            // Loop 1: bez mapowania każdy przyjęty dokument czeka w skrzynce nieprzypisanych.
-            response.unassigned++;
+            const result = await processDocument(doc, request.run_id);
+            if (result.outcome === 'UNCHANGED') response.unchanged++;
+            else response.accepted++;
+            if (result.assignment === 'UNASSIGNED') response.unassigned++;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             console.error('[subiekt] Błąd zapisu dokumentu', { run_id: request.run_id, external_id: doc.external_id, error });

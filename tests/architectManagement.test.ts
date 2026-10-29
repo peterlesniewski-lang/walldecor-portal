@@ -33,3 +33,38 @@ test('architect detail delete copy matches backend history guard', async () => {
     assert.doesNotMatch(source, /Projekty i historia finansowa pozostaną w systemie/);
     assert.match(source, /Usunięcie jest możliwe tylko dla kont bez projektów i rozliczeń/);
 });
+
+test('admin fields action normalises and guards the architect Subiekt code', async () => {
+    const source = await readFile(new URL('../src/app/actions/architects.ts', import.meta.url), 'utf8');
+    const actionStart = source.indexOf('export async function updateArchitectAdminFields');
+    const actionEnd = source.indexOf('export async function updateProfile', actionStart);
+    const actionSource = source.slice(actionStart, actionEnd);
+    const normalizerStart = source.indexOf('function normalizeSubiektCode');
+    const normalizerSource = source.slice(normalizerStart, actionStart);
+
+    assert.ok(actionStart > -1 && normalizerStart > -1);
+    // normalizacja: trim + uppercase, pusty → NULL, dozwolone znaki i długość
+    assert.match(normalizerSource, /\.trim\(\)\.toUpperCase\(\)/);
+    assert.match(normalizerSource, /if \(!code\) return null/);
+    assert.match(source, /\/\^\[A-Z0-9_-\]\{1,64\}\$\//);
+    // unikalność i uprawnienie ADMIN
+    assert.match(actionSource, /role !== 'ADMIN'/);
+    assert.match(actionSource, /SELECT id FROM users WHERE subiekt_code = \? AND id != \?/);
+    assert.match(actionSource, /Ten kod ma już inny architekt\./);
+    assert.match(actionSource, /UPDATE users SET subiekt_code = \? WHERE id = \?/);
+    assert.match(actionSource, /logActivity\(/);
+    // pole pominięte nie nadpisuje statusu partnerskiego
+    assert.match(actionSource, /data\.tier_override !== undefined/);
+});
+
+test('edit architect modal saves and reloads the Subiekt code', async () => {
+    const modal = await readFile(new URL('../src/components/EditArchitectModal.tsx', import.meta.url), 'utf8');
+    const card = await readFile(new URL('../src/app/dashboard/admin/architects/[id]/ArchitectDataCard.tsx', import.meta.url), 'utf8');
+
+    assert.match(modal, /Kod w Subiekcie/);
+    assert.match(modal, /Wartość pola własnego «Architekt» w Subiekcie, np\. A-001\. Dokumenty z tym kodem trafiają do tego architekta\./);
+    assert.match(modal, /subiekt_code: data\.subiekt_code \|\| ''/);
+    assert.match(modal, /updateArchitectAdminFields\(architectId, \{ subiekt_code \}\)/);
+    assert.match(card, /Kod w Subiekcie/);
+    assert.match(card, /architect\.subiekt_code/);
+});

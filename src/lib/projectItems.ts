@@ -87,8 +87,9 @@ export async function updateItemAmountCore(itemId: string, amountNet: number, ac
     // Odczyty stawek przed zapisem — nie zmieniają się w trakcie korekty.
     let pendingRate = 0;
     let projectRate = 0;
-    if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
+    if ((status === 'PRZYJĘTY' || status === 'W_REALIZACJI') && item.type === 'PRODUCT') {
         // Zachowaj stawkę zapisaną na prowizji PENDING; dla starych rekordów bez stawki użyj bieżącej.
+        // INSTALLATION nie ma prowizji planowanej, więc stawka nie jest potrzebna.
         const pendingRes = await query<any>(
             "SELECT rate FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
             [itemId]
@@ -236,7 +237,8 @@ export async function addItemCore(projectId: string, input: NewItemInput, actor:
             ]
         );
 
-        if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
+        if ((status === 'PRZYJĘTY' || status === 'W_REALIZACJI') && input.type === 'PRODUCT') {
+            // Prowizja planowana tylko dla PRODUCT — jak w updateItemAmountCore i przy rozliczeniu projektu.
             const rate = await getArchitectCommissionRate(owner_id);
             const commAmount = input.amount_net * rate;
             if (commAmount > 0) {
