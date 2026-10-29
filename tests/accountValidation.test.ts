@@ -70,11 +70,17 @@ test('assignProjectCaretaker accepts only STAFF/ADMIN accounts and existing proj
 });
 
 test('addProjectItem validates the project, category and amount before inserting', async () => {
-    const source = await load('../src/app/actions/projects.ts');
-    const action = sliceBetween(source, 'export async function addProjectItem', 'export async function deleteProjectItem');
+    // Akcja jest wrapperem ADMIN-only; walidacja i zapis żyją w rdzeniu src/lib/projectItems.ts.
+    const actions = await load('../src/app/actions/projects.ts');
+    const wrapper = sliceBetween(actions, 'export async function addProjectItem', 'export async function deleteProjectItem');
+    assert.match(wrapper, /session\.user\.role !== 'ADMIN'/);
+    assert.match(wrapper, /addItemCore\(projectId,/);
 
-    assert.match(action, /Number\.isFinite\(data\.amount_net\)/);
-    assert.match(action, /data\.category\.trim\(\)/);
+    const source = await load('../src/lib/projectItems.ts');
+    const action = sliceBetween(source, 'export async function addItemCore', 'export async function deleteItemCore');
+
+    assert.match(action, /Number\.isFinite\(input\.amount_net\)/);
+    assert.match(action, /input\.category\.trim\(\)/);
     assert.match(action, /Nie można dodawać pozycji do projektu niezrealizowanego\./);
     assert.ok(action.indexOf('Projekt nie istnieje.') < action.indexOf('INSERT INTO project_items'));
 });

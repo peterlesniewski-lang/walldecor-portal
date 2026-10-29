@@ -427,3 +427,22 @@ migrations/
 - Smoke test ADMIN na produkcji (tylko odczyt): dashboard, architekci, profil partnera, strona projektu z rozliczeniem prowizji i plikami, ustawienia zespołu i emaili, pomoc, regulamin — nowy wygląd live, logo oryginalne, 0 błędów konsoli.
 - Logowanie i regulamin sprawdzone przy 390 px (CDP) bez poziomego przewijania; `/walldecor-logo-dark.png` 200; brak `fonts.googleapis` w HTML; nagłówki bezpieczeństwa bez zmian; `/api/admin/pipeline` 404.
 - Nie testowane na produkcji: logowanie STAFF/ARCHI, widoki architekta za logowaniem, akcje zapisu.
+
+## 2026-10-29 — Integracja Subiekt GT → portal (plan)
+
+- Zbadano wykonalność: Subiekt GT (bez Sfery, odczyt MS SQL tylko do czytania) → agent na PC z bazą → endpoint portalu; Twenty CRM v2.9.0 na crm.walldecor.pl zostaje osobnym projektem.
+- Decyzje biznesowe potwierdzone z właścicielem: prowizja tylko z FS/KFS; ZK = projekt (z opcją łączenia projektów); pozycja jednorazowa = montaż; statusy tylko podpowiadane; pozycje z Subiekta bez edycji ręcznej; sync raz dziennie; zmiany ZK logowane jako snapshoty.
+- Portal nie ma dziś żadnego wejścia maszynowego (wszystkie route handlery i server actions wymagają sesji); logika pozycji/prowizji zaszyta w `actions/projects.ts` — loop 0 planu wydziela ją do `src/lib/projectItems.ts`.
+- Plan: `PLAN-SUBIEKT-2026-10-29.md` (8 loopów z DoD wg zachowania użytkownika, bramka testy+tsc+build+walidator, checklist audytu atrap). `CLAUDE.md` przełączony z trybu audytu na to zadanie.
+- Do weryfikacji w biurze przed loopem 5: pola własne na ZK/FS w GT, wartości `dok_Typ`, kolumna powiązań dokumentów. Uwagi kopiują się z ZK na FS (potwierdzone) — plan B dla znacznika architekta.
+
+## 2026-10-29 — Subiekt loop 0: rdzeń pozycji i prowizji (`src/lib/projectItems.ts`)
+
+- Logika `addProjectItem` / `updateProjectItem` / `deleteProjectItem` przeniesiona 1:1 do `addItemCore` / `updateItemAmountCore` / `deleteItemCore` (wraz z `getArchitectCommissionRate`, `getProjectCommissionRate`); akcje to wrappery: sesja ADMIN → rdzeń → `revalidatePath`. Zachowanie panelu bez zmian.
+- Rdzeń nie jest plikiem `'use server'` (nie może być wywołany z klienta), nie importuje `next-auth` ani `next/cache`; autor jako `actor.actorId` (null = system), notatka jako `actor.note`.
+- Transakcje re-entrant (`src/lib/db.ts`, `AsyncLocalStorage`): `withTransaction` wewnątrz aktywnej transakcji dołącza do niej (COMMIT/ROLLBACK robi najbardziej zewnętrzne wywołanie), a `query` w MySQL sam trafia na połączenie transakcji — także `logActivity`. Rdzeń nie ma parametru `queryFn`; wszystkie trzy funkcje są atomowe (pozycja + prowizja + cashback + log), więc sync Subiekta może je wołać w swojej transakcji.
+- Rdzeń zwraca dane do odświeżenia widoków: `updateItemAmountCore` → `{ projectId }`, `deleteItemCore` → `{ projectId, status } | null`; wrappery nie robią już własnych SELECT-ów.
+- Migracja `019_subiekt_integration.sql` (na razie tylko `project_items.source/subiekt_document_id/subiekt_position_id`), kolumny dodane też do `ensure-production-schema.mjs` i `seed-dev.mjs`. Akcja admina zawsze zapisuje `source = 'MANUAL'`.
+- Testy integracyjne na prawdziwym SQLite: `tests/helpers/sqliteTestDb.ts` (schemat z bloku `// SCHEMA-START`…`// SCHEMA-END` w `seed-dev.mjs`) + `tests/helpers/srcResolveHooks.ts` (hook Node mapujący `@/…` i importy bez rozszerzenia na `.ts`). `npm test` = `node --test "tests/*.test.ts"` (glob rozwija Node; katalog `tests/` jako argument nie działa); uruchamiać pod Node 25 (natywny `better-sqlite3`).
+- Testy źródłowe (`commissionCorrections`, `commissionConsistency`, `accountValidation`) czytają teraz rdzeń, asercje zachowane.
+- `updateProjectStatus` nietknięty — nadal ma 2× `INSERT INTO commissions` (finalizacja i PENDING przy akceptacji), więc walidator planu `grep -c` daje 2, nie 0.

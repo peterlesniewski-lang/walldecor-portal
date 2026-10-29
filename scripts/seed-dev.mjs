@@ -20,6 +20,7 @@ if (existsSync(DB_PATH)) unlinkSync(DB_PATH);
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
+// SCHEMA-START — blok czytany przez tests/helpers/sqliteTestDb.ts (schemat bazy testowej); tylko CREATE TABLE.
 db.exec(`
 CREATE TABLE users (
   id TEXT PRIMARY KEY, name TEXT, email TEXT UNIQUE, password TEXT,
@@ -36,7 +37,8 @@ CREATE TABLE projects (
 );
 CREATE TABLE project_items (
   id TEXT PRIMARY KEY, project_id TEXT, type TEXT NOT NULL, amount_net REAL NOT NULL, category TEXT,
-  description TEXT, commission_rate REAL DEFAULT 0.15, order_number TEXT, invoice_number TEXT, is_paid INTEGER NOT NULL DEFAULT 0
+  description TEXT, commission_rate REAL DEFAULT 0.15, order_number TEXT, invoice_number TEXT, is_paid INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'MANUAL', subiekt_document_id TEXT, subiekt_position_id INTEGER
 );
 CREATE TABLE commissions (
   id TEXT PRIMARY KEY, project_item_id TEXT, architect_id TEXT, amount_net REAL NOT NULL, status TEXT DEFAULT 'EARNED',
@@ -78,6 +80,7 @@ CREATE TABLE invitations (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `);
+// SCHEMA-END
 
 const PASSWORD = 'Portal-Test-2026!';
 const hash = bcrypt.hashSync(PASSWORD, 10);
