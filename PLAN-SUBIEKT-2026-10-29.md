@@ -596,6 +596,7 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 
 - [ ] Ustawić w Coolify `SUBIEKT_SYNC_TOKEN`, `SUBIEKT_SYNC_SECRET` (wygenerowane `openssl rand -hex 32`, dwa różne).
 - [ ] Merge do `main`, trigger deployu przez API Coolify (zob. pamięć `reference_coolify`), `ensure-production-schema.mjs` dodaje kolumny i tabele przy starcie — sprawdzić w logach startu kontenera komunikaty o dodanych tabelach.
+- [ ] Sprawdzić strefę czasową MySQL (`SELECT @@global.time_zone, NOW()`) i procesu Node w kontenerze; jeśli nie obie UTC, ustawić `timezone: 'Z'` w poolu `src/lib/db.ts`, bo `getSyncStatus` zakłada UTC.
 - [ ] Smoke test: `curl` z pustą paczką (`documents: []`) → 200, run DONE w panelu. `curl` ze złym tokenem → 401.
 - [ ] Nadać kody wszystkim aktywnym architektom w panelu (lista z `/dashboard/admin/architects`).
 - [ ] Na PC z bazą: `.env` agenta z adresem `https://archi.walldecor.pl`, `npm run sync -- --dry-run`, przegląd pliku, potem `npm run sync`. Przegląd skrzynki nieprzypisanych i ręczne przypisanie historycznych dokumentów.
