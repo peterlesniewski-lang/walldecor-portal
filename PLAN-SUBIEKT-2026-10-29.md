@@ -496,6 +496,8 @@ export async function applySuggestedStatus(projectId: string): Promise<{ success
 // liczy computeSuggestedStatus i woła istniejące updateProjectStatus (z walidacją przejść); jeśli przejście niedozwolone (np. PRZYJĘTY → ZAKOŃCZONY) wykonuje kroki pośrednie w kolejności PRZYJĘTY → W_REALIZACJI → ZAKOŃCZONY
 ```
 
+**Uwaga (Loop 4A, typ pozycji):** ręcznie zmieniony typ (`type_overridden = 1`) przechodzi z pozycją przy przeniesieniu / przypisaniu łańcucha (pozycja zakładana w nowym projekcie z tym samym typem przed odtworzeniem reszty). Nie przechodzi, gdy pozycje ZK zastępują pozycje FS (pierwsza faktura w łańcuchu) — to inne pozycje (`subiekt_position_id`), więc admin ustawia typ ponownie na pozycji FS.
+
 Strona `/dashboard/admin/integrations/subiekt`:
 
 - **Ostatnie uruchomienia** (10): data, wersja agenta, przyjęte / bez zmian / odrzucone / nieprzypisane, status, błąd. Brak uruchomień → tekst „Agent jeszcze nie wysłał żadnej paczki” i instrukcja konfiguracji (link do README agenta).
@@ -630,3 +632,7 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 2. Czy pole własne dokumentu w GT jest słownikowe, czy tekstowe. Jeśli tekstowe, format `A-001` trzeba pilnować ręcznie; portal i tak dopasowuje po kodzie przed pierwszą spacją (`"A-001 Nowak"` → `A-001`).
 3. Historyczne projekty wpisane ręcznie, dla których teraz przyjdzie ZK z Subiekta: powstanie drugi projekt. Admin łączy je przez „Połącz z projektem…”, ale pozycje MANUAL i SUBIEKT będą wtedy liczone podwójnie. Decyzja na później: po połączeniu admin ręcznie usuwa pozycje MANUAL (dozwolone) albo wprowadzamy przy łączeniu opcję „usuń pozycje ręczne projektu źródłowego”. Do zdecydowania w loopie 4 po zobaczeniu skali.
 4. Faktury zaliczkowe (FZal) i końcowe: poza zakresem v1. Jeśli występują u architektów, agent wysyła je jako `FS` z pełną kwotą końcową, a zaliczkowe pomija. Potwierdzić z księgowością przed loopem 5.
+5. (Loop 4A) ZK, która przyjdzie po ręcznym przypisaniu FS bez korzenia, tworzy własny łańcuch — pozycje ZK mogą liczyć się obok pozycji tej FS. Sprawdzić w scenariuszu loopa 6.
+6. (Loop 4A) Zmiana typu pozycji na PRZYJĘTY / W_REALIZACJI zakłada PENDING według bieżącej stawki architekta (`addItemCore`), nie stawki dotychczasowej PENDING. Zaakceptowane.
+7. (Loop 4A) „Zastosuj status” przechodzi krokami przez `updateProjectStatus` i nie jest jedną transakcją — błąd w trakcie zostawia projekt na ostatnim udanym (poprawnym) kroku. Zaakceptowane.
+8. (Loop 4A) Operacje admina nie zakładają blokad wierszy (`SELECT … FOR UPDATE`). Na MySQL operacja admina równoległa z synchronizacją tego samego łańcucha może się przeplatać; ryzyko akceptowane, bo sync idzie wieczorem, a admin pracuje w dzień. Do ponownej oceny, jeśli sync zacznie chodzić częściej.

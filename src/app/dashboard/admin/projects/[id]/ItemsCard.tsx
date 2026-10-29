@@ -11,9 +11,11 @@ interface Props {
     items: ProjectItem[];
     isAdmin: boolean;
     isFinalized: boolean;
+    /** Przełącznik typu pozycji z Subiekta (canManageFinancialOperations, projekt nie NIEZREALIZOWANY). */
+    canOverrideType: boolean;
 }
 
-export default function ItemsCard({ projectId, items, isAdmin, isFinalized }: Props) {
+export default function ItemsCard({ projectId, items, isAdmin, isFinalized, canOverrideType }: Props) {
     // Produkty najpierw, potem montaż
     const sorted = [...items].sort((a, b) => (a.type === b.type ? 0 : a.type === 'PRODUCT' ? -1 : 1));
 
@@ -44,7 +46,7 @@ export default function ItemsCard({ projectId, items, isAdmin, isFinalized }: Pr
                         </thead>
                         <tbody>
                             {sorted.map((item) => (
-                                <ItemRow key={item.id} item={item} canEdit={isAdmin} isFinalized={isFinalized} />
+                                <ItemRow key={item.id} item={item} canEdit={isAdmin} isFinalized={isFinalized} canOverrideType={canOverrideType} />
                             ))}
                         </tbody>
                     </table>

@@ -5,21 +5,25 @@ import { useRouter } from 'next/navigation';
 import { FilePenLine, Package, Pencil, Trash2, Wrench } from 'lucide-react';
 import { Button, InlineConfirm, StatusPill, formatPLN } from '@/components/ui';
 import { updateProjectItem, updateProjectItemMeta, deleteProjectItem } from '@/app/actions/projects';
+import { overrideItemType } from '@/app/actions/subiekt';
 import { ErrorBanner } from './ErrorBanner';
 import { IconButton } from './IconButton';
 import { INPUT_CLASS, LABEL_CLASS, ROW_CLASS, TD_CLASS } from './styles';
 import type { ProjectItem } from './types';
 
-type Panel = 'amount' | 'meta' | 'delete' | null;
+type Panel = 'amount' | 'meta' | 'delete' | 'type' | null;
 
 export default function ItemRow({
     item,
     canEdit,
     isFinalized,
+    canOverrideType,
 }: {
     item: ProjectItem;
     canEdit: boolean;
     isFinalized: boolean;
+    /** Zmiana typu pozycji z Subiekta (przelicza prowizję) — uprawnienie z serwera, projekt nie NIEZREALIZOWANY. */
+    canOverrideType: boolean;
 }) {
     const router = useRouter();
     const [panel, setPanel] = useState<Panel>(null);
@@ -36,6 +40,9 @@ export default function ItemRow({
     const isSubiekt = item.source === 'SUBIEKT';
     const subiektNumber = item.invoice_number || item.order_number;
     const showActions = canEdit && !isSubiekt;
+    // Zerowa pozycja (np. w ZAKOŃCZONY po korekcie do 0) nie ma typu do przełączenia — operacja ją odrzuca.
+    const showTypeToggle = isSubiekt && canOverrideType && Number(item.amount_net) > 0;
+    const nextType: ProjectItem['type'] = item.type === 'PRODUCT' ? 'INSTALLATION' : 'PRODUCT';
 
     const cancelAmount = () => {
         setPanel(null);
@@ -68,8 +75,8 @@ export default function ItemRow({
             setPanel(null);
             setNote('');
             router.refresh();
-        } catch (e: any) {
-            setError(e.message || 'Błąd zapisu.');
+        } catch (e: unknown) {
+            setError(e instanceof Error && e.message ? e.message : 'Błąd zapisu.');
         } finally {
             setSaving(false);
         }
@@ -86,8 +93,8 @@ export default function ItemRow({
             });
             setPanel(null);
             router.refresh();
-        } catch (e: any) {
-            setError(e.message || 'Błąd zapisu metadanych.');
+        } catch (e: unknown) {
+            setError(e instanceof Error && e.message ? e.message : 'Błąd zapisu metadanych.');
         } finally {
             setSaving(false);
         }
@@ -99,10 +106,25 @@ export default function ItemRow({
         try {
             await deleteProjectItem(item.id, note);
             router.refresh();
-        } catch (e: any) {
-            setError(e.message || 'Błąd usuwania.');
+        } catch (e: unknown) {
+            setError(e instanceof Error && e.message ? e.message : 'Błąd usuwania.');
             setPanel(null);
         } finally {
+            setSaving(false);
+        }
+    };
+
+    const doOverrideType = async () => {
+        setSaving(true);
+        setError('');
+        try {
+            const result = await overrideItemType(item.id, nextType);
+            if (result.ok) router.refresh();
+            else setError(result.error);
+        } catch (e: unknown) {
+            setError(e instanceof Error && e.message ? e.message : 'Błąd zmiany typu pozycji.');
+        } finally {
+            setPanel(null);
             setSaving(false);
         }
     };
@@ -147,6 +169,9 @@ export default function ItemRow({
                             </>
                         )}
                     </span>
+                    {isSubiekt && Boolean(Number(item.type_overridden ?? 0)) && (
+                        <div className="mt-1 text-xs text-ink-3">typ zmieniony ręcznie</div>
+                    )}
                 </td>
                 <td className={TD_CLASS}>
                     <StatusPill tone={paid ? 'success' : 'neutral'}>{paid ? 'Opłacone' : 'Nieopłacone'}</StatusPill>
@@ -155,6 +180,18 @@ export default function ItemRow({
                     {formatPLN(item.amount_net)}
                 </td>
                 <td className={TD_CLASS}>
+                    {showTypeToggle && (
+                        <div className="flex justify-end">
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={saving}
+                                onClick={() => { setError(''); setPanel('type'); }}
+                            >
+                                {nextType === 'PRODUCT' ? 'Zmień na produkt' : 'Zmień na montaż'}
+                            </Button>
+                        </div>
+                    )}
                     {showActions && (
                         <div className="flex items-center justify-end gap-0.5">
                             {!isFinalized && (
@@ -270,6 +307,21 @@ export default function ItemRow({
                                     </div>
                                 </div>
                             </div>
+                        )}
+
+                        {panel === 'type' && (
+                            <InlineConfirm
+                                question={
+                                    nextType === 'PRODUCT'
+                                        ? `Zmienić „${item.category}” na produkt? Pozycja zacznie naliczać prowizję; synchronizacja nie cofnie zmiany.`
+                                        : `Zmienić „${item.category}” na montaż? Prowizja z tej pozycji zniknie; synchronizacja nie cofnie zmiany.`
+                                }
+                                confirmLabel={nextType === 'PRODUCT' ? 'Zmień na produkt' : 'Zmień na montaż'}
+                                cancelLabel="Zostaw"
+                                loading={saving}
+                                onConfirm={doOverrideType}
+                                onCancel={() => { setPanel(null); setError(''); }}
+                            />
                         )}
 
                         {panel === 'delete' && (

@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { query } from '@/lib/db';
+import { projectFilesDir } from '@/lib/projectFilesStorage';
 import { NextRequest, NextResponse } from 'next/server';
 import { join } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
@@ -92,7 +93,7 @@ export async function POST(
 
     const fileId = randomUUID();
     const storedName = `${fileId}.${ext}`;
-    const uploadDir = join(process.cwd(), 'private_uploads', 'projects', projectId);
+    const uploadDir = projectFilesDir(projectId);
 
     await mkdir(uploadDir, { recursive: true });
 
