@@ -87,8 +87,9 @@ export async function updateItemAmountCore(itemId: string, amountNet: number, ac
     // Odczyty stawek przed zapisem — nie zmieniają się w trakcie korekty.
     let pendingRate = 0;
     let projectRate = 0;
-    if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
+    if ((status === 'PRZYJĘTY' || status === 'W_REALIZACJI') && item.type === 'PRODUCT') {
         // Zachowaj stawkę zapisaną na prowizji PENDING; dla starych rekordów bez stawki użyj bieżącej.
+        // INSTALLATION nie ma prowizji planowanej, więc stawka nie jest potrzebna.
         const pendingRes = await query<any>(
             "SELECT rate FROM commissions WHERE project_item_id = ? AND status = 'PENDING' LIMIT 1",
             [itemId]

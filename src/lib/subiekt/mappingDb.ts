@@ -2,11 +2,15 @@
 // Wołane z processDocument (sync.ts) WEWNĄTRZ transakcji dokumentu: każdy błąd ma propagować do jej granicy
 // (brak savepointów — zob. db.ts), więc tu nic nie łapiemy. Pozycje i prowizje zmieniamy wyłącznie przez
 // rdzeń src/lib/projectItems.ts (addItemCore / updateItemAmountCore / deleteItemCore).
+//
+// Zasada podziału: admin decyduje o PRZYPISANIU (MANUAL / IGNORED), Subiekt decyduje o TREŚCI (pozycje, kwoty).
+// Pozycje projektu są widokiem pochodnym dokumentów: syncChainItems odtwarza je z positions_json dokumentów
+// łańcucha i korekt KFS, więc można ją wołać dowolnie wiele razy (także z panelu admina w loopie 4).
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '@/lib/db';
 import { logActivity } from '@/lib/services';
 import { addItemCore, deleteItemCore, updateItemAmountCore, type ItemActor } from '@/lib/projectItems';
-import { buildItemInput, createsItems, leadingDocType, positionToItemType, resolveArchitectCode, resolveRoot } from './mapping';
+import { buildItemInput, leadingDocType, positionToItemType, resolveArchitectCode, resolveRoot } from './mapping';
 import type { SubiektDocType, SubiektDocumentPayload, SubiektPositionPayload } from './types';
 
 export type UpsertOutcome = 'INSERTED' | 'UNCHANGED' | 'CHANGED';
@@ -32,6 +36,7 @@ interface StoredDoc {
     remarks: string | null;
     positions_json: string;
     assignment_status: string;
+    assignment_note: string | null;
 }
 
 interface StoredItem {
@@ -46,11 +51,24 @@ interface StoredItem {
     subiekt_position_id: number | null;
 }
 
+interface ProjectRef { id: string; status: string; owner_id: string }
+
 const MAX_CHAIN_STEPS = 32;
 const MAX_LABEL_LENGTH = 200; // jak walidacja nazwy / klienta w createProject
 const EPSILON = 0.005;
-
 const ASSIGNED_STATUSES = "('AUTO', 'MANUAL')";
+
+/** Kwoty z payloadu do 2 miejsc — jak DECIMAL(12,2) w MySQL, żeby porównania nie zależały od silnika. */
+const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
+
+const toResult = (status: string): AssignmentResult =>
+    status === 'AUTO' || status === 'MANUAL' ? 'ASSIGNED' : status === 'IGNORED' ? 'IGNORED' : 'UNASSIGNED';
+
+/** Autor zmian pozycji: numer z GT ma już prefiks typu ("FS 12/10/2026"), więc typ dopisujemy tylko gdy go brak. */
+function actorFor(doc: Pick<StoredDoc, 'type' | 'number'>): ItemActor {
+    const label = doc.number.startsWith(doc.type) ? doc.number : `${doc.type} ${doc.number}`;
+    return { actorId: null, note: `Subiekt: ${label}` };
+}
 
 async function loadDocById(id: string): Promise<StoredDoc> {
     const [row] = await query<StoredDoc>('SELECT * FROM subiekt_documents WHERE id = ?', [id]);
@@ -63,7 +81,15 @@ async function loadDocByExternalId(externalId: number): Promise<StoredDoc | unde
     return row;
 }
 
-/** Wiersz z bazy → payload (dla buildItemInput i pozycji z positions_json). */
+async function loadProject(projectId: string, documentNumber: string): Promise<ProjectRef> {
+    const [project] = await query<ProjectRef>('SELECT id, status, owner_id FROM projects WHERE id = ?', [projectId]);
+    if (!project) throw new Error(`Projekt ${projectId} dokumentu ${documentNumber} nie istnieje`);
+    return project;
+}
+
+const positionsOf = (row: StoredDoc) => JSON.parse(row.positions_json) as SubiektPositionPayload[];
+
+/** Wiersz z bazy → payload (dla buildItemInput i resolveArchitectCode). */
 function rowToPayload(row: StoredDoc): SubiektDocumentPayload {
     return {
         external_id: Number(row.external_id),
@@ -78,30 +104,40 @@ function rowToPayload(row: StoredDoc): SubiektDocumentPayload {
         gross_total: Number(row.gross_total),
         is_paid: Number(row.is_paid) === 1,
         remarks: row.remarks ?? null,
-        positions: JSON.parse(row.positions_json) as SubiektPositionPayload[],
+        positions: positionsOf(row),
     };
 }
 
 // --- a) architekt ---
 
-type ArchitectResolution = { architectId: string; code: string | null } | { architectId: null; code: string | null; note: string };
+/**
+ * `ownCode` = kod z samego dokumentu (pole własne / uwagi, znormalizowany) — tylko on trafia do kolumny
+ * architect_code, żeby ponowne mapowanie z zapisanego wiersza dawało ten sam wynik. `code` = kod do
+ * komunikatów (własny albo kod architekta odziedziczonego po rodzicu).
+ */
+type ArchitectResolution =
+    | { architectId: string; ownCode: string | null; code: string | null }
+    | { architectId: null; ownCode: string | null; code: string | null; note: string };
 
 async function resolveArchitect(doc: SubiektDocumentPayload): Promise<ArchitectResolution> {
     const code = resolveArchitectCode(doc);
     if (code) {
         const [user] = await query<{ id: string }>("SELECT id FROM users WHERE subiekt_code = ? AND role = 'ARCHI'", [code]);
-        return user ? { architectId: user.id, code } : { architectId: null, code, note: `UNKNOWN_ARCHITECT_CODE:${code}` };
+        return user
+            ? { architectId: user.id, ownCode: code, code }
+            : { architectId: null, ownCode: code, code, note: `UNKNOWN_ARCHITECT_CODE:${code}` };
     }
     if (doc.parent_external_id !== null) {
         // Dokument pochodny bez kodu dziedziczy architekta po rodzicu (strona jest posortowana, więc rodzic
         // z tej samej strony jest już zapisany). Nieznany rodzic lub rodzic bez architekta = brak architekta.
-        const [parent] = await query<{ architect_id: string | null; architect_code: string | null }>(
-            'SELECT architect_id, architect_code FROM subiekt_documents WHERE external_id = ?',
+        const [parent] = await query<{ architect_id: string | null; subiekt_code: string | null }>(
+            `SELECT d.architect_id, u.subiekt_code FROM subiekt_documents d LEFT JOIN users u ON u.id = d.architect_id
+             WHERE d.external_id = ?`,
             [doc.parent_external_id]
         );
-        if (parent?.architect_id) return { architectId: parent.architect_id, code: parent.architect_code ?? null };
+        if (parent?.architect_id) return { architectId: parent.architect_id, ownCode: null, code: parent.subiekt_code ?? null };
     }
-    return { architectId: null, code: null, note: 'NO_ARCHITECT' };
+    return { architectId: null, ownCode: null, code: null, note: 'NO_ARCHITECT' };
 }
 
 // --- b) korzeń łańcucha ---
@@ -137,11 +173,11 @@ function truncate(text: string, max: number): string {
 async function createProjectForRoot(root: StoredDoc, architectId: string): Promise<string> {
     const projectId = `p_${uuidv4().replace(/-/g, '').slice(0, 8)}`;
     const suffix = ` — ${root.number}`;
-    const name = truncate(root.contractor_name, Math.max(1, MAX_LABEL_LENGTH - suffix.length)) + suffix;
+    const name = truncate(truncate(root.contractor_name, Math.max(1, MAX_LABEL_LENGTH - suffix.length)) + suffix, MAX_LABEL_LENGTH);
     await query(
         `INSERT INTO projects (id, owner_id, name, client_label, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, 'PRZYJĘTY', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [projectId, architectId, truncate(name, MAX_LABEL_LENGTH), truncate(root.contractor_name, MAX_LABEL_LENGTH)]
+        [projectId, architectId, name, truncate(root.contractor_name, MAX_LABEL_LENGTH)]
     );
     await query('UPDATE subiekt_documents SET project_id = ? WHERE id = ?', [projectId, root.id]);
     await logActivity(null, 'SUBIEKT_PROJECT_CREATED', `Subiekt: utworzono projekt „${name}” z dokumentu ${root.number}`, {
@@ -169,29 +205,24 @@ async function removeItem(item: Pick<StoredItem, 'id' | 'amount_net'>, projectSt
     await deleteItemCore(item.id, actor);
 }
 
-/** Ustawia kwotę pozycji: ≤ 0 → usunięcie (addItemCore/rdzeń nie trzyma pozycji z Subiekta z kwotą 0), inna → korekta. */
-async function setItemAmount(item: Pick<StoredItem, 'id' | 'amount_net'>, amount: number, projectStatus: string, actor: ItemActor) {
-    if (amount <= 0) return removeItem(item, projectStatus, actor);
-    if (Math.abs(Number(item.amount_net) - amount) < EPSILON) return;
-    await updateItemAmountCore(item.id, amount, actor);
-}
-
 /**
- * Korekty KFS projektu: ob_Id pozycji FS → kwota po korekcie. Późniejsza KFS (issued_at, external_id) wygrywa,
- * bo agent wysyła wartość po korekcie. Bierzemy KFS przypisane (AUTO/MANUAL) i opcjonalnie bieżącą.
+ * Korekty KFS projektu jako widok pochodny: ob_Id pozycji FS → kwota po korekcie. Źródło = wszystkie
+ * przypisane (AUTO/MANUAL) KFS projektu, w kolejności issued_at, potem external_id — późniejsza KFS
+ * wygrywa, bo agent wysyła wartość PO korekcie (narastająco). KFS nieprzypisana (np. UNMATCHED_CORRECTION)
+ * do mapy nie wchodzi — świadomie, rozstrzyga admin.
  */
-async function loadCorrections(projectId: string, includeDocumentId: string | null): Promise<Map<number, number>> {
+async function loadCorrections(projectId: string): Promise<Map<number, number>> {
     const rows = await query<StoredDoc>(
         `SELECT * FROM subiekt_documents
-         WHERE type = 'KFS' AND project_id = ? AND (assignment_status IN ${ASSIGNED_STATUSES} OR id = ?)
+         WHERE type = 'KFS' AND project_id = ? AND assignment_status IN ${ASSIGNED_STATUSES}
          ORDER BY issued_at, external_id`,
-        [projectId, includeDocumentId ?? '']
+        [projectId]
     );
     const corrections = new Map<number, number>();
     for (const row of rows) {
-        for (const pos of JSON.parse(row.positions_json) as SubiektPositionPayload[]) {
+        for (const pos of positionsOf(row)) {
             if (pos.corrects_position_external_id !== null && pos.corrects_position_external_id !== undefined) {
-                corrections.set(pos.corrects_position_external_id, pos.net_total);
+                corrections.set(pos.corrects_position_external_id, round2(pos.net_total));
             }
         }
     }
@@ -199,14 +230,15 @@ async function loadCorrections(projectId: string, includeDocumentId: string | nu
 }
 
 /**
- * Upsert pozycji jednego dokumentu wiodącego po kluczu (subiekt_document_id, subiekt_position_id):
- * nowa → addItemCore, zmieniona kwota → updateItemAmountCore, zniknęła z dokumentu → deleteItemCore.
+ * Upsert pozycji jednego dokumentu wiodącego po kluczu (subiekt_document_id, subiekt_position_id), kwota =
+ * po korekcie KFS (jeśli jest) albo z pozycji: nowa → addItemCore, zmieniona kwota → updateItemAmountCore,
+ * kwota ≤ 0 lub pozycja zniknęła z dokumentu → deleteItemCore (w ZAKOŃCZONY: korekta do 0).
  * Pola bez wpływu na prowizję (opis, numery, zapłata) odświeżamy bezpośrednim UPDATE. Typ istniejącej
  * pozycji się nie zmienia (type_overridden = decyzja admina; zmiana typu wymagałaby przeliczenia prowizji).
  */
 async function syncDocumentItems(
     source: StoredDoc,
-    project: { id: string; status: string },
+    project: ProjectRef,
     rootZkNumber: string | null,
     corrections: Map<number, number>,
     actor: ItemActor,
@@ -226,10 +258,10 @@ async function syncDocumentItems(
         if (seenPositions.has(pos.external_id)) continue;
         seenPositions.add(pos.external_id);
 
-        const amount = corrections.get(pos.external_id) ?? pos.net_total;
+        const amount = corrections.get(pos.external_id) ?? round2(pos.net_total);
         const item = byPosition.get(pos.external_id);
         if (!item) {
-            // Pozycje z kwotą ≤ 0 (np. gratisy) nie są tworzone — addItemCore i tak by je odrzucił.
+            // Pozycje z kwotą ≤ 0 (gratisy, korekta do zera) nie są tworzone — addItemCore i tak by je odrzucił.
             if (amount > 0) {
                 await addItemCore(project.id, buildItemInput(payload, { ...pos, net_total: amount }, {
                     subiektDocumentId: source.id, rootZkNumber,
@@ -239,18 +271,22 @@ async function syncDocumentItems(
         }
 
         kept.add(item.id);
-        const desired = buildItemInput(payload, { ...pos, net_total: amount }, {
-            subiektDocumentId: source.id, rootZkNumber, forcedType: item.type,
-        });
+        if (amount <= 0) {
+            await removeItem(item, project.status, actor);
+            continue;
+        }
+        if (Math.abs(round2(item.amount_net) - amount) >= EPSILON) {
+            await updateItemAmountCore(item.id, amount, actor);
+        }
         if (!Number(item.type_overridden) && positionToItemType(pos) !== item.type) {
             console.warn('[subiekt] Typ pozycji z Subiekta zmienił się — zostawiamy dotychczasowy', {
                 itemId: item.id, document: source.number, position: pos.external_id,
             });
         }
 
-        await setItemAmount(item, amount, project.status, actor);
-        if (amount <= 0) continue;
-
+        const desired = buildItemInput(payload, { ...pos, net_total: amount }, {
+            subiektDocumentId: source.id, rootZkNumber, forcedType: item.type,
+        });
         const isPaid = desired.is_paid ? 1 : 0;
         if (
             (item.description ?? null) !== (desired.description ?? null) ||
@@ -270,55 +306,69 @@ async function syncDocumentItems(
     }
 }
 
-/** Pozycje łańcucha po przypisaniu dokumentu ZK/FS: dokument wiodący = wszystkie FS (pozycje ZK znikają) albo ZK. */
-async function syncChainItems(current: StoredDoc, root: StoredDoc, project: { id: string; status: string }, actor: ItemActor) {
-    // Łańcuch = dokumenty tego korzenia w tym projekcie, przypisane (AUTO/MANUAL) + bieżący.
-    const chain = await query<StoredDoc>(
-        `SELECT * FROM subiekt_documents
-         WHERE root_external_id = ? AND project_id = ? AND (assignment_status IN ${ASSIGNED_STATUSES} OR id = ?)
-         ORDER BY issued_at, external_id`,
-        [root.external_id, project.id, current.id]
+/** Przypisane FS projektu: ob_Id pozycji → dokument FS (cel korekt KFS). */
+async function invoicePositionsOfProject(projectId: string): Promise<Map<number, StoredDoc>> {
+    const invoices = await query<StoredDoc>(
+        `SELECT * FROM subiekt_documents WHERE type = 'FS' AND project_id = ? AND assignment_status IN ${ASSIGNED_STATUSES}`,
+        [projectId]
     );
-    const rootZkNumber = root.type === 'ZK' ? root.number : null;
-    const corrections = await loadCorrections(project.id, null);
+    const byPosition = new Map<number, StoredDoc>();
+    for (const fs of invoices) for (const pos of positionsOf(fs)) byPosition.set(pos.external_id, fs);
+    return byPosition;
+}
+
+/** Czy każda pozycja KFS wskazuje pozycję przypisanej FS projektu (wszystko albo nic). */
+async function correctionMatches(kfs: StoredDoc, projectId: string): Promise<boolean> {
+    const targets = await invoicePositionsOfProject(projectId);
+    return positionsOf(kfs).every((pos) =>
+        pos.corrects_position_external_id !== null && pos.corrects_position_external_id !== undefined &&
+        targets.has(pos.corrects_position_external_id));
+}
+
+/**
+ * Odtwarza pozycje łańcucha dokumentu. Łańcuch = dokumenty tego samego korzenia w tym projekcie, przypisane
+ * (AUTO/MANUAL) + sam dokument. Jest FS → pozycje ZK łańcucha znikają, a każda FS synchronizuje swoje
+ * pozycje (z korektami KFS); brak FS → pozycje z ZK. KFS → resync łańcuchów FS, które koryguje.
+ * Brak projektu lub projekt NIEZREALIZOWANY → nic.
+ */
+async function syncChainOf(doc: StoredDoc, actor: ItemActor): Promise<void> {
+    if (!doc.project_id) return;
+    const project = await loadProject(doc.project_id, doc.number);
+    if (project.status === 'NIEZREALIZOWANY') return;
+
+    if (doc.type === 'KFS') {
+        const targets = await invoicePositionsOfProject(project.id);
+        const affected = new Map<string, StoredDoc>();
+        for (const pos of positionsOf(doc)) {
+            const fs = pos.corrects_position_external_id == null ? undefined : targets.get(pos.corrects_position_external_id);
+            if (fs) affected.set(fs.id, fs);
+        }
+        for (const fs of affected.values()) await syncChainOf(fs, actor);
+        return;
+    }
+
+    const chain = doc.root_external_id === null || doc.root_external_id === undefined
+        ? [doc]
+        : await query<StoredDoc>(
+            `SELECT * FROM subiekt_documents
+             WHERE root_external_id = ? AND project_id = ? AND (assignment_status IN ${ASSIGNED_STATUSES} OR id = ?)
+             ORDER BY issued_at, external_id`,
+            [doc.root_external_id, project.id, doc.id]
+        );
+    const root = doc.root_external_id === null || doc.root_external_id === undefined
+        ? undefined
+        : chain.find((d) => Number(d.external_id) === Number(doc.root_external_id)) ?? await loadDocByExternalId(Number(doc.root_external_id));
+    const rootZkNumber = root?.type === 'ZK' ? root.number : null;
+    const corrections = await loadCorrections(project.id);
 
     if (leadingDocType(chain.map((d) => d.type)) === 'FS') {
         for (const zk of chain.filter((d) => d.type === 'ZK')) {
             for (const item of await loadItemsOfDocument(zk.id)) await removeItem(item, project.status, actor);
         }
-        // Pozycje FS przypisanych ręcznie (MANUAL) zostawiamy panelowi admina (loop 4).
-        for (const fs of chain.filter((d) => d.type === 'FS' && (d.assignment_status === 'AUTO' || d.id === current.id))) {
-            await syncDocumentItems(fs, project, rootZkNumber, corrections, actor);
-        }
-    } else if (current.type === 'ZK') {
-        await syncDocumentItems(current, project, rootZkNumber, corrections, actor);
+        for (const fs of chain.filter((d) => d.type === 'FS')) await syncDocumentItems(fs, project, rootZkNumber, corrections, actor);
+    } else {
+        for (const zk of chain.filter((d) => d.type === 'ZK')) await syncDocumentItems(zk, project, rootZkNumber, corrections, actor);
     }
-}
-
-/**
- * KFS: każda pozycja wskazuje (corrects_position_external_id) pozycję FS; dopasowana pozycja projektu dostaje
- * kwotę po korekcie. Wszystko albo nic: choć jedna niedopasowana → UNMATCHED_CORRECTION, pozycje FS bez zmian.
- */
-async function applyCorrection(current: StoredDoc, project: { id: string; status: string }, actor: ItemActor): Promise<string | null> {
-    const targets: Array<{ item: Pick<StoredItem, 'id' | 'amount_net'>; positionId: number }> = [];
-    for (const pos of JSON.parse(current.positions_json) as SubiektPositionPayload[]) {
-        if (pos.corrects_position_external_id === null || pos.corrects_position_external_id === undefined) return 'UNMATCHED_CORRECTION';
-        const [item] = await query<Pick<StoredItem, 'id' | 'amount_net'>>(
-            `SELECT i.id, i.amount_net FROM project_items i
-             JOIN subiekt_documents d ON d.id = i.subiekt_document_id AND d.type = 'FS'
-             WHERE i.project_id = ? AND i.source = 'SUBIEKT' AND i.subiekt_position_id = ?
-             ORDER BY i.id LIMIT 1`,
-            [project.id, pos.corrects_position_external_id]
-        );
-        if (!item) return 'UNMATCHED_CORRECTION';
-        targets.push({ item, positionId: pos.corrects_position_external_id });
-    }
-
-    const corrections = await loadCorrections(project.id, current.id);
-    for (const { item, positionId } of targets) {
-        await setItemAmount(item, corrections.get(positionId)!, project.status, actor);
-    }
-    return null;
 }
 
 // --- zapis wyniku ---
@@ -326,7 +376,7 @@ async function applyCorrection(current: StoredDoc, project: { id: string; status
 async function saveAssignment(
     documentId: string,
     fields: {
-        status: 'AUTO' | 'UNASSIGNED';
+        status: string;
         note: string | null;
         architectCode: string | null;
         architectId: string | null;
@@ -344,74 +394,100 @@ async function saveAssignment(
     );
 }
 
-/**
- * Mapowanie jednego, już zapisanego dokumentu (reguły 2.4). Decyzje admina (MANUAL / IGNORED) wygrywają.
- * Dokument bez zmian i przypisany (AUTO) jest pomijany — odświeżamy tylko znacznik zapłaty jego pozycji;
- * bez zmian i nieprzypisany jest mapowany ponownie (rodzic lub kod architekta mogły dojść później).
- */
-export async function mapDocument(doc: SubiektDocumentPayload, documentId: string, outcome: UpsertOutcome): Promise<AssignmentResult> {
-    const current = await loadDocById(documentId);
-    if (current.assignment_status === 'IGNORED') return 'IGNORED';
-    if (current.assignment_status === 'MANUAL') return 'ASSIGNED';
-    if (outcome === 'UNCHANGED' && current.assignment_status === 'AUTO') {
-        // Zapłata nie wchodzi do hasha; is_paid pozycji nie wpływa na prowizję.
-        await query(
-            "UPDATE project_items SET is_paid = ? WHERE subiekt_document_id = ? AND source = 'SUBIEKT' AND is_paid <> ?",
-            [Number(current.is_paid), current.id, Number(current.is_paid)]
-        );
-        return 'ASSIGNED';
-    }
+async function refreshPaidFlag(doc: StoredDoc) {
+    // Zapłata nie wchodzi do hasha; is_paid pozycji nie wpływa na prowizję.
+    await query(
+        "UPDATE project_items SET is_paid = ? WHERE subiekt_document_id = ? AND source = 'SUBIEKT' AND is_paid <> ?",
+        [Number(doc.is_paid), doc.id, Number(doc.is_paid)]
+    );
+}
 
-    const unassigned = async (note: string, extra: { architectCode: string | null; architectId: string | null; rootExternalId: number | null; projectId?: string | null }) => {
-        await saveAssignment(current.id, { status: 'UNASSIGNED', note, ...extra, projectId: extra.projectId ?? null });
+/** Pełne mapowanie zapisanego wiersza: architekt → korzeń → projekt → pozycje (reguły 2.4). */
+async function remapStored(current: StoredDoc): Promise<AssignmentResult> {
+    const unassigned = async (note: string, fields: { architectCode: string | null; architectId: string | null; rootExternalId: number | null; projectId?: string | null }) => {
+        await saveAssignment(current.id, { status: 'UNASSIGNED', note, ...fields, projectId: fields.projectId ?? null });
         return 'UNASSIGNED' as const;
     };
 
     // a) architekt, b) korzeń (zapamiętany także dla nieprzypisanych — ułatwia ręczne przypisanie)
-    const architect = await resolveArchitect(doc);
+    const architect = await resolveArchitect(rowToPayload(current));
     const root = await findRoot(current.external_id);
     const rootExternalId = root ? Number(root.external_id) : null;
     if ('note' in architect) {
-        return unassigned(architect.note, { architectCode: architect.code, architectId: null, rootExternalId });
+        return unassigned(architect.note, { architectCode: architect.ownCode, architectId: null, rootExternalId });
     }
-    const located = { architectCode: architect.code, architectId: architect.architectId, rootExternalId };
+    const located = { architectCode: architect.ownCode, architectId: architect.architectId, rootExternalId };
     if (!root) return unassigned('NO_ROOT_DOCUMENT', located);
 
     // c) projekt: dokument zostaje w swoim projekcie; inaczej projekt korzenia; korzeń bez projektu tworzy go sam.
     let projectId = current.project_id ?? root.project_id;
-    if (current.project_id && root.project_id && current.project_id !== root.project_id) {
-        console.warn('[subiekt] Dokument jest w innym projekcie niż korzeń łańcucha — nie przenosimy', {
-            document: current.number, projectId: current.project_id, rootProjectId: root.project_id,
-        });
-    }
     if (!projectId) {
         if (root.id !== current.id) return unassigned('ROOT_UNASSIGNED', located);
         projectId = await createProjectForRoot(current, architect.architectId);
     }
+    const project = await loadProject(projectId, current.number);
 
-    const [project] = await query<{ id: string; status: string; owner_id: string }>(
-        'SELECT id, status, owner_id FROM projects WHERE id = ?',
-        [projectId]
-    );
-    if (!project) throw new Error(`Projekt ${projectId} dokumentu ${current.number} nie istnieje`);
+    let note: string | null = null;
     if (project.owner_id !== architect.architectId) {
-        console.warn('[subiekt] Architekt dokumentu różni się od właściciela projektu — projekt bez zmian (decyzja admina)', {
-            document: current.number, projectId, ownerId: project.owner_id, architectId: architect.architectId,
-        });
+        const mismatch = `OWNER_MISMATCH:${architect.code ?? architect.architectId}`;
+        // Dokument jeszcze bez projektu nie trafia do cudzego projektu.
+        if (!current.project_id) return unassigned(mismatch, located);
+        // Dokument już w projekcie: projekt i status zostają, admin dostaje wpis w logu (raz na zmianę powodu).
+        if (current.assignment_note !== mismatch) {
+            await logActivity(null, 'SUBIEKT_OWNER_MISMATCH',
+                `Subiekt: dokument ${current.number} wskazuje architekta ${architect.code ?? architect.architectId}, a projekt należy do innego architekta`,
+                { projectId, documentId: current.id, architectId: architect.architectId, ownerId: project.owner_id });
+        }
+        if (current.assignment_status !== 'AUTO') {
+            await saveAssignment(current.id, { status: current.assignment_status, note: mismatch, ...located, projectId });
+            return toResult(current.assignment_status);
+        }
+        note = mismatch;
     }
     if (project.status === 'NIEZREALIZOWANY') return unassigned('PROJECT_CANCELLED', { ...located, projectId });
-
-    await saveAssignment(current.id, { status: 'AUTO', note: null, ...located, projectId });
-
-    // d) pozycje (WZ i FP nigdy ich nie tworzą)
-    const actor: ItemActor = { actorId: null, note: `Subiekt: ${doc.type} ${doc.number}` };
-    const stored = await loadDocById(current.id);
-    if (stored.type === 'KFS') {
-        const note = await applyCorrection(stored, project, actor);
-        // Niedopasowana korekta zostaje przy projekcie (project_id, root) — admin widzi ją w skrzynce.
-        if (note) return unassigned(note, { ...located, projectId });
-    } else if (createsItems(stored.type)) {
-        await syncChainItems(stored, root.id === stored.id ? stored : root, project, actor);
+    // Niedopasowana korekta zostaje przy projekcie (project_id, root) — admin widzi ją w skrzynce; pozycje FS bez zmian.
+    if (current.type === 'KFS' && !(await correctionMatches(current, projectId))) {
+        return unassigned('UNMATCHED_CORRECTION', { ...located, projectId });
     }
+
+    await saveAssignment(current.id, { status: 'AUTO', note, ...located, projectId });
+
+    // d) pozycje (WZ i FP nigdy ich nie tworzą; KFS przelicza korygowane FS)
+    await syncChainOf({
+        ...current, assignment_status: 'AUTO', assignment_note: note, architect_code: located.architectCode,
+        architect_id: located.architectId, root_external_id: rootExternalId, project_id: projectId,
+    }, actorFor(current));
     return 'ASSIGNED';
+}
+
+/**
+ * Odtwarza pozycje projektu wynikające z łańcucha dokumentu (usunięcie pozycji ZK, gdy wiodą FS; resync
+ * pozycji FS/ZK z korektami KFS). Bez zmiany przypisania. Dla loopu 4: po ręcznym przypisaniu/przeniesieniu
+ * (project_id + assignment_status = 'MANUAL') wywołać dla dokumentu. Wołać w transakcji.
+ */
+export async function syncChainItems(subiektDocumentId: string): Promise<void> {
+    const doc = await loadDocById(subiektDocumentId);
+    await syncChainOf(doc, actorFor(doc));
+}
+
+/** Pełne mapowanie jednego zapisanego dokumentu niezależnie od jego obecnego statusu. Wołać w transakcji. */
+export async function remapDocument(subiektDocumentId: string): Promise<AssignmentResult> {
+    return remapStored(await loadDocById(subiektDocumentId));
+}
+
+/**
+ * Wejście synchronizacji (processDocument) po upsercie dokumentu:
+ * - IGNORED → nic; MANUAL → bez zmiany przypisania, ale treść (pozycje) z Subiekta przy INSERTED/CHANGED;
+ * - AUTO bez zmian → tylko znacznik zapłaty pozycji;
+ * - pozostałe (nowy, zmieniony, nieprzypisany — także bez zmian, bo rodzic lub kod mogły dojść później) → remap.
+ */
+export async function mapDocument(documentId: string, outcome: UpsertOutcome): Promise<AssignmentResult> {
+    const current = await loadDocById(documentId);
+    if (current.assignment_status === 'IGNORED') return 'IGNORED';
+    if (current.assignment_status === 'MANUAL' || (current.assignment_status === 'AUTO' && outcome === 'UNCHANGED')) {
+        if (outcome === 'UNCHANGED') await refreshPaidFlag(current);
+        else await syncChainOf(current, actorFor(current));
+        return 'ASSIGNED';
+    }
+    return remapStored(current);
 }

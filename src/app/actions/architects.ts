@@ -78,7 +78,8 @@ export async function updateArchitectAdminFields(
     revalidatePath(`/dashboard/admin/architects/${architectId}`);
     revalidatePath('/dashboard/admin');
 
-    return { success: true };
+    // Znormalizowany kod (trim + uppercase) — formularz pokazuje to, co faktycznie zapisano.
+    return { success: true, subiekt_code: changesCode ? nextCode : undefined };
 }
 
 export async function updateProfile(data: {

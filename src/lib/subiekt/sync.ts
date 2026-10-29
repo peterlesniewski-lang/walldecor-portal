@@ -156,7 +156,7 @@ export interface ProcessedDocument {
 export async function processDocument(doc: SubiektDocumentPayload, runId: string): Promise<ProcessedDocument> {
     return withTransaction(async () => {
         const { id, outcome } = await upsertDocument(doc, runId);
-        const assignment = await mapDocument(doc, id, outcome);
+        const assignment = await mapDocument(id, outcome);
         return { id, outcome, assignment };
     });
 }

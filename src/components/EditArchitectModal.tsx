@@ -94,8 +94,9 @@ export default function EditArchitectModal({ isOpen, onClose, architectId }: Edi
         try {
             // Kod najpierw: jego błąd (zajęty / zły format) nie zostawia częściowo zapisanych danych profilu.
             const { subiekt_code, ...profile } = formData;
-            await updateArchitectAdminFields(architectId, { subiekt_code });
+            const saved = await updateArchitectAdminFields(architectId, { subiekt_code });
             await updateArchitect(architectId, profile);
+            setFormData(prev => ({ ...prev, subiekt_code: saved.subiekt_code ?? '' }));
             setSuccess(true);
             setTimeout(() => {
                 setSuccess(false);
