@@ -1,5 +1,6 @@
 // Prowizja jednej pozycji do widoku: rekord początkowy + korekty (np. KFS po rozliczeniu projektu,
-// korekta kwoty pozycji ZAKOŃCZONY). Kwota = suma, status i stawka = pierwszego rekordu pozycji.
+// korekta kwoty pozycji ZAKOŃCZONY). Kwota = suma, status i stawka = najstarszego rekordu pozycji
+// (zapytania w services.ts sortują po created_at, id — bez tego MySQL zwraca wiersze w dowolnej kolejności).
 
 export interface ItemCommissionRow {
     project_item_id: string;
