@@ -7,7 +7,7 @@
 --      subiekt_document_id : id dokumentu w subiekt_documents
 --      subiekt_position_id : id pozycji dokumentu w Subiekcie
 --      Loop 1: kod architekta w Subiekcie, ręczne przełączenie typu pozycji, tabele pośrednie
---      (dokumenty, snapshoty, uruchomienia agenta).
+--      (dokumenty, snapshoty, uruchomienia agenta i ich odebrane strony).
 --      SQLite nie obsługuje ADD COLUMN ... UNIQUE, dlatego indeks unikalny jest osobną instrukcją.
 
 ALTER TABLE project_items ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'MANUAL';
@@ -60,6 +60,14 @@ CREATE TABLE IF NOT EXISTS subiekt_document_snapshots (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_subiekt_snapshots_document ON subiekt_document_snapshots(document_id, created_at);
+
+-- Odebrane strony uruchomienia: retry tej samej strony nie zawyża subiekt_sync_runs.pages_received.
+CREATE TABLE IF NOT EXISTS subiekt_sync_run_pages (
+    run_id VARCHAR(36) NOT NULL,
+    page INTEGER NOT NULL,
+    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (run_id, page)
+);
 
 CREATE TABLE IF NOT EXISTS subiekt_sync_runs (
     id VARCHAR(36) NOT NULL PRIMARY KEY,

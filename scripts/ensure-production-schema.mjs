@@ -112,6 +112,15 @@ const requiredTables = [
         )`,
     },
     {
+        name: 'subiekt_sync_run_pages',
+        createSql: `CREATE TABLE IF NOT EXISTS subiekt_sync_run_pages (
+            run_id VARCHAR(36) NOT NULL,
+            page INTEGER NOT NULL,
+            received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (run_id, page)
+        )`,
+    },
+    {
         name: 'subiekt_sync_runs',
         createSql: `CREATE TABLE IF NOT EXISTS subiekt_sync_runs (
             id VARCHAR(36) NOT NULL PRIMARY KEY,

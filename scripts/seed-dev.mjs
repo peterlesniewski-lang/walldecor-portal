@@ -99,6 +99,10 @@ CREATE TABLE subiekt_document_snapshots (
   positions_json TEXT NOT NULL, net_total REAL NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_subiekt_snapshots_document ON subiekt_document_snapshots(document_id, created_at);
+CREATE TABLE subiekt_sync_run_pages (
+  run_id TEXT NOT NULL, page INTEGER NOT NULL, received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (run_id, page)
+);
 CREATE TABLE subiekt_sync_runs (
   id TEXT PRIMARY KEY, agent_version TEXT, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, finished_at TEXT,
   pages_received INTEGER NOT NULL DEFAULT 0, pages_expected INTEGER NOT NULL DEFAULT 0,

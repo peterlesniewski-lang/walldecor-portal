@@ -60,6 +60,8 @@ function makeRequest(documents: Doc[], overrides: Partial<SyncRequest> = {}): Sy
 }
 
 const docRow = (externalId: number) => db.prepare('SELECT * FROM subiekt_documents WHERE external_id = ?').get(externalId) as any;
+const runPages = (runId: string) =>
+    (db.prepare('SELECT page FROM subiekt_sync_run_pages WHERE run_id = ? ORDER BY page').all(runId) as any[]).map((r) => r.page);
 const runRow = (runId: string) => db.prepare('SELECT * FROM subiekt_sync_runs WHERE id = ?').get(runId) as any;
 const snapshotCount = (externalIds: number[]) =>
     (db.prepare(
@@ -77,7 +79,7 @@ const baseDocs = () => BASE_IDS.map((id) => makeDoc(id));
 test('schema from seed-dev already contains the Subiekt tables (migration 019 not applied twice)', () => {
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'subiekt_%' ORDER BY name").all() as any[])
         .map((t) => t.name);
-    assert.deepEqual(tables, ['subiekt_document_snapshots', 'subiekt_documents', 'subiekt_sync_runs']);
+    assert.deepEqual(tables, ['subiekt_document_snapshots', 'subiekt_documents', 'subiekt_sync_run_pages', 'subiekt_sync_runs']);
     const userCols = (db.prepare('PRAGMA table_info(users)').all() as any[]).map((c) => c.name);
     const itemCols = (db.prepare('PRAGMA table_info(project_items)').all() as any[]).map((c) => c.name);
     assert.ok(userCols.includes('subiekt_code'));
@@ -204,6 +206,55 @@ test('2-page run stays RUNNING after page 1 and is DONE after page 2 with summed
     assert.equal(run.documents_unassigned, 4);
 });
 
+test('replayed page 1 of 2 does not advance the run; page 2 then closes it', async (t) => {
+    const warn = t.mock.method(console, 'warn', () => {});
+    const runId = randomUUID();
+    const page1 = () => makeRequest([makeDoc(2101), makeDoc(2102)], { run_id: runId, page: 1, pages: 2 });
+
+    assert.equal((await processSyncPage(page1())).accepted, 2);
+    const replay = await processSyncPage(page1());
+    assert.deepEqual(replay, { run_id: runId, accepted: 0, unchanged: 2, rejected: [], unassigned: 2 });
+    assert.equal(warn.mock.callCount(), 1, 'powtórzona strona jest logowana');
+
+    let run = runRow(runId);
+    assert.equal(run.status, 'RUNNING');
+    assert.equal(run.finished_at, null);
+    assert.equal(run.pages_received, 1);
+    assert.deepEqual(runPages(runId), [1]);
+    // Liczniki dokumentów sumują się także dla powtórki (świadomie).
+    assert.equal(run.documents_accepted, 2);
+    assert.equal(run.documents_unchanged, 2);
+
+    await processSyncPage(makeRequest([makeDoc(2103)], { run_id: runId, page: 2, pages: 2 }));
+    run = runRow(runId);
+    assert.equal(run.status, 'DONE');
+    assert.ok(run.finished_at);
+    assert.equal(run.pages_received, 2);
+    assert.deepEqual(runPages(runId), [1, 2]);
+    assert.equal(docCount([2101, 2102, 2103]), 3);
+});
+
+test('single page sent twice with the same run_id (plan curl validator) → pages_received 1, DONE, unchanged', async (t) => {
+    t.mock.method(console, 'warn', () => {});
+    const request = makeRequest([makeDoc(2201)]);
+
+    const first = await processSyncPage(request);
+    assert.equal(first.accepted, 1);
+    const finishedAt = runRow(request.run_id).finished_at;
+    assert.ok(finishedAt);
+
+    const second = await processSyncPage(request);
+    assert.deepEqual(second, { run_id: request.run_id, accepted: 0, unchanged: 1, rejected: [], unassigned: 1 });
+
+    const run = runRow(request.run_id);
+    assert.equal(run.status, 'DONE');
+    assert.equal(run.pages_received, 1);
+    assert.equal(run.pages_expected, 1);
+    assert.equal(run.finished_at, finishedAt, 'finished_at to pierwsze zamknięcie runu');
+    assert.equal(docCount([2201]), 1);
+    assert.equal(snapshotCount([2201]), 1);
+});
+
 test('a document violating a DB constraint is rejected with INTERNAL_ERROR, the rest of the page is saved', async (t) => {
     t.mock.method(console, 'error', () => {}); // oczekiwany błąd — nie zaśmiecać wyniku testów
     const broken = makeDoc(3002, { number: null as any });
@@ -237,6 +288,7 @@ test('called inside an outer withTransaction that throws → document writes rol
     assert.equal(docRow(4001), undefined);
     assert.equal(snapshotCount([4001]), 0);
     assert.equal(runRow(request.run_id), undefined);
+    assert.deepEqual(runPages(request.run_id), []);
 });
 
 test('query from a stray callback after COMMIT warns and still runs outside the transaction', async (t) => {
@@ -277,7 +329,8 @@ function signedRequest(method: 'POST' | 'GET', path: string, body: string, opts:
     });
 }
 
-test('POST /sync: signed page → 200 with SubiektSyncResponse; replay → unchanged', async () => {
+test('POST /sync: signed page → 200 with SubiektSyncResponse; replay → unchanged', async (t) => {
+    t.mock.method(console, 'warn', () => {}); // powtórka tej samej strony jest logowana
     const body = JSON.stringify(makeRequest([makeDoc(5001)]));
     const first = await syncRoute.POST(signedRequest('POST', '/api/integrations/subiekt/sync', body));
     assert.equal(first.status, 200);
@@ -289,6 +342,7 @@ test('POST /sync: signed page → 200 with SubiektSyncResponse; replay → uncha
     const second = await syncRoute.POST(signedRequest('POST', '/api/integrations/subiekt/sync', body));
     assert.equal((await second.json()).unchanged, 1);
     assert.equal(docCount([5001]), 1);
+    assert.equal(runRow(JSON.parse(body).run_id).pages_received, 1);
 });
 
 test('POST /sync: wrong token 401, body changed after signing 401, bad JSON 400, schema 400, too many 413', async () => {
