@@ -113,7 +113,7 @@ export interface SubiektSyncResponse {
 }
 ```
 
-Kody odpowiedzi: `200` paczka przetworzona (odrzucone dokumenty w `rejected`), `401` zły token lub podpis, `400` niepoprawny JSON lub schemat (cała paczka odrzucona), `413` ponad 200 dokumentów, `429` ponad 60 wywołań na 10 minut z jednego IP.
+Kody odpowiedzi: `200` paczka przetworzona (odrzucone dokumenty w `rejected`), `401` zły token lub podpis, `400` niepoprawny JSON lub koperta paczki (`run_id`, `page`, `pages`, `documents`), `413` ponad 200 dokumentów, `429` ponad 60 wywołań na 10 minut z jednego IP. **Walidacja dokumentów jest per dokument:** błędny dokument nie odrzuca strony, tylko trafia do `rejected` z powodem `VALIDATION:<ścieżka>: <komunikat>` (decyzja po przeglądzie jakości loopa 1, żeby jeden zły dokument nie blokował codziennej synchronizacji). Hash treści ma wersję (`HASH_VERSION`); podbicie wersji wymusza nowy snapshot każdego dokumentu.
 
 ### 2.2 Nowe tabele (migracja `migrations/019_subiekt_integration.sql`)
 
@@ -171,6 +171,13 @@ CREATE TABLE IF NOT EXISTS subiekt_document_snapshots (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_subiekt_snapshots_document ON subiekt_document_snapshots(document_id, created_at);
+
+CREATE TABLE IF NOT EXISTS subiekt_sync_run_pages (
+    run_id VARCHAR(36) NOT NULL,
+    page INTEGER NOT NULL,
+    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (run_id, page)
+);
 
 CREATE TABLE IF NOT EXISTS subiekt_sync_runs (
     id VARCHAR(36) NOT NULL PRIMARY KEY,
@@ -346,7 +353,7 @@ export function verifySubiektRequest(
     env: { token?: string; secret?: string; maxSkewSeconds?: number } = {
         token: process.env.SUBIEKT_SYNC_TOKEN,
         secret: process.env.SUBIEKT_SYNC_SECRET,
-        maxSkewSeconds: Number(process.env.SUBIEKT_SYNC_MAX_SKEW_SECONDS || 300),
+        maxSkewSeconds: (() => { const n = Number(process.env.SUBIEKT_SYNC_MAX_SKEW_SECONDS); return Number.isFinite(n) && n > 0 ? n : 300; })(),
     }
 ): AuthResult {
     if (!env.token || !env.secret) return { ok: false, status: 503, reason: 'NOT_CONFIGURED' };
@@ -376,12 +383,12 @@ Route handler czyta `await req.text()` (surowe body, nie `req.json()`), bo podpi
 
 `processSyncPage` (szkic przebiegu). **Granica transakcji = jeden dokument**, nie cała strona: zagnieżdżony `withTransaction` dołącza do zewnętrznej transakcji bez savepointu, więc błąd wewnętrznego wywołania musi propagować do granicy transakcji. Każdy dokument jest przetwarzany w osobnym `withTransaction`; wyjątek w jego obrębie wycofuje tylko ten dokument, trafia do `rejected` z powodem `INTERNAL_ERROR:<komunikat>` i jest logowany, a przetwarzanie reszty paczki trwa. Aktualizacja `subiekt_sync_runs` odbywa się poza transakcjami dokumentów.
 
-1. `INSERT` lub `UPDATE subiekt_sync_runs` po `run_id` (`pages_received += 1`, `pages_expected = pages`).
+1. `INSERT` lub `UPDATE subiekt_sync_runs` po `run_id` (`pages_expected = pages`). Strona jest rejestrowana w `subiekt_sync_run_pages (run_id, page)`; ponowna wysyłka tej samej strony (retry agenta po timeoucie) nie zwiększa `pages_received` — dokumenty są przetwarzane ponownie idempotentnie, a `pages_received = COUNT(*)` z tej tabeli dla runu.
 2. Dla każdego dokumentu: `content_hash = hashDocument(doc)`; `SELECT id, content_hash FROM subiekt_documents WHERE external_id = ?`.
    - brak → `INSERT` dokumentu + `INSERT` snapshotu; `accepted++`.
    - jest, hash równy → `UPDATE last_seen_at, last_run_id, is_paid` (zapłata nie wchodzi do hasha, bo nie jest zmianą treści, ale ma się aktualizować); `unchanged++`.
    - jest, hash różny → `UPDATE` wszystkich pól treści + `last_changed_at` + `INSERT` snapshotu; `accepted++`.
-3. Gdy `pages_received === pages_expected` → `status = 'DONE'`, `finished_at = NOW()`.
+3. Gdy `pages_received >= pages_expected` → `status = 'DONE'`, `finished_at = NOW()`. `processSyncPage` musi być wywoływane poza transakcją (route tak robi); wywołanie wewnątrz cudzej transakcji znosi izolację per dokument.
 4. Zwrócić `SubiektSyncResponse`.
 
 - [ ] Krok 1: migracja 019 (plik już istnieje po loopie 0 z trzema `ALTER TABLE project_items`; dopisać resztę schematu z 2.2) + aktualizacja `seed-dev.mjs` i `ensure-production-schema.mjs`. Uruchomić migrację na `dev.sqlite` (`sqlite3 dev.sqlite < migrations/019_subiekt_integration.sql`), sprawdzić `.schema subiekt_documents`.
