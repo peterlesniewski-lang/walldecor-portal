@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createRateLimiter } from '../src/lib/rateLimit.ts';
+import { createRateLimiter, getClientIp } from '../src/lib/rateLimit.ts';
 
 test('rate limiter allows max attempts and blocks the next one', () => {
     const limiter = createRateLimiter({ max: 3, windowMs: 1000 });
@@ -36,9 +36,17 @@ test('rate limiter reset clears the key', () => {
 
 test('forgot-password route is rate limited per IP and per email', async () => {
     const source = await readFile(new URL('../src/app/api/auth/forgot-password/route.ts', import.meta.url), 'utf8');
-    assert.match(source, /import \{ createRateLimiter \} from '@\/lib\/rateLimit';/);
+    assert.match(source, /import \{ createRateLimiter, getClientIp \} from '@\/lib\/rateLimit';/);
     assert.match(source, /status: 429/);
-    assert.match(source, /x-forwarded-for/);
+    assert.match(source, /ipLimiter\.check\(getClientIp\(req\)\)/);
+});
+
+test('getClientIp takes the first x-forwarded-for address, then x-real-ip, then unknown', () => {
+    const req = (headers: Record<string, string>) => new Request('http://localhost/', { headers });
+    assert.equal(getClientIp(req({ 'x-forwarded-for': ' 203.0.113.5 , 10.0.0.1' })), '203.0.113.5');
+    assert.equal(getClientIp(req({ 'x-forwarded-for': ' ', 'x-real-ip': '198.51.100.7' })), '198.51.100.7');
+    assert.equal(getClientIp(req({ 'x-real-ip': ' 198.51.100.8 ' })), '198.51.100.8');
+    assert.equal(getClientIp(req({})), 'unknown');
 });
 
 test('auth login uses the shared rate limiter and case-insensitive email lookup', async () => {

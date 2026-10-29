@@ -345,6 +345,23 @@ test('POST /sync: signed page → 200 with SubiektSyncResponse; replay → uncha
     assert.equal(runRow(JSON.parse(body).run_id).pages_received, 1);
 });
 
+test('POST /sync: invalid documents are rejected with VALIDATION:, valid ones on the page are saved (200)', async () => {
+    const page = makeRequest([makeDoc(5101), makeDoc(5102, { type: 'XX' as any }), makeDoc(5103)]);
+    (page.documents as any[]).push({ ...makeDoc(5104), external_id: 'abc' });
+    const res = await syncRoute.POST(signedRequest('POST', '/api/integrations/subiekt/sync', JSON.stringify(page)));
+    assert.equal(res.status, 200);
+    const json = await res.json();
+    assert.equal(json.accepted, 2);
+    assert.equal(json.unassigned, 2);
+    assert.deepEqual(json.rejected, [
+        { external_id: 5102, reason: 'VALIDATION:type: expected one of ZK, FS, KFS, FP, WZ' },
+        { external_id: 0, reason: 'VALIDATION:documents[3]: external_id: expected positive integer' },
+    ]);
+    assert.equal(docCount([5101, 5103]), 2);
+    assert.equal(docRow(5102), undefined);
+    assert.equal(runRow(page.run_id).documents_rejected, 2);
+});
+
 test('POST /sync: wrong token 401, body changed after signing 401, bad JSON 400, schema 400, too many 413', async () => {
     const body = JSON.stringify(makeRequest([makeDoc(5002)]));
     const wrongToken = await syncRoute.POST(signedRequest('POST', '/api/integrations/subiekt/sync', body, { token: 'c'.repeat(64) }));
@@ -391,6 +408,12 @@ test('GET /status: last run and unassigned count; missing configuration → 503'
     assert.equal(json.unassigned_count, expectedCount);
     assert.ok(json.last_run);
     assert.equal(json.last_run.status, 'DONE');
+    // Daty jak na MySQL (Date → ISO), liczniki jako liczby.
+    assert.match(json.last_run.started_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/);
+    assert.match(json.last_run.finished_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/);
+    const raw = runRow(json.last_run.id);
+    assert.equal(json.last_run.started_at, new Date(raw.started_at.replace(' ', 'T') + 'Z').toISOString());
+    assert.equal(typeof json.last_run.pages_received, 'number');
 
     t.mock.method(console, 'warn', () => {});
     delete process.env.SUBIEKT_SYNC_SECRET;

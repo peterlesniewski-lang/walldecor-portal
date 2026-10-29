@@ -4,20 +4,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { withTransaction } from '@/lib/db';
 import { logActivity } from '@/lib/services';
 import { validatePasswordStrength } from '@/lib/passwordPolicy';
-import { createRateLimiter } from '@/lib/rateLimit';
+import { createRateLimiter, getClientIp } from '@/lib/rateLimit';
 import { splitFullName } from '@/lib/invitations';
 
 // Publiczny endpoint (bez sesji): limit prób per IP, jak w forgot-password.
 const ipLimiter = createRateLimiter({ max: 20, windowMs: 15 * 60 * 1000 });
-
-function getClientIp(req: NextRequest): string {
-    const forwarded = req.headers.get('x-forwarded-for');
-    if (forwarded) {
-        const first = forwarded.split(',')[0]?.trim();
-        if (first) return first;
-    }
-    return req.headers.get('x-real-ip')?.trim() || 'unknown';
-}
 
 const INVALID_LINK = 'Link zaproszenia jest nieważny lub wygasł. Poproś WallDecor o nowe zaproszenie.';
 

@@ -48,17 +48,33 @@ function makeRequest(overrides: Record<string, unknown> = {}) {
     };
 }
 
-function expectError(json: unknown): string {
+function expectError(json: unknown, code: 'INVALID_ENVELOPE' | 'TOO_MANY_DOCUMENTS' = 'INVALID_ENVELOPE'): string {
     const result = parseSyncRequest(json);
     assert.equal(result.ok, false);
-    return result.ok ? '' : result.error;
+    if (result.ok) return '';
+    assert.equal(result.code, code);
+    return result.error;
 }
+
+/** Jeden niepoprawny dokument obok poprawnego: poprawny przechodzi, zwraca odrzucenie złego. */
+function rejectionOf(doc: Record<string, unknown>): { external_id: number; reason: string } {
+    const result = parseSyncRequest(makeRequest({ documents: [makeDoc(900), doc] }));
+    assert.equal(result.ok, true);
+    if (!result.ok) throw new Error('unreachable');
+    assert.deepEqual(result.value.documents.map((d) => d.external_id), [900]);
+    assert.equal(result.rejected.length, 1);
+    return result.rejected[0];
+}
+const reasonOf = (doc: Record<string, unknown>) => rejectionOf(doc).reason;
 
 test('accepts a valid two-document request and returns it unchanged', () => {
     const input = makeRequest();
     const result = parseSyncRequest(input);
     assert.equal(result.ok, true);
-    if (result.ok) assert.deepEqual(result.value, input);
+    if (result.ok) {
+        assert.deepEqual(result.value, input);
+        assert.deepEqual(result.rejected, []);
+    }
 });
 
 test('drops unknown extra fields', () => {
@@ -74,16 +90,19 @@ test('drops unknown extra fields', () => {
     }
 });
 
+// --- Koperta: błąd odrzuca całe żądanie (INVALID_ENVELOPE / TOO_MANY_DOCUMENTS) ---
+
 test('rejects a non-object body', () => {
     expectError(null);
     expectError([]);
     expectError('x');
 });
 
-test('rejects a request without documents', () => {
+test('rejects a request without documents or with non-array documents', () => {
     const input: Record<string, unknown> = makeRequest();
     delete input.documents;
     assert.match(expectError(input), /documents/);
+    assert.match(expectError(makeRequest({ documents: {} })), /documents/);
 });
 
 test('rejects a bad run_id', () => {
@@ -104,19 +123,14 @@ test('rejects non-positive or fractional page numbers', () => {
     assert.match(expectError(makeRequest({ pages: 1.5 })), /pages/);
 });
 
-test('rejects external_id given as a string', () => {
-    const input = makeRequest({ documents: [makeDoc(1, { external_id: '1' })] });
-    assert.match(expectError(input), /documents\[0\]\.external_id/);
-});
-
-test('rejects an unknown document type', () => {
-    const input = makeRequest({ documents: [makeDoc(1, { type: 'XX' })] });
-    assert.match(expectError(input), /documents\[0\]\.type/);
-});
-
-test('rejects more than the maximum number of documents', () => {
+test('rejects more than the maximum number of documents with code TOO_MANY_DOCUMENTS', () => {
     const documents = Array.from({ length: SUBIEKT_SYNC_MAX_DOCUMENTS + 1 }, (_, i) => makeDoc(i + 1));
-    assert.equal(expectError(makeRequest({ documents })), 'TOO_MANY_DOCUMENTS');
+    assert.equal(expectError(makeRequest({ documents }), 'TOO_MANY_DOCUMENTS'), 'TOO_MANY_DOCUMENTS');
+});
+
+test('the document limit counts invalid documents too', () => {
+    const documents = Array.from({ length: SUBIEKT_SYNC_MAX_DOCUMENTS + 1 }, () => ({ broken: true }));
+    expectError(makeRequest({ documents }), 'TOO_MANY_DOCUMENTS');
 });
 
 test('accepts exactly the maximum number of documents', () => {
@@ -124,45 +138,77 @@ test('accepts exactly the maximum number of documents', () => {
     assert.equal(parseSyncRequest(makeRequest({ documents })).ok, true);
 });
 
+// --- Dokumenty: walidowane pojedynczo, zły dokument → rejected, reszta przechodzi ---
+
+test('an invalid document among valid ones is excluded and reported with a VALIDATION: reason', () => {
+    const result = parseSyncRequest(makeRequest({
+        documents: [makeDoc(1), makeDoc(2, { type: 'XX' }), makeDoc(3)],
+    }));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.value.documents.map((d) => d.external_id), [1, 3]);
+    assert.deepEqual(result.rejected, [{ external_id: 2, reason: 'VALIDATION:type: expected one of ZK, FS, KFS, FP, WZ' }]);
+});
+
+test('a page where every document is invalid still parses, with an empty documents list', () => {
+    const result = parseSyncRequest(makeRequest({ documents: [makeDoc(1, { number: '' }), 'x'] }));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.value.documents, []);
+    assert.deepEqual(result.rejected.map((r) => r.external_id), [1, 0]);
+    assert.equal(result.rejected[1].reason, 'VALIDATION:documents[1]: expected object');
+});
+
+test('a non-numeric document external_id is reported as external_id 0 with the array index', () => {
+    assert.deepEqual(rejectionOf(makeDoc(1, { external_id: '1' })), {
+        external_id: 0,
+        reason: 'VALIDATION:documents[1]: external_id: expected positive integer',
+    });
+});
+
+test('a document with a valid external_id but another bad field keeps its external_id', () => {
+    assert.deepEqual(rejectionOf(makeDoc(7, { type: 'XX' })).external_id, 7);
+});
+
 test('rejects an invalid issued_at', () => {
-    assert.match(expectError(makeRequest({ documents: [makeDoc(1, { issued_at: '20.10.2026' })] })), /documents\[0\]\.issued_at/);
-    assert.match(expectError(makeRequest({ documents: [makeDoc(1, { issued_at: '2026-02-31' })] })), /documents\[0\]\.issued_at/);
+    assert.match(reasonOf(makeDoc(1, { issued_at: '20.10.2026' })), /^VALIDATION:issued_at: /);
+    assert.match(reasonOf(makeDoc(1, { issued_at: '2026-02-31' })), /^VALIDATION:issued_at: /);
 });
 
 test('rejects non-finite totals and a non-boolean is_paid', () => {
-    assert.match(expectError(makeRequest({ documents: [makeDoc(1, { net_total: null })] })), /documents\[0\]\.net_total/);
-    assert.match(expectError(makeRequest({ documents: [makeDoc(1, { gross_total: 'abc' })] })), /documents\[0\]\.gross_total/);
-    assert.match(expectError(makeRequest({ documents: [makeDoc(1, { is_paid: 0 })] })), /documents\[0\]\.is_paid/);
+    assert.match(reasonOf(makeDoc(1, { net_total: null })), /^VALIDATION:net_total: /);
+    assert.match(reasonOf(makeDoc(1, { gross_total: 'abc' })), /^VALIDATION:gross_total: /);
+    assert.match(reasonOf(makeDoc(1, { is_paid: 0 })), /^VALIDATION:is_paid: /);
 });
 
 test('rejects empty contractor_name and overlong nip', () => {
-    assert.match(expectError(makeRequest({ documents: [makeDoc(1, { contractor_name: '' })] })), /contractor_name/);
-    assert.match(expectError(makeRequest({ documents: [makeDoc(1, { contractor_nip: 'x'.repeat(21) })] })), /contractor_nip/);
+    assert.match(reasonOf(makeDoc(1, { contractor_name: '' })), /^VALIDATION:contractor_name: /);
+    assert.match(reasonOf(makeDoc(1, { contractor_nip: 'x'.repeat(21) })), /^VALIDATION:contractor_nip: /);
 });
 
 test('rejects a non-integer parent_external_id', () => {
-    assert.match(expectError(makeRequest({ documents: [makeDoc(1, { parent_external_id: 0 })] })), /parent_external_id/);
+    assert.match(reasonOf(makeDoc(1, { parent_external_id: 0 })), /^VALIDATION:parent_external_id: /);
 });
 
-test('names the path of an invalid position field', () => {
+test('names the path of an invalid position field relative to the document', () => {
     const doc = makeDoc(1);
     doc.positions[0].external_id = 'abc' as unknown as number;
-    assert.equal(
-        expectError(makeRequest({ documents: [doc] })),
-        'documents[0].positions[0].external_id: expected positive integer'
-    );
+    assert.deepEqual(rejectionOf(doc), {
+        external_id: 1,
+        reason: 'VALIDATION:positions[0].external_id: expected positive integer',
+    });
 });
 
 test('rejects invalid position fields', () => {
     const bad = (patch: Record<string, unknown>) => {
         const doc = makeDoc(1);
         Object.assign(doc.positions[0], patch);
-        return expectError(makeRequest({ documents: [doc] }));
+        return reasonOf(doc);
     };
-    assert.match(bad({ ordinal: 0 }), /positions\[0\]\.ordinal/);
-    assert.match(bad({ name: '' }), /positions\[0\]\.name/);
-    assert.match(bad({ quantity: Infinity }), /positions\[0\]\.quantity/);
-    assert.match(bad({ unit: 'x'.repeat(17) }), /positions\[0\]\.unit/);
-    assert.match(bad({ product_id: -1 }), /positions\[0\]\.product_id/);
-    assert.match(bad({ corrects_position_external_id: 1.5 }), /positions\[0\]\.corrects_position_external_id/);
+    assert.match(bad({ ordinal: 0 }), /^VALIDATION:positions\[0\]\.ordinal: /);
+    assert.match(bad({ name: '' }), /^VALIDATION:positions\[0\]\.name: /);
+    assert.match(bad({ quantity: Infinity }), /^VALIDATION:positions\[0\]\.quantity: /);
+    assert.match(bad({ unit: 'x'.repeat(17) }), /^VALIDATION:positions\[0\]\.unit: /);
+    assert.match(bad({ product_id: -1 }), /^VALIDATION:positions\[0\]\.product_id: /);
+    assert.match(bad({ corrects_position_external_id: 1.5 }), /^VALIDATION:positions\[0\]\.corrects_position_external_id: /);
 });

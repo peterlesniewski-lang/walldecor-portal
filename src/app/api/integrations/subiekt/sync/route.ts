@@ -23,13 +23,14 @@ export async function POST(req: Request) {
         return Response.json({ error: 'INVALID_JSON' }, { status: 400 });
     }
 
+    // Błąd koperty odrzuca całe żądanie; niepoprawne dokumenty wracają w `rejected` odpowiedzi 200.
     const parsed = parseSyncRequest(json);
     if (!parsed.ok) {
-        return Response.json({ error: parsed.error }, { status: parsed.error === 'TOO_MANY_DOCUMENTS' ? 413 : 400 });
+        return Response.json({ error: parsed.error }, { status: parsed.code === 'TOO_MANY_DOCUMENTS' ? 413 : 400 });
     }
 
     try {
-        return Response.json(await processSyncPage(parsed.value));
+        return Response.json(await processSyncPage(parsed.value, { preRejected: parsed.rejected }));
     } catch (error) {
         console.error('[subiekt] Błąd przetwarzania strony paczki', { run_id: parsed.value.run_id, error });
         return Response.json({ error: 'INTERNAL_ERROR' }, { status: 500 });

@@ -13,14 +13,21 @@ function sortKeys(value: unknown): unknown {
 }
 
 /**
+ * Wersja kanonicznej serializacji, wpisana do hashowanego obiektu. Podbicie jej zmienia hash KAŻDEGO
+ * dokumentu, więc następny sync zapisze nowy snapshot dla wszystkich — robić to tylko przy zmianie
+ * tego, co uznajemy za treść dokumentu (np. nowe pole w payloadzie).
+ */
+export const HASH_VERSION = 1;
+
+/**
  * Kanoniczny JSON treści dokumentu: klucze posortowane na każdym poziomie, pozycje wg external_id,
- * bez `is_paid` (zapłata nie jest zmianą treści).
+ * bez `is_paid` (zapłata nie jest zmianą treści), z wersją `v` = HASH_VERSION.
  */
 export function canonicalizeDocument(doc: SubiektDocumentPayload): string {
     const content: Partial<SubiektDocumentPayload> = { ...doc };
     delete content.is_paid;
     const positions = [...doc.positions].sort((a, b) => a.external_id - b.external_id);
-    return JSON.stringify(sortKeys({ ...content, positions }));
+    return JSON.stringify(sortKeys({ v: HASH_VERSION, ...content, positions }));
 }
 
 export function hashDocument(doc: SubiektDocumentPayload): string {

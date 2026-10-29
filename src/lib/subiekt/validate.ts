@@ -6,7 +6,24 @@ import {
     type SubiektSyncRequest,
 } from './types';
 
-export type ParseResult = { ok: true; value: SubiektSyncRequest } | { ok: false; error: string };
+/** Dokument odrzucony przy walidacji — trafia do `rejected` odpowiedzi, reszta paczki idzie dalej. */
+export interface DocumentRejection {
+    /** external_id dokumentu albo 0, gdy samo external_id jest niepoprawne (wtedy indeks jest w `reason`). */
+    external_id: number;
+    /** `VALIDATION:<ścieżka względem dokumentu>: <komunikat>`. */
+    reason: string;
+}
+
+export type EnvelopeErrorCode = 'INVALID_ENVELOPE' | 'TOO_MANY_DOCUMENTS';
+
+/**
+ * Koperta (run_id, agent_version, page, pages, documents jako tablica, limit dokumentów) jest walidowana
+ * ściśle — błąd odrzuca całe żądanie. Dokumenty są walidowane pojedynczo: niepoprawne wypadają z
+ * `value.documents` i lądują w `rejected`.
+ */
+export type ParseResult =
+    | { ok: true; value: SubiektSyncRequest; rejected: DocumentRejection[] }
+    | { ok: false; code: EnvelopeErrorCode; error: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -18,8 +35,11 @@ class ValidationError extends Error {}
 type Obj = Record<string, unknown>;
 
 function fail(path: string, expected: string): never {
-    throw new ValidationError(`${path}: expected ${expected}`);
+    throw new ValidationError(path ? `${path}: expected ${expected}` : `expected ${expected}`);
 }
+
+/** Ścieżka pola względem dokumentu: '' + 'type' → 'type', 'positions[0]' + 'name' → 'positions[0].name'. */
+const join = (base: string, key: string) => (base ? `${base}.${key}` : key);
 
 function asObject(value: unknown, path: string): Obj {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) fail(path, 'object');
@@ -61,49 +81,58 @@ function isoDate(value: unknown, path: string): string {
 function parsePosition(raw: unknown, path: string): SubiektPositionPayload {
     const p = asObject(raw, path);
     return {
-        external_id: positiveInt(p.external_id, `${path}.external_id`),
-        ordinal: positiveInt(p.ordinal, `${path}.ordinal`),
-        product_id: nullablePositiveInt(p.product_id, `${path}.product_id`),
-        name: boundedString(p.name, `${path}.name`, 255, true),
-        quantity: finiteNumber(p.quantity, `${path}.quantity`),
-        unit: boundedString(p.unit, `${path}.unit`, 16, false),
-        unit_price_net: finiteNumber(p.unit_price_net, `${path}.unit_price_net`),
-        net_total: finiteNumber(p.net_total, `${path}.net_total`),
+        external_id: positiveInt(p.external_id, join(path, 'external_id')),
+        ordinal: positiveInt(p.ordinal, join(path, 'ordinal')),
+        product_id: nullablePositiveInt(p.product_id, join(path, 'product_id')),
+        name: boundedString(p.name, join(path, 'name'), 255, true),
+        quantity: finiteNumber(p.quantity, join(path, 'quantity')),
+        unit: boundedString(p.unit, join(path, 'unit'), 16, false),
+        unit_price_net: finiteNumber(p.unit_price_net, join(path, 'unit_price_net')),
+        net_total: finiteNumber(p.net_total, join(path, 'net_total')),
         corrects_position_external_id: nullablePositiveInt(
             p.corrects_position_external_id,
-            `${path}.corrects_position_external_id`
+            join(path, 'corrects_position_external_id')
         ),
     };
 }
 
-function parseDocument(raw: unknown, path: string): SubiektDocumentPayload {
-    const d = asObject(raw, path);
+/** Walidacja jednego dokumentu; ścieżki w komunikatach są względne wobec dokumentu. */
+function parseDocument(raw: unknown): SubiektDocumentPayload {
+    const d = asObject(raw, '');
 
+    const externalId = positiveInt(d.external_id, 'external_id');
     const type = d.type;
     if (typeof type !== 'string' || !DOC_TYPES.includes(type as SubiektDocType)) {
-        fail(`${path}.type`, `one of ${DOC_TYPES.join(', ')}`);
+        fail('type', `one of ${DOC_TYPES.join(', ')}`);
     }
-    if (typeof d.is_paid !== 'boolean') fail(`${path}.is_paid`, 'boolean');
-    if (!Array.isArray(d.positions)) fail(`${path}.positions`, 'array');
+    if (typeof d.is_paid !== 'boolean') fail('is_paid', 'boolean');
+    if (!Array.isArray(d.positions)) fail('positions', 'array');
 
     return {
-        external_id: positiveInt(d.external_id, `${path}.external_id`),
+        external_id: externalId,
         type: type as SubiektDocType,
-        number: boundedString(d.number, `${path}.number`, 64, true),
-        issued_at: isoDate(d.issued_at, `${path}.issued_at`),
-        contractor_name: boundedString(d.contractor_name, `${path}.contractor_name`, 255, true),
-        contractor_nip: nullableString(d.contractor_nip, `${path}.contractor_nip`, 20),
-        architect_code: nullableString(d.architect_code, `${path}.architect_code`, 64),
-        parent_external_id: nullablePositiveInt(d.parent_external_id, `${path}.parent_external_id`),
-        net_total: finiteNumber(d.net_total, `${path}.net_total`),
-        gross_total: finiteNumber(d.gross_total, `${path}.gross_total`),
+        number: boundedString(d.number, 'number', 64, true),
+        issued_at: isoDate(d.issued_at, 'issued_at'),
+        contractor_name: boundedString(d.contractor_name, 'contractor_name', 255, true),
+        contractor_nip: nullableString(d.contractor_nip, 'contractor_nip', 20),
+        architect_code: nullableString(d.architect_code, 'architect_code', 64),
+        parent_external_id: nullablePositiveInt(d.parent_external_id, 'parent_external_id'),
+        net_total: finiteNumber(d.net_total, 'net_total'),
+        gross_total: finiteNumber(d.gross_total, 'gross_total'),
         is_paid: d.is_paid,
-        remarks: d.remarks === null ? null : (typeof d.remarks === 'string' ? d.remarks : fail(`${path}.remarks`, 'string or null')),
-        positions: d.positions.map((pos, i) => parsePosition(pos, `${path}.positions[${i}]`)),
+        remarks: d.remarks === null ? null : (typeof d.remarks === 'string' ? d.remarks : fail('remarks', 'string or null')),
+        positions: d.positions.map((pos, i) => parsePosition(pos, `positions[${i}]`)),
     };
 }
 
+/** external_id do raportu odrzucenia: poprawne external_id dokumentu albo null (wtedy 0 + indeks w reason). */
+function reportableExternalId(raw: unknown): number | null {
+    const id = raw !== null && typeof raw === 'object' ? (raw as Obj).external_id : undefined;
+    return typeof id === 'number' && Number.isInteger(id) && id > 0 ? id : null;
+}
+
 export function parseSyncRequest(json: unknown): ParseResult {
+    let envelope: Omit<SubiektSyncRequest, 'documents'> & { documents: unknown[] };
     try {
         const body = asObject(json, 'body');
 
@@ -113,20 +142,31 @@ export function parseSyncRequest(json: unknown): ParseResult {
         const pages = positiveInt(body.pages, 'pages');
         if (page > pages) fail('page', 'page <= pages');
         if (!Array.isArray(body.documents)) fail('documents', 'array');
-        if (body.documents.length > SUBIEKT_SYNC_MAX_DOCUMENTS) throw new ValidationError('TOO_MANY_DOCUMENTS');
-
-        return {
-            ok: true,
-            value: {
-                run_id: body.run_id,
-                agent_version: agentVersion,
-                page,
-                pages,
-                documents: body.documents.map((doc, i) => parseDocument(doc, `documents[${i}]`)),
-            },
-        };
+        envelope = { run_id: body.run_id, agent_version: agentVersion, page, pages, documents: body.documents };
     } catch (err) {
-        if (err instanceof ValidationError) return { ok: false, error: err.message };
+        if (err instanceof ValidationError) return { ok: false, code: 'INVALID_ENVELOPE', error: err.message };
         throw err;
     }
+
+    if (envelope.documents.length > SUBIEKT_SYNC_MAX_DOCUMENTS) {
+        return { ok: false, code: 'TOO_MANY_DOCUMENTS', error: 'TOO_MANY_DOCUMENTS' };
+    }
+
+    const documents: SubiektDocumentPayload[] = [];
+    const rejected: DocumentRejection[] = [];
+    envelope.documents.forEach((raw, index) => {
+        try {
+            documents.push(parseDocument(raw));
+        } catch (err) {
+            if (!(err instanceof ValidationError)) throw err;
+            const externalId = reportableExternalId(raw);
+            rejected.push(
+                externalId === null
+                    ? { external_id: 0, reason: `VALIDATION:documents[${index}]: ${err.message}` }
+                    : { external_id: externalId, reason: `VALIDATION:${err.message}` }
+            );
+        }
+    });
+
+    return { ok: true, value: { ...envelope, documents }, rejected };
 }

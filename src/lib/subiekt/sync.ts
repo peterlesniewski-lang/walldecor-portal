@@ -98,6 +98,8 @@ async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promi
     );
 
     if (!existing) {
+        // Dwie równoległe strony z tym samym nowym external_id: druga dostaje duplikat klucza (UNIQUE) →
+        // INTERNAL_ERROR w rejected; następny dzienny sync widzi już wiersz i to naprawia.
         const id = shortId('sd');
         await query(
             `INSERT INTO subiekt_documents (
@@ -143,13 +145,22 @@ async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promi
 
 /**
  * Przetwarza jedną stronę paczki: run + strona → dokumenty (każdy we własnej transakcji) → liczniki runu.
- * Błąd pojedynczego dokumentu trafia do `rejected` (INTERNAL_ERROR:<komunikat>), reszta strony idzie dalej.
+ * Błąd pojedynczego dokumentu trafia do `rejected` (INTERNAL_ERROR:<komunikat>), reszta strony idzie dalej;
+ * odrzucenia z walidacji (VALIDATION:…) przychodzą w `options.preRejected` i są na początku `rejected`.
  * Powtórzona strona (ten sam run_id + page) jest przetwarzana ponownie — upsert jest idempotentny, więc
  * daje `unchanged` — ale nie zwiększa pages_received; liczniki dokumentów runu sumują się dalej.
  * Run jest DONE, gdy liczba różnych odebranych stron >= pages.
  * Wołać poza transakcją (zob. komentarz na górze pliku).
  */
-export async function processSyncPage(request: SubiektSyncRequest): Promise<SubiektSyncResponse> {
+export interface ProcessSyncPageOptions {
+    /** Dokumenty odrzucone już przy walidacji (parseSyncRequest) — wliczane do `rejected` i licznika runu. */
+    preRejected?: SubiektSyncResponse['rejected'];
+}
+
+export async function processSyncPage(
+    request: SubiektSyncRequest,
+    options: ProcessSyncPageOptions = {}
+): Promise<SubiektSyncResponse> {
     const { replay } = await registerPage(request);
     if (replay) {
         console.warn('[subiekt] Powtórzona strona paczki — pages_received bez zmian', { run_id: request.run_id, page: request.page });
@@ -159,7 +170,7 @@ export async function processSyncPage(request: SubiektSyncRequest): Promise<Subi
         run_id: request.run_id,
         accepted: 0,
         unchanged: 0,
-        rejected: [],
+        rejected: [...(options.preRejected ?? [])],
         unassigned: 0,
     };
 

@@ -1,17 +1,12 @@
 // Wspólna bramka HTTP endpointów integracji Subiekt: limit per IP + token i podpis HMAC.
 // Bez sesji NextAuth — wywołuje je agent na PC z bazą Subiekta, nie przeglądarka.
 // Standardowe Response.json zamiast NextResponse: moduł nie zależy od next/server (testy w node:test).
-import type { RateLimiter } from '@/lib/rateLimit';
+import { getClientIp, type RateLimiter } from '@/lib/rateLimit';
 import { verifySubiektRequest } from './auth';
 
 export const SUBIEKT_RATE_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
 
 const NOT_CONFIGURED_MESSAGE = 'Integracja Subiekt nie jest skonfigurowana';
-
-export function getClientIp(req: Request): string {
-    const first = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-    return first || 'unknown';
-}
 
 /**
  * Zwraca gotową odpowiedź błędu (429 / 401 / 503) albo null, gdy żądanie może iść dalej.

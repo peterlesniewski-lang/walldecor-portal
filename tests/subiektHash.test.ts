@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hashDocument } from '../src/lib/subiekt/hash.ts';
+import { canonicalizeDocument, hashDocument, HASH_VERSION } from '../src/lib/subiekt/hash.ts';
 import type { SubiektDocumentPayload } from '../src/lib/subiekt/types.ts';
 
 function makeDoc(): SubiektDocumentPayload {
@@ -79,4 +79,11 @@ test('changing the architect code changes the hash', () => {
     const b = makeDoc();
     b.architect_code = 'A-002';
     assert.notEqual(hashDocument(a), hashDocument(b));
+});
+
+test('the canonical form carries the hash version (bumping it re-snapshots every document)', () => {
+    assert.equal(HASH_VERSION, 1);
+    const canonical = JSON.parse(canonicalizeDocument(makeDoc()));
+    assert.equal(canonical.v, HASH_VERSION);
+    assert.equal('is_paid' in canonical, false);
 });

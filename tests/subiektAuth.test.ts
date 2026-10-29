@@ -105,3 +105,26 @@ test('rejects a signature computed over the body plus one extra space', () => {
 test('signSubiektRequest returns 64 lowercase hex chars', () => {
     assert.match(signSubiektRequest(SECRET, NOW, BODY), /^[0-9a-f]{64}$/);
 });
+
+test('a non-numeric SUBIEKT_SYNC_MAX_SKEW_SECONDS falls back to 300 s (10-minute-old timestamp is stale)', () => {
+    const saved = { ...process.env };
+    process.env.SUBIEKT_SYNC_TOKEN = TOKEN;
+    process.env.SUBIEKT_SYNC_SECRET = SECRET;
+    try {
+        for (const skew of ['abc', '-5', '0']) {
+            process.env.SUBIEKT_SYNC_MAX_SKEW_SECONDS = skew;
+            const ts = NOW - 600;
+            assert.deepEqual(
+                verifySubiektRequest(goodHeaders(ts), BODY, NOW),
+                { ok: false, status: 401, reason: 'STALE_TIMESTAMP' },
+                `skew=${skew}`
+            );
+            assert.deepEqual(verifySubiektRequest(goodHeaders(NOW - 60), BODY, NOW), { ok: true }, `skew=${skew}, świeży`);
+        }
+    } finally {
+        for (const key of ['SUBIEKT_SYNC_TOKEN', 'SUBIEKT_SYNC_SECRET', 'SUBIEKT_SYNC_MAX_SKEW_SECONDS']) {
+            if (saved[key] === undefined) delete process.env[key];
+            else process.env[key] = saved[key];
+        }
+    }
+});
