@@ -484,7 +484,10 @@ export async function mergeProjects(targetProjectId: string, sourceProjectIds: s
 // logActivity 'PROJECTS_MERGED' z listą nazw; nazwa projektu docelowego bez zmian
 
 export async function moveDocumentToProject(documentId: string, targetProjectId: string): Promise<{ success: true }>
-// tylko dla korzenia łańcucha (ZK/FP); przenosi cały łańcuch (root_external_id) i jego pozycje; wymaga tego samego owner_id; przelicza pozycje przez deleteItemCore/addItemCore w transakcji
+// tylko dla korzenia łańcucha (ZK/FP); przenosi cały łańcuch (root_external_id) i jego pozycje; wymaga tego samego owner_id; przelicza pozycje przez deleteItemCore/addItemCore w transakcji.
+// WYMAGANIA Z PRZEGLĄDU LOOPA 2 (mappingDb.ts): (a) `loadItemsOfDocument` musi filtrować także po project_id (dziś szuka tylko po dokumencie, więc po zmianie project_id łańcucha `syncChainItems` zostawia pozycje w starym projekcie);
+// (b) nowa funkcja `clearChainItems(rootExternalId, oldProjectId)`: usuwa pozycje łańcucha ze starego projektu przez deleteItemCore (na ZAKOŃCZONY → korekta do 0) i odpina wyzerowane wiersze (`subiekt_document_id = NULL`), dopiero potem `syncChainItems` w nowym projekcie;
+// (c) KFS, która po zmianie przestaje pasować (AUTO → UNMATCHED_CORRECTION), powinna wywołać resync faktur, które wcześniej korygowała (dziś ich pozycje trzymają starą skorygowaną kwotę do następnej zmiany FS).
 
 export async function overrideItemType(itemId: string, type: 'PRODUCT' | 'INSTALLATION'): Promise<{ success: true }>
 // tylko source = 'SUBIEKT'; ustawia type i type_overridden = 1; jeśli projekt PRZYJĘTY/W_REALIZACJI: usuwa i zakłada PENDING zgodnie z typem (INSTALLATION bez prowizji); jeśli ZAKOŃCZONY: korekta przez updateItemAmountCore(0) + addItemCore z nowym typem
