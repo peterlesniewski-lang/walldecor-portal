@@ -583,20 +583,22 @@ Testy agenta (`agent-subiekt/tests/*.test.ts`, `node:test`, bez połączenia z S
 
 Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy punkt ma obserwowalny skutek.
 
-1. Admin loguje się, tworzy architekta „Anna Nowak”, nadaje kod `A-001`.
-2. Agent (lub `curl`) wysyła ZK 1/10/2026 dla `A-001` z 2 pozycjami: tapeta 10 szt × 100 (karta towaru), montaż 500 (jednorazowa).
-3. Admin widzi w pipeline projekt „Jan Testowy — ZK 1/10/2026” w statusie PRZYJĘTY, z pozycjami PRODUCT 1 000 i INSTALLATION 500, prowizja PENDING = 1 000 × stawka. Sidebar „Subiekt” bez badge.
-4. Anna loguje się, widzi projekt, kwotę i prowizję „w toku”. Nie widzi przycisków edycji.
-5. Agent wysyła ZK 1/10/2026 ze zmianą: tapeta 8 szt. Anna i admin widzą wpis zmiany w logu z treścią „10 → 8 szt”. PENDING = 800 × stawka.
-6. Agent wysyła FS 7/10/2026 z rodzicem ZK, 8 szt × 100, niezapłacona. Pozycje projektu: FS 800 (PRODUCT), montaż 500 z FS (INSTALLATION). Baner „Sugerowany status: W_REALIZACJI”. Admin klika „Zastosuj” → status W_REALIZACJI.
-7. Agent wysyła tę samą FS z `is_paid: true`. Baner „Sugerowany status: ZAKOŃCZONY”. Admin klika „Zastosuj” → ZAKOŃCZONY; prowizja EARNED = 800 × stawka; cashback 2% = 16 zł w portfelu Anny z datą wygaśnięcia za 12 miesięcy.
-8. Agent wysyła KFS do FS: tapeta 8 → 6 szt. Pozycja 600; w `commissions` korekta −200 × stawka; w portfelu korekta cashbacku −4 zł. Anna widzi zmianę w logu.
-9. Agent wysyła FS 9/10/2026 bez rodzica i bez kodu. Sidebar „Subiekt” pokazuje badge „1”. Admin w skrzynce widzi powód `NO_ARCHITECT`, klika „Utwórz projekt” dla Anny → nowy projekt z pozycjami z FS.
-10. Admin łączy nowy projekt z projektem z kroku 3 → jeden projekt, oba łańcuchy w sekcji „Dokumenty Subiekt”, suma pozycji równa sumie przed połączeniem (sprawdzić zapytaniem przed i po), wpis `PROJECTS_MERGED` w feedzie.
-11. Restart aplikacji (`npm run dev` ponownie). Wszystko z punktów 3–10 nadal widoczne.
-12. Admin loguje się jako STAFF: widzi skrzynkę i może przypisać dokument, ale nie widzi „Połącz” ani „Przenieś” (operacje finansowe tylko ADMIN).
+1. [x] Admin loguje się, tworzy architekta „Anna Nowak”, nadaje kod `A-001`.
+2. [x] Agent (lub `curl`) wysyła ZK 1/10/2026 dla `A-001` z 2 pozycjami: tapeta 10 szt × 100 (karta towaru), montaż 500 (jednorazowa).
+3. [x] Admin widzi w pipeline projekt „Jan Testowy — ZK 1/10/2026” w statusie PRZYJĘTY, z pozycjami PRODUCT 1 000 i INSTALLATION 500, prowizja PENDING = 1 000 × stawka. Sidebar „Subiekt” bez badge.
+4. [x] Anna loguje się, widzi projekt, kwotę i prowizję „w toku”. Nie widzi przycisków edycji.
+5. [x] Agent wysyła ZK 1/10/2026 ze zmianą: tapeta 8 szt. Anna i admin widzą wpis zmiany w logu z treścią „10 → 8 szt”. PENDING = 800 × stawka.
+6. [x] Agent wysyła FS 7/10/2026 z rodzicem ZK, 8 szt × 100, niezapłacona. Pozycje projektu: FS 800 (PRODUCT), montaż 500 z FS (INSTALLATION). Baner „Sugerowany status: W_REALIZACJI”. Admin klika „Zastosuj” → status W_REALIZACJI.
+7. [x] Agent wysyła tę samą FS z `is_paid: true`. Baner „Sugerowany status: ZAKOŃCZONY”. Admin klika „Zastosuj” → ZAKOŃCZONY; prowizja EARNED = 800 × stawka; cashback 2% = 16 zł w portfelu Anny z datą wygaśnięcia za 12 miesięcy.
+8. [x] Agent wysyła KFS do FS: tapeta 8 → 6 szt. Pozycja 600; w `commissions` korekta −200 × stawka; w portfelu korekta cashbacku −4 zł. Anna widzi zmianę w logu.
+9. [x] Agent wysyła FS 9/10/2026 bez rodzica i bez kodu. Sidebar „Subiekt” pokazuje badge „1”. Admin w skrzynce widzi powód `NO_ARCHITECT`, klika „Utwórz projekt” dla Anny → nowy projekt z pozycjami z FS.
+10. [ ] Admin łączy nowy projekt z projektem z kroku 3 → jeden projekt, oba łańcuchy w sekcji „Dokumenty Subiekt”, suma pozycji równa sumie przed połączeniem (sprawdzić zapytaniem przed i po), wpis `PROJECTS_MERGED` w feedzie. **ZABLOKOWANE:** projekt z kroku 3 jest od kroku 7 ZAKOŃCZONY, a łączenie zakończonych jest zabronione (Loop 4, `mergeProjectsOp`) — decyzja biznesowa; łączenie sprawdzone w wariancie (merge przed zakończeniem), zob. dowód.
+11. [x] Restart aplikacji (`npm run dev` ponownie). Wszystko z punktów 3–10 nadal widoczne.
+12. [x] Admin loguje się jako STAFF: widzi skrzynkę i może przypisać dokument, ale nie widzi „Połącz” ani „Przenieś” (operacje finansowe tylko ADMIN).
 
 **DOWÓD:** zrzuty ekranu kroków 3, 5, 7, 9, 10; wynik zapytań sum przed/po połączeniu; wynik `node --test tests/*.test.ts`, `npx tsc --noEmit`, `npm run build`.
+
+**DOWÓD (2026-10-30):** `docs/subiekt/LOOP6-DOWOD-2026-10-30.md` — kroki 1–9, 11, 12 zaliczone na czystej bazie; krok 10 zablokowany (sprzeczność z regułą łączenia); poprawki kroku 8 w `23cfca6`; bramka 303/303, tsc 19× TS5097, build OK.
 
 ---
 
