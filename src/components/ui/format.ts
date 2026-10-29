@@ -41,12 +41,29 @@ export function formatSignedPLN(value: number | string | null | undefined): stri
     return `${n < 0 ? '\u2212' : '+'}${formatPLN(Math.abs(n))}`;
 }
 
-/** Data jako dd.MM.rrrr. Przyjmuje Date, timestamp, ISO lub format SQL ("2026-06-10 12:00:00"). */
-export function formatDate(value: Date | string | number | null | undefined): string {
-    if (value === null || value === undefined || value === '') return NO_VALUE;
+function toDate(value: Date | string | number | null | undefined): Date | null {
+    if (value === null || value === undefined || value === '') return null;
     const d = value instanceof Date
         ? value
         : new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
-    if (Number.isNaN(d.getTime())) return NO_VALUE;
+    return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Data jako dd.MM.rrrr. Przyjmuje Date, timestamp, ISO lub format SQL ("2026-06-10 12:00:00"). */
+export function formatDate(value: Date | string | number | null | undefined): string {
+    const d = toDate(value);
+    if (!d) return NO_VALUE;
     return d.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+/**
+ * Data i godzina "dd.MM.rrrr, HH:mm" w strefie Europe/Warsaw — stała strefa, żeby render serwera i klienta
+ * dawał ten sam tekst. Podawać ISO ze strefą (np. "2026-10-20T18:00:00.000Z").
+ */
+export function formatDateTime(value: Date | string | number | null | undefined): string {
+    const d = toDate(value);
+    if (!d) return NO_VALUE;
+    return d.toLocaleString('pl-PL', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Warsaw',
+    });
 }

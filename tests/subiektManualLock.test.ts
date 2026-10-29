@@ -20,7 +20,7 @@ test('assertManualItem reads project_items.source and throws the exact message f
     const start = source.indexOf('async function assertManualItem(');
     assert.notEqual(start, -1);
     const helper = source.slice(start, source.indexOf('\n}\n', start));
-    assert.match(helper, /SELECT source FROM project_items WHERE id = \?/);
+    assert.match(helper, /SELECT project_id, source FROM project_items WHERE id = \?/);
     assert.match(helper, /source === 'SUBIEKT'/);
     assert.ok(helper.includes(`throw new Error("${MESSAGE}")`));
 });
@@ -34,6 +34,7 @@ for (const [name, coreCall] of [
         const body = functionBody(await loadSource(), name);
         const auth = body.indexOf('Unauthorized');
         const lock = body.indexOf('await assertManualItem(itemId)');
+        assert.equal(body.match(/FROM project_items WHERE id/g), null, `${name}: bez drugiego odczytu pozycji`);
         const write = body.indexOf(coreCall);
         assert.ok(auth !== -1 && lock !== -1 && write !== -1, `${name}: brak sesji, blokady lub zapisu`);
         assert.ok(auth < lock && lock < write, `${name}: kolejność sesja → blokada → zapis`);

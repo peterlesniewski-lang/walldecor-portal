@@ -376,11 +376,18 @@ export async function getUserById(id: string) {
     return res.length > 0 ? res[0] : null;
 }
 
-export async function logActivity(userId: string | null, eventType: string, description: string, metadata?: any) {
+/** subjectId: obiekt, którego dotyczy wpis (np. subiekt_documents.id) — do wyszukiwania bez parsowania metadata. */
+export async function logActivity(
+    userId: string | null,
+    eventType: string,
+    description: string,
+    metadata?: any,
+    subjectId: string | null = null
+) {
     const id = `act_${uuidv4().replace(/-/g, '').substring(0, 12)}`;
     await query(
-        "INSERT INTO activity_logs (id, user_id, event_type, description, metadata) VALUES (?, ?, ?, ?, ?)",
-        [id, userId, eventType, description, metadata ? JSON.stringify(metadata) : null]
+        "INSERT INTO activity_logs (id, user_id, event_type, description, metadata, subject_id) VALUES (?, ?, ?, ?, ?, ?)",
+        [id, userId, eventType, description, metadata ? JSON.stringify(metadata) : null, subjectId]
     );
 }
 
@@ -391,8 +398,7 @@ export async function getAdminActivity(limit = 20) {
         : 20;
 
     return await query<any>(`
-        SELECT a.*,
-               COALESCE(u.name, CASE WHEN SUBSTR(a.event_type, 1, 8) = 'SUBIEKT_' THEN 'Subiekt (synchronizacja)' END) as user_name
+        SELECT a.*, u.name as user_name
         FROM activity_logs a
         LEFT JOIN users u ON a.user_id = u.id
         ORDER BY a.created_at DESC

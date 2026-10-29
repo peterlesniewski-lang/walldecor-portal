@@ -27,13 +27,14 @@ import {
 } from '@/components/ui';
 import { CASHBACK_RATE } from '@/lib/partnerProgram';
 import ProjectFilesSection, { ProjectFile } from "@/components/ProjectFilesSection";
-import SubiektChangesCard, { type SubiektChange } from "@/components/SubiektChangesCard";
+import SubiektChangesCard from "@/components/SubiektChangesCard";
+import type { ProjectZkChange } from "@/lib/subiekt/queries";
 
 interface ProjectDetailClientProps {
     project: any;
     initialFiles: ProjectFile[];
     currentUserId: string;
-    zkChanges: SubiektChange[];
+    zkChanges: ProjectZkChange[];
 }
 
 const categoryIcons: any = {

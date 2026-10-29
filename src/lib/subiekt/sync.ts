@@ -8,7 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction } from '@/lib/db';
 import { logActivity } from '@/lib/services';
-import { diffPositions, formatDiffForLog } from './diff';
+import { diffPositions, formatDiffForLog, sameAmount } from './diff';
 import { hashDocument } from './hash';
 import { sortDocumentsForProcessing } from './mapping';
 import { mapDocument, type AssignmentResult, type UpsertOutcome } from './mappingDb';
@@ -88,19 +88,20 @@ async function insertSnapshot(documentId: string, runId: string, contentHash: st
     );
 }
 
-/** Treść dokumentu sprzed zmiany (= ostatni snapshot), do diffu ZK/FP. */
+/** Treść dokumentu sprzed zmiany (= ostatni snapshot), do diffu ZK/FP. positions = null: nieczytelny JSON. */
 interface PreviousContent {
-    positions: SubiektPositionPayload[];
+    positions: SubiektPositionPayload[] | null;
     netTotal: number;
 }
 
-function parsePositions(json: unknown): SubiektPositionPayload[] {
+/** Pozycje z positions_json; null, gdy JSON jest uszkodzony (wtedy diff byłby fałszywy — „dodano” wszystko). */
+function parsePositions(json: unknown): SubiektPositionPayload[] | null {
     if (Array.isArray(json)) return json as SubiektPositionPayload[];
     try {
-        const parsed = JSON.parse(String(json ?? '[]'));
-        return Array.isArray(parsed) ? parsed : [];
+        const parsed = JSON.parse(String(json));
+        return Array.isArray(parsed) ? parsed : null;
     } catch {
-        return [];
+        return null;
     }
 }
 
@@ -195,24 +196,33 @@ const DIFFED_TYPES: ReadonlySet<SubiektDocType> = new Set(['ZK', 'FP']);
 
 /**
  * Zmiana treści ZK/FP → wpis SUBIEKT_ZK_CHANGED (user_id = NULL = „Subiekt (synchronizacja)”), w tej samej
- * transakcji co dokument. projectId = project_id dokumentu PO mapowaniu (null dla nieprzypisanych — wpis i tak
+ * transakcji co dokument, subject_id = id dokumentu (po nim strona projektu wybiera historię, także wpisy sprzed
+ * przypisania). metadata.projectId = project_id dokumentu PO mapowaniu (null dla nieprzypisanych — wpis i tak
  * powstaje). Sama zmiana poza pozycjami i wartością (np. uwag) zmienia hash, ale nie daje wpisu.
  */
 async function logOrderChange(doc: SubiektDocumentPayload, documentId: string, previous: PreviousContent): Promise<void> {
     if (!DIFFED_TYPES.has(doc.type)) return;
+    if (!previous.positions) {
+        console.warn('[subiekt] Nieczytelny positions_json poprzedniej wersji — pomijam wpis zmiany', {
+            document_id: documentId, external_id: doc.external_id,
+        });
+        return;
+    }
 
     const lines = diffPositions(previous.positions, doc.positions);
     const netBefore = previous.netTotal;
     const netAfter = Number(doc.net_total) || 0;
-    if (lines.length === 0 && Math.round(netBefore * 100) === Math.round(netAfter * 100)) return;
+    if (lines.length === 0 && sameAmount(netBefore, netAfter)) return;
 
+    // projectId w metadata tylko informacyjnie (stan w chwili zapisu); historia projektu idzie po subject_id.
+    // mapDocument zwraca sam wynik przypisania, więc project_id czytamy tutaj.
     const [row] = await query<{ project_id: string | null }>('SELECT project_id FROM subiekt_documents WHERE id = ?', [documentId]);
     await logActivity(null, 'SUBIEKT_ZK_CHANGED', formatDiffForLog(doc.number, lines, netBefore, netAfter), {
         projectId: row?.project_id ?? null,
         documentId,
         externalId: doc.external_id,
         lines,
-    });
+    }, documentId);
 }
 
 /**

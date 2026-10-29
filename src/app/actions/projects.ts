@@ -691,12 +691,17 @@ export async function updatePayoutStatus(payoutId: string, newStatus: string) {
 // Cienkie wrappery: sesja + uprawnienia → blokada pozycji z Subiekta → rdzeń src/lib/projectItems.ts → revalidatePath.
 
 // Pozycje z Subiekta (source = 'SUBIEKT') zmienia tylko synchronizacja (decyzja 6 planu Subiekt). Blokada jest
-// w wrapperach, nie w rdzeniu — sync woła rdzeń bezpośrednio. Brak pozycji → rdzeń zgłasza własny błąd.
+// w wrapperach, nie w rdzeniu — sync woła rdzeń bezpośrednio. Zwraca wiersz (undefined, gdy pozycji nie ma —
+// rdzeń zgłasza wtedy własny błąd), żeby wrapper nie czytał pozycji drugi raz.
 async function assertManualItem(itemId: string) {
-    const rows = await query<{ source: string | null }>("SELECT source FROM project_items WHERE id = ?", [itemId]);
+    const rows = await query<{ project_id: string; source: string | null }>(
+        "SELECT project_id, source FROM project_items WHERE id = ?",
+        [itemId]
+    );
     if (rows[0]?.source === 'SUBIEKT') {
         throw new Error("Pozycja pochodzi z Subiekta i nie podlega edycji ręcznej.");
     }
+    return rows[0];
 }
 
 export async function updateProjectItem(itemId: string, amount_net: number, note?: string) {
@@ -807,11 +812,9 @@ export async function updateProjectItemMeta(itemId: string, meta: {
     if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
         throw new Error("Unauthorized");
     }
-    await assertManualItem(itemId);
-
-    const itemRes = await query<any>("SELECT project_id FROM project_items WHERE id = ?", [itemId]);
-    if (itemRes.length === 0) throw new Error("Pozycja nie istnieje");
-    const projectId = itemRes[0].project_id;
+    const item = await assertManualItem(itemId);
+    if (!item) throw new Error("Pozycja nie istnieje");
+    const projectId = item.project_id;
 
     await query(
         "UPDATE project_items SET order_number = ?, invoice_number = ?, is_paid = ? WHERE id = ?",

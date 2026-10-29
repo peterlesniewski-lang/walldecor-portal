@@ -34,7 +34,8 @@ function parseDescription(text: string | null): { quantity: string; unit: string
 }
 
 const sameQuantity = (a: number, b: number) => Math.round(Number(a) * 10000) === Math.round(Number(b) * 10000);
-const sameAmount = (a: number, b: number) => Math.round(Number(a) * 100) === Math.round(Number(b) * 100);
+/** Równość kwot z dokładnością do grosza (ceny pozycji, wartości dokumentu). */
+export const sameAmount = (a: number, b: number) => Math.round(Number(a) * 100) === Math.round(Number(b) * 100);
 const byOrdinal = (a: SubiektPositionPayload, b: SubiektPositionPayload) => a.ordinal - b.ordinal;
 
 /**

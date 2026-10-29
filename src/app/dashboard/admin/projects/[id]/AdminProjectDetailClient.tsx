@@ -1,7 +1,8 @@
 'use client';
 
 import ProjectFilesSection, { ProjectFile } from '@/components/ProjectFilesSection';
-import SubiektChangesCard, { type SubiektChange } from '@/components/SubiektChangesCard';
+import SubiektChangesCard from '@/components/SubiektChangesCard';
+import type { ProjectZkChange } from '@/lib/subiekt/queries';
 import CommissionsCard from './CommissionsCard';
 import ItemsCard from './ItemsCard';
 import PartnerCard from './PartnerCard';
@@ -17,7 +18,7 @@ interface Props {
     currentUserId: string;
     canChangeStatus: boolean;
     initialFiles: ProjectFile[];
-    zkChanges: SubiektChange[];
+    zkChanges: ProjectZkChange[];
 }
 
 export default function AdminProjectDetailClient({

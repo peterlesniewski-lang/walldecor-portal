@@ -52,8 +52,10 @@ CREATE TABLE wallet_transactions (
   expires_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, description TEXT, reference_id TEXT
 );
 CREATE TABLE activity_logs (
-  id TEXT PRIMARY KEY, user_id TEXT, event_type TEXT, description TEXT, metadata TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  id TEXT PRIMARY KEY, user_id TEXT, event_type TEXT, description TEXT, metadata TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  subject_id TEXT
 );
+CREATE INDEX idx_activity_logs_event_subject ON activity_logs(event_type, subject_id);
 CREATE TABLE payout_requests (
   id TEXT PRIMARY KEY, architect_id TEXT NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING',
   type TEXT NOT NULL DEFAULT 'CASHBACK', invoice_url TEXT, invoice_number TEXT,

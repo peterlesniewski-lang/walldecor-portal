@@ -9,7 +9,7 @@ type Pos = import('../src/lib/subiekt/types').SubiektPositionPayload;
 await import(new URL('./helpers/srcResolveHooks.ts', import.meta.url).href);
 const { diffPositions, formatDiffForLog }: DiffModule = await import(new URL('../src/lib/subiekt/diff.ts', import.meta.url).href);
 
-const NBSP = ' ';
+const NBSP = '\u00a0';
 
 function pos(externalId: number, overrides: Partial<Pos> = {}): Pos {
     return {
@@ -47,7 +47,7 @@ test('missing position → REMOVED', () => {
 test('price change → PRICE', () => {
     const lines = diffPositions([pos(1)], [pos(1, { unit_price_net: 99.5, net_total: 995 })]);
     assert.deepEqual(lines, [{ kind: 'PRICE', name: 'Tapeta Floral', before: '10 szt × 120,00', after: '10 szt × 99,50' }]);
-    assert.equal(formatDiffForLog('ZK 1/10/2026', lines, 1200, 995), 'ZK 1/10/2026: Tapeta Floral cena 120,00 → 99,50 zł; wartość 1 200,00 → 995,00 zł');
+    assert.equal(formatDiffForLog('ZK 1/10/2026', lines, 1200, 995), `ZK 1/10/2026: Tapeta Floral cena 120,00 → 99,50 zł; wartość 1${NBSP}200,00 → 995,00 zł`);
 });
 
 test('name change → NAME', () => {
@@ -74,7 +74,7 @@ test('order: next by ordinal, then REMOVED by prev ordinal; position order in pa
 
 test('plan example string is reproduced exactly (thousands separator = NBSP from formatPLNFixed)', () => {
     const lines = [
-        { kind: 'QUANTITY' as const, name: 'Tapeta Floral', before: '10 szt × 1 170,00', after: '8 szt × 1 170,00' },
+        { kind: 'QUANTITY' as const, name: 'Tapeta Floral', before: `10 szt × 1${NBSP}170,00`, after: `8 szt × 1${NBSP}170,00` },
         { kind: 'ADDED' as const, name: 'Montaż', before: null, after: `1${NBSP}200,00` },
     ];
     // To samo, ale wyliczone z pozycji:
@@ -90,10 +90,10 @@ test('plan example string is reproduced exactly (thousands separator = NBSP from
 
     const text = formatDiffForLog('ZK 45/10/2026', computed, 14300, 13160);
     assert.equal(text, `ZK 45/10/2026: Tapeta Floral 10 → 8 szt; dodano Montaż 1${NBSP}200,00 zł; wartość 14${NBSP}300,00 → 13${NBSP}160,00 zł`);
-    assert.equal(text.replace(/ /g, ' '), 'ZK 45/10/2026: Tapeta Floral 10 → 8 szt; dodano Montaż 1 200,00 zł; wartość 14 300,00 → 13 160,00 zł');
+    assert.equal(text.replace(new RegExp(NBSP, 'g'), ' '), 'ZK 45/10/2026: Tapeta Floral 10 → 8 szt; dodano Montaż 1 200,00 zł; wartość 14 300,00 → 13 160,00 zł');
 });
 
 test('no position changes but total changed → only the "wartość" part', () => {
     assert.deepEqual(diffPositions([pos(1)], [pos(1)]), []);
-    assert.equal(formatDiffForLog('FP 7/10/2026', [], 1000, 800), 'FP 7/10/2026: wartość 1 000,00 → 800,00 zł');
+    assert.equal(formatDiffForLog('FP 7/10/2026', [], 1000, 800), `FP 7/10/2026: wartość 1${NBSP}000,00 → 800,00 zł`);
 });
