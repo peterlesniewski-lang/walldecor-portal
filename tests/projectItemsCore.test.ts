@@ -92,6 +92,13 @@ test('addItemCore on PRZYJĘTY creates the item and a PENDING commission at the 
     assert.equal(log.user_id, ADMIN_ID);
 });
 
+test('addItemCore INSTALLATION on PRZYJĘTY creates the item without a PENDING commission', async () => {
+    const projectId = createProject('PRZYJĘTY');
+    const { itemId } = await core.addItemCore(projectId, { type: 'INSTALLATION', category: 'Montaż', amount_net: 1500 }, admin);
+    assert.equal((db.prepare('SELECT type FROM project_items WHERE id = ?').get(itemId) as any).type, 'INSTALLATION');
+    assert.equal(commissionsOfItem(itemId).length, 0);
+});
+
 test('addItemCore on ZAKOŃCZONY creates an EARNED commission and an EARN cashback expiring in 12 months', async () => {
     const projectId = createProject('ZAKOŃCZONY');
 

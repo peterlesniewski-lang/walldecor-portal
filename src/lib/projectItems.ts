@@ -236,7 +236,8 @@ export async function addItemCore(projectId: string, input: NewItemInput, actor:
             ]
         );
 
-        if (status === 'PRZYJĘTY' || status === 'W_REALIZACJI') {
+        if ((status === 'PRZYJĘTY' || status === 'W_REALIZACJI') && input.type === 'PRODUCT') {
+            // Prowizja planowana tylko dla PRODUCT — jak w updateItemAmountCore i przy rozliczeniu projektu.
             const rate = await getArchitectCommissionRate(owner_id);
             const commAmount = input.amount_net * rate;
             if (commAmount > 0) {

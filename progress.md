@@ -466,3 +466,14 @@ migrations/
 - `updateArchitectAdminFields(id, { tier_override?, subiekt_code? })`: pole pominięte nie jest zmieniane; kod = trim + uppercase, `[A-Z0-9_-]{1,64}`, pusty → `NULL`, zajęty przez innego → „Ten kod ma już inny architekt.”; zmiana logowana jako `ARCHITECT_SUBIEKT_CODE`.
 - Pole „Kod w Subiekcie” w `EditArchitectModal` (zapisuje się osobnym wywołaniem akcji admina PRZED `updateArchitect`, żeby błąd kodu nie zostawiał częściowo zapisanego profilu); na profilu architekta (`ArchitectDataCard`) kod jest tylko do odczytu.
 - Testy akcji są źródłowe (akcja wymaga sesji next-auth); uniqueness opiera się też o unikalny indeks `idx_users_subiekt_code`.
+
+## 2026-10-29 — Subiekt loop 2B: mapowanie dokumentów na architekta, projekt i pozycje
+
+- `sync.ts` → `processDocument(doc, runId)`: jedna `withTransaction` na dokument = upsert (Loop 1) + mapowanie (`src/lib/subiekt/mappingDb.ts`); błąd wycofuje cały dokument łącznie z upsertem. Strona sortowana `sortDocumentsForProcessing`; `unassigned` = dokumenty z końcowym `UNASSIGNED`.
+- Mapowanie pomija `MANUAL`/`IGNORED`; działa dla INSERTED/CHANGED i dla UNCHANGED+UNASSIGNED (rodzic/kod może dojść później). UNCHANGED+AUTO: tylko odświeżenie `is_paid` pozycji (zapłata nie wchodzi do hasha).
+- Powody: `NO_ARCHITECT` (też przy nieznanym rodzicu bez kodu), `UNKNOWN_ARCHITECT_CODE:<kod>`, `NO_ROOT_DOCUMENT` (korzeń nieznany albo nie ZK/FP), `ROOT_UNASSIGNED`, `PROJECT_CANCELLED`, `UNMATCHED_CORRECTION`. `root_external_id` zapisywany także dla nieprzypisanych; dokument nigdy nie traci `project_id` automatycznie.
+- Projekt `p_` + 8 hex, `PRZYJĘTY`, nazwa „kontrahent — numer” (≤ 200 zn.), log `SUBIEKT_PROJECT_CREATED`. Rozjazd architekta dokumentu i właściciela projektu → tylko `console.warn` (bez przenoszenia).
+- Pozycje tylko przez rdzeń `projectItems.ts`; łańcuch = dokumenty korzenia w projekcie (AUTO/MANUAL + bieżący). Pierwsza FS usuwa pozycje ZK; FS MANUAL zostawione loopowi 4. Typ istniejącej pozycji się nie zmienia (override admina zachowany). Kwota ≤ 0 → brak pozycji / `deleteItemCore`; zerowa pozycja w ZAKOŃCZONY nie jest „usuwana” co sync.
+- KFS: wszystko albo nic po `corrects_position_external_id` (pozycja FS w projekcie); mapa korekt (późniejsza KFS wygrywa) stosowana też przy ponownej synchronizacji FS, więc resync FS nie cofa korekty.
+- Poprawka rdzenia: `addItemCore` nie tworzy już PENDING dla INSTALLATION (zgodnie z `updateItemAmountCore` i rozliczeniem projektu).
+- `status.ts`: `computeSuggestedStatus`, `getProjectSubiektSummary` (fsTotal = FS + KFS). Testy `tests/subiektMappingSync.test.ts` (16), `npm test` 201/201; walidator curl na dev.sqlite (`u_kamila` = A-001) OK.

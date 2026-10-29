@@ -96,11 +96,12 @@ test('page with 3 new documents → 3 documents, 3 snapshots, run DONE with coun
 
     const doc = docRow(1001);
     assert.match(doc.id, /^sd_[0-9a-f]{12}$/);
+    // W tej bazie nikt nie ma kodu A-001 — mapowanie (loop 2) zostawia dokument w skrzynce.
     assert.equal(doc.assignment_status, 'UNASSIGNED');
-    assert.equal(doc.assignment_note, 'MAPPING_NOT_ENABLED');
+    assert.equal(doc.assignment_note, 'UNKNOWN_ARCHITECT_CODE:A-001');
     assert.equal(doc.project_id, null);
     assert.equal(doc.architect_id, null);
-    assert.equal(doc.root_external_id, null);
+    assert.equal(doc.root_external_id, 1001);
     assert.equal(doc.last_run_id, request.run_id);
     assert.equal(doc.architect_code, 'A-001');
     assert.deepEqual(JSON.parse(doc.positions_json), makeDoc(1001).positions);
