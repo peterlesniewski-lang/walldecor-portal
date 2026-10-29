@@ -1,9 +1,10 @@
 # Project Rules
 
-## Current task: System audit
-- Read all code files before suggesting anything
-- Do NOT make changes yet - only report findings
-- Focus on: security, business logic, edge cases, UX gaps
+## Current task: Integracja Subiekt GT → portal
+- Plan: `PLAN-SUBIEKT-2026-10-29.md` (loopy 0–7, DoD, checklist audytu atrap)
+- Realizować loop po loopie, każdy w osobnym PR; nie zaczynać kolejnego bez zielonej bramki i sekcji DOWÓD
+- Prowizje wyłącznie przez `src/lib/projectItems.ts`; pozycje `source = 'SUBIEKT'` bez edycji ręcznej
+- Loop 5 (agent) czeka na weryfikację schematu GT w biurze (sekcja „Warunek wstępny” w planie)
 
 
 ## After each completed task

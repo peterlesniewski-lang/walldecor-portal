@@ -427,3 +427,11 @@ migrations/
 - Smoke test ADMIN na produkcji (tylko odczyt): dashboard, architekci, profil partnera, strona projektu z rozliczeniem prowizji i plikami, ustawienia zespołu i emaili, pomoc, regulamin — nowy wygląd live, logo oryginalne, 0 błędów konsoli.
 - Logowanie i regulamin sprawdzone przy 390 px (CDP) bez poziomego przewijania; `/walldecor-logo-dark.png` 200; brak `fonts.googleapis` w HTML; nagłówki bezpieczeństwa bez zmian; `/api/admin/pipeline` 404.
 - Nie testowane na produkcji: logowanie STAFF/ARCHI, widoki architekta za logowaniem, akcje zapisu.
+
+## 2026-10-29 — Integracja Subiekt GT → portal (plan)
+
+- Zbadano wykonalność: Subiekt GT (bez Sfery, odczyt MS SQL tylko do czytania) → agent na PC z bazą → endpoint portalu; Twenty CRM v2.9.0 na crm.walldecor.pl zostaje osobnym projektem.
+- Decyzje biznesowe potwierdzone z właścicielem: prowizja tylko z FS/KFS; ZK = projekt (z opcją łączenia projektów); pozycja jednorazowa = montaż; statusy tylko podpowiadane; pozycje z Subiekta bez edycji ręcznej; sync raz dziennie; zmiany ZK logowane jako snapshoty.
+- Portal nie ma dziś żadnego wejścia maszynowego (wszystkie route handlery i server actions wymagają sesji); logika pozycji/prowizji zaszyta w `actions/projects.ts` — loop 0 planu wydziela ją do `src/lib/projectItems.ts`.
+- Plan: `PLAN-SUBIEKT-2026-10-29.md` (8 loopów z DoD wg zachowania użytkownika, bramka testy+tsc+build+walidator, checklist audytu atrap). `CLAUDE.md` przełączony z trybu audytu na to zadanie.
+- Do weryfikacji w biurze przed loopem 5: pola własne na ZK/FS w GT, wartości `dok_Typ`, kolumna powiązań dokumentów. Uwagi kopiują się z ZK na FS (potwierdzone) — plan B dla znacznika architekta.
