@@ -8,7 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction } from '@/lib/db';
 import { logActivity } from '@/lib/services';
-import { diffPositions, formatDiffForLog, sameAmount } from './diff';
+import { diffPositions, formatCorrectionForLog, formatDiffForLog, sameAmount } from './diff';
 import { hashDocument } from './hash';
 import { sortDocumentsForProcessing } from './mapping';
 import { mapDocument, type AssignmentResult, type UpsertOutcome } from './mappingDb';
@@ -187,6 +187,7 @@ export async function processDocument(doc: SubiektDocumentPayload, runId: string
         const { id, outcome, previous } = await upsertDocument(doc, runId);
         const assignment = await mapDocument(id, outcome);
         if (outcome === 'CHANGED' && previous) await logOrderChange(doc, id, previous);
+        if (outcome !== 'UNCHANGED') await logCorrection(doc, id, previous);
         return { id, outcome, assignment };
     });
 }
@@ -218,6 +219,45 @@ async function logOrderChange(doc: SubiektDocumentPayload, documentId: string, p
     // mapDocument zwraca sam wynik przypisania, więc project_id czytamy tutaj.
     const [row] = await query<{ project_id: string | null }>('SELECT project_id FROM subiekt_documents WHERE id = ?', [documentId]);
     await logActivity(null, 'SUBIEKT_ZK_CHANGED', formatDiffForLog(doc.number, lines, netBefore, netAfter), {
+        projectId: row?.project_id ?? null,
+        documentId,
+        externalId: doc.external_id,
+        lines,
+    }, documentId);
+}
+
+/**
+ * Nowa lub zmieniona korekta KFS → wpis SUBIEKT_CORRECTION (user_id = NULL, subject_id = id KFS), widoczny w historii
+ * projektu obok zmian ZK (getProjectZkChanges). Opis porównuje pozycje korygowanej FS (rodzica) ze stanem po
+ * korekcie z KFS (dopasowanie po corrects_position_external_id). Zmiana KFS poza pozycjami i wartością (np. uwag)
+ * nie daje wpisu.
+ */
+async function logCorrection(doc: SubiektDocumentPayload, documentId: string, previous?: PreviousContent): Promise<void> {
+    if (doc.type !== 'KFS') return;
+    if (previous?.positions && diffPositions(previous.positions, doc.positions).length === 0 && sameAmount(previous.netTotal, Number(doc.net_total) || 0)) {
+        return;
+    }
+
+    const [invoice] = doc.parent_external_id === null
+        ? []
+        : await query<{ number: string; positions_json: unknown }>(
+            'SELECT number, positions_json FROM subiekt_documents WHERE external_id = ?',
+            [doc.parent_external_id]
+        );
+    const invoiced = new Map((parsePositions(invoice?.positions_json) ?? []).map((p) => [p.external_id, p]));
+    const before: SubiektPositionPayload[] = [];
+    const after: SubiektPositionPayload[] = [];
+    for (const position of doc.positions) {
+        const target = position.corrects_position_external_id === null ? undefined : invoiced.get(position.corrects_position_external_id);
+        if (!target) continue;
+        // Klucz pozycji KFS, żeby diffPositions zestawił „przed” (FS) z „po” (KFS) jako tę samą pozycję.
+        before.push({ ...target, external_id: position.external_id, ordinal: position.ordinal });
+        after.push(position);
+    }
+
+    const lines = diffPositions(before, after);
+    const [row] = await query<{ project_id: string | null }>('SELECT project_id FROM subiekt_documents WHERE id = ?', [documentId]);
+    await logActivity(null, 'SUBIEKT_CORRECTION', formatCorrectionForLog(doc.number, invoice?.number ?? null, lines, Number(doc.net_total) || 0), {
         projectId: row?.project_id ?? null,
         documentId,
         externalId: doc.external_id,

@@ -510,3 +510,13 @@ migrations/
 - `ItemRow`: „Zmień na produkt / montaż” dla pozycji SUBIEKT z kwotą > 0, podpis „typ zmieniony ręcznie”. Wspólne: `SELECT_SM_CLASS`, `TEXTAREA_CLASS` (styles.ts), `projectStatusLabel`, etykiety powodów/statusów w `src/lib/subiekt/labels.ts`.
 - Backend: `rowToPayload` → `toDateOnly`; `mergeProjects` loguje `SUBIEKT_FILES_MOVE_FAILED` (subject = projekt docelowy) per para projektów, błąd zapisu logu nie psuje akcji.
 - Testy: `subiektAdminUi` (11, regexy + etykiety), `subiektAdminQueries` +1 (z KFS); `npm test` 298/298, tsc 19× TS5097, build OK; walidatory w przeglądarce (dev i produkcyjny) bez błędów konsoli, sumy pozycji i PENDING bez zmian po przeniesieniu i połączeniu.
+
+## 2026-10-30 — Subiekt loop 6: scenariusz „dzień z życia” (dowód: `docs/subiekt/LOOP6-DOWOD-2026-10-30.md`)
+
+- Scenariusz na świeżej bazie (`seed-dev.mjs` → plik w scratchpadzie), `next dev` :3600, synchronizacja podpisanymi POST-ami (HMAC jak loop 1), UI przez headless Chromium; zero ręcznych zapisów do bazy. Architekt „Ewa Testowa” (Anna Nowak = admin w seedzie), stawka Partner 10 %.
+- Kroki 1–12 zaliczone: PENDING 100 → 80, FS zastępuje pozycje ZK, „Zastosuj” → W_REALIZACJI → ZAKOŃCZONY (EARNED 80, cashback 16 do 30.10.2027), KFS → 600 / −20 / −4, skrzynka NO_ARCHITECT → nowy projekt, restart bez zmian stanu, STAFF przypisuje bez Połącz/Przenieś/typu.
+- Krok 10 (po decyzji: reguła „bez łączenia ZAKOŃCZONY” zostaje) w dwóch wariantach: (a) łączenie przed krokiem 7 — sumy pozycji/PENDING/dokumentów identyczne, `PROJECTS_MERGED` w bazie; (b) FS-sierota „Przypisz” do projektu ZAKOŃCZONY → MANUAL, PRODUCT 400, EARNED 40, cashback +8 (bez poprawek). Otwarte pytania → plan §6 pkt 9–12.
+- Poprawka (`bbb6de2`): korekta KFS daje wpis `SUBIEKT_CORRECTION` („KFS … (korekta FS …): Tapeta 8 → 6 szt; wartość korekty …”), widoczny w karcie „Zmiany dokumentów (Subiekt)” (dawniej „Zmiany zamówienia”) u admina i architekta; `getProjectZkChanges` zwraca ZK i KFS.
+- Poprawka (`bbb6de2`): prowizja w wierszu pozycji u architekta = suma rekordu i korekt (`src/lib/itemCommission.ts`); wcześniej pokazywała pierwszy rekord (80 zamiast 60).
+- Otwarte (plan §6 pkt 9–12): brak feedu aktywności w UI; sugestia statusu i „do zafakturowania” po KFS; `expires_at` lokalnie vs `created_at` UTC; „Wypłać środki” poniżej progu.
+- Bramka: `npm test` 303/303, tsc 19× TS5097, `next build` OK.

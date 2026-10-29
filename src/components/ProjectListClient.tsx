@@ -1,5 +1,6 @@
 'use client';
 
+import { summarizeItemCommission } from "@/lib/itemCommission";
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { Search, FileText, ChevronRight, FolderOpen } from 'lucide-react';
@@ -197,7 +198,7 @@ export default function ProjectListClient({ initialProjects, userId, userRole }:
                                                             <p className="label-caps mb-3">Pozycje projektu</p>
                                                             <ul className="space-y-2">
                                                                 {project.items?.map((item: any) => {
-                                                                    const comm = project.commissions?.find((c: any) => c.project_item_id === item.id);
+                                                                    const comm = summarizeItemCommission(project.commissions ?? [], item.id);
                                                                     return (
                                                                         <li key={item.id} className="flex items-start justify-between gap-3 rounded-sm border border-border bg-surface px-3 py-2.5">
                                                                             <div className="min-w-0">
@@ -207,7 +208,7 @@ export default function ProjectListClient({ initialProjects, userId, userRole }:
                                                                             <div className="tnum shrink-0 text-right">
                                                                                 <p className="text-sm text-ink">{formatPLN(item.amount_net)}</p>
                                                                                 {comm ? (
-                                                                                    <p className={`text-xs font-semibold ${Number(comm.amount_net) < 0 ? 'text-ink-2' : 'text-success'}`}>{formatSignedPLN(comm.amount_net)} prowizji</p>
+                                                                                    <p className={`text-xs font-semibold ${comm.amount < 0 ? 'text-ink-2' : 'text-success'}`}>{formatSignedPLN(comm.amount)} prowizji</p>
                                                                                 ) : (
                                                                                     <p className="text-xs text-ink-2" title="Ta pozycja nie podlega naliczeniu prowizji">bez prowizji</p>
                                                                                 )}

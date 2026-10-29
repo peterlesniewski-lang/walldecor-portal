@@ -28,6 +28,7 @@ import {
 import { CASHBACK_RATE } from '@/lib/partnerProgram';
 import ProjectFilesSection, { ProjectFile } from "@/components/ProjectFilesSection";
 import SubiektChangesCard from "@/components/SubiektChangesCard";
+import { summarizeItemCommission } from "@/lib/itemCommission";
 import type { ProjectZkChange } from "@/lib/subiekt/queries";
 
 interface ProjectDetailClientProps {
@@ -202,8 +203,8 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                                         {items.map((item: any) => {
                                             const Icon = categoryIcons[item.category] || Package;
                                             const isInstallation = item.type === 'INSTALLATION';
-                                            const comm = commissions.find((c: any) => c.project_item_id === item.id);
-                                            const commRate = comm?.rate != null && comm.rate !== '' ? Math.round(Number(comm.rate) * 100) : null;
+                                            const comm = summarizeItemCommission(commissions, item.id);
+                                            const commRate = comm?.rate != null ? Math.round(comm.rate * 100) : null;
                                             return (
                                                 <tr key={item.id}>
                                                     <td className="px-5 py-3.5">
@@ -233,7 +234,7 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                                                         )}
                                                     </td>
                                                     <td className={cx('tnum px-5 py-3.5 text-right font-semibold', comm ? 'text-ink' : 'text-ink-3')}>
-                                                        {comm ? formatPLN(comm.amount_net) : '—'}
+                                                        {comm ? formatPLN(comm.amount) : '—'}
                                                     </td>
                                                 </tr>
                                             );

@@ -150,7 +150,7 @@ export async function getArchitectProjects(userId: string, role?: string) {
         const placeholders = ids.map(() => '?').join(',');
         const [allItems, allCommissions] = await Promise.all([
             query<any>(`SELECT * FROM project_items WHERE project_id IN (${placeholders})`, ids),
-            query<any>(`SELECT * FROM commissions WHERE project_id IN (${placeholders})`, ids),
+            query<any>(`SELECT * FROM commissions WHERE project_id IN (${placeholders}) ORDER BY created_at, id`, ids),
         ]);
         for (const project of projects) {
             project.items = allItems.filter((i: any) => i.project_id === project.id);
@@ -183,7 +183,7 @@ export async function getProjectDetails(id: string) {
     project.items = items;
 
     // Get commissions for this project
-    const commissions = await query<any>("SELECT * FROM commissions WHERE project_id = ?", [id]);
+    const commissions = await query<any>("SELECT * FROM commissions WHERE project_id = ? ORDER BY created_at, id", [id]);
     project.commissions = commissions;
 
     // Get architect info
