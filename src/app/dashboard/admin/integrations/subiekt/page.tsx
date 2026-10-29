@@ -22,8 +22,9 @@ import {
     formatDateTime,
     formatNumber,
 } from '@/components/ui';
-import { TD_CLASS, TH_CLASS, ROW_CLASS } from '../../projects/[id]/styles';
+import RefreshButton from './RefreshButton';
 import SubiektInboxClient from './SubiektInboxClient';
+import SyncRunsTable from './SyncRunsTable';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,10 @@ export default async function SubiektIntegrationPage() {
             {/* Tytuł i opis strony daje nagłówek powłoki (src/lib/shellTitle.ts). */}
             {/* Status synchronizacji */}
             <section aria-labelledby="sync-status" className="space-y-4">
-                <h2 id="sync-status" className="label-caps">Status synchronizacji</h2>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 id="sync-status" className="label-caps">Status synchronizacji</h2>
+                    <RefreshButton />
+                </div>
                 {lastRun ? (
                     <>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -82,46 +86,7 @@ export default async function SubiektIntegrationPage() {
                             />
                         </div>
 
-                        <Card className="overflow-hidden">
-                            <CardHeader title="Ostatnie uruchomienia" />
-                            <div className="overflow-x-auto">
-                                <table className="w-full min-w-[860px] border-collapse text-sm">
-                                    <thead>
-                                        <tr>
-                                            <th scope="col" className={TH_CLASS}>Start</th>
-                                            <th scope="col" className={TH_CLASS}>Koniec</th>
-                                            <th scope="col" className={TH_CLASS}>Status</th>
-                                            <th scope="col" className={`${TH_CLASS} text-right`}>Strony</th>
-                                            <th scope="col" className={`${TH_CLASS} text-right`}>Przyjęte</th>
-                                            <th scope="col" className={`${TH_CLASS} text-right`}>Bez zmian</th>
-                                            <th scope="col" className={`${TH_CLASS} text-right`}>Odrzucone</th>
-                                            <th scope="col" className={`${TH_CLASS} text-right`}>Nieprzypisane</th>
-                                            <th scope="col" className={TH_CLASS}>Błąd</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {runs.map((run) => {
-                                            const status = syncRunStatusEntry(run.status);
-                                            return (
-                                                <tr key={run.id} className={ROW_CLASS}>
-                                                    <td className={`${TD_CLASS} whitespace-nowrap tnum`}>{formatDateTime(run.started_at)}</td>
-                                                    <td className={`${TD_CLASS} whitespace-nowrap tnum text-ink-2`}>{formatDateTime(run.finished_at)}</td>
-                                                    <td className={TD_CLASS}><StatusPill tone={status.tone}>{status.label}</StatusPill></td>
-                                                    <td className={`${TD_CLASS} text-right tnum`}>{run.pages_received}/{run.pages_expected}</td>
-                                                    <td className={`${TD_CLASS} text-right tnum`}>{formatNumber(run.documents_accepted)}</td>
-                                                    <td className={`${TD_CLASS} text-right tnum`}>{formatNumber(run.documents_unchanged)}</td>
-                                                    <td className={`${TD_CLASS} text-right tnum`}>{formatNumber(run.documents_rejected)}</td>
-                                                    <td className={`${TD_CLASS} text-right tnum`}>{formatNumber(run.documents_unassigned)}</td>
-                                                    <td className={`${TD_CLASS} max-w-[280px] text-ink-2`}>
-                                                        {run.error ? <span className="break-words text-danger">{run.error}</span> : '—'}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </Card>
+                        <SyncRunsTable runs={runs} />
                     </>
                 ) : (
                     <EmptyState

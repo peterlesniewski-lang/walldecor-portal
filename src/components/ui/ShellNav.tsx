@@ -76,11 +76,11 @@ export function NavGroupList({ groups, onNavigate }: { groups: NavGroup[]; onNav
                                 <span>{link.name}</span>
                                 {link.badge && link.badge.count > 0 && (
                                     <span
-                                        aria-label={link.badge.label}
                                         title={link.badge.label}
                                         className="ml-auto grid h-5 min-w-5 place-items-center rounded-pill bg-brass px-1.5 text-[11px] font-bold leading-none tnum text-ink"
                                     >
-                                        {link.badge.count}
+                                        <span aria-hidden="true">{link.badge.count}</span>
+                                        <span className="sr-only">{link.badge.label}</span>
                                     </span>
                                 )}
                             </Link>

@@ -75,8 +75,8 @@ export default function ItemRow({
             setPanel(null);
             setNote('');
             router.refresh();
-        } catch (e: any) {
-            setError(e.message || 'Błąd zapisu.');
+        } catch (e: unknown) {
+            setError(e instanceof Error && e.message ? e.message : 'Błąd zapisu.');
         } finally {
             setSaving(false);
         }
@@ -93,8 +93,8 @@ export default function ItemRow({
             });
             setPanel(null);
             router.refresh();
-        } catch (e: any) {
-            setError(e.message || 'Błąd zapisu metadanych.');
+        } catch (e: unknown) {
+            setError(e instanceof Error && e.message ? e.message : 'Błąd zapisu metadanych.');
         } finally {
             setSaving(false);
         }
@@ -106,8 +106,8 @@ export default function ItemRow({
         try {
             await deleteProjectItem(item.id, note);
             router.refresh();
-        } catch (e: any) {
-            setError(e.message || 'Błąd usuwania.');
+        } catch (e: unknown) {
+            setError(e instanceof Error && e.message ? e.message : 'Błąd usuwania.');
             setPanel(null);
         } finally {
             setSaving(false);
@@ -118,13 +118,13 @@ export default function ItemRow({
         setSaving(true);
         setError('');
         try {
-            await overrideItemType(item.id, nextType);
-            setPanel(null);
-            router.refresh();
-        } catch (e: any) {
-            setError(e.message || 'Błąd zmiany typu pozycji.');
-            setPanel(null);
+            const result = await overrideItemType(item.id, nextType);
+            if (result.ok) router.refresh();
+            else setError(result.error);
+        } catch (e: unknown) {
+            setError(e instanceof Error && e.message ? e.message : 'Błąd zmiany typu pozycji.');
         } finally {
+            setPanel(null);
             setSaving(false);
         }
     };

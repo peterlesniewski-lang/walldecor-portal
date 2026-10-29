@@ -40,14 +40,17 @@ export default function MergeProjectsCard({ projectId, candidates }: Props) {
         setLoading(true);
         setError('');
         try {
-            await mergeProjects(projectId, chosen.map((c) => c.id));
-            setConfirming(false);
-            setSelected([]);
-            router.refresh();
+            const result = await mergeProjects(projectId, chosen.map((c) => c.id));
+            if (result.ok) {
+                setSelected([]);
+                router.refresh();
+            } else {
+                setError(result.error);
+            }
         } catch (e: unknown) {
             setError(e instanceof Error && e.message ? e.message : 'Nie udało się połączyć projektów.');
-            setConfirming(false);
         } finally {
+            setConfirming(false);
             setLoading(false);
         }
     };
@@ -61,12 +64,12 @@ export default function MergeProjectsCard({ projectId, candidates }: Props) {
                 <ul className="divide-y divide-border rounded-sm border border-border">
                     {candidates.map((c) => (
                         <li key={c.id}>
-                            <label className="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm hover:bg-surface-2">
+                            <label className="flex cursor-pointer items-center has-[:disabled]:cursor-default gap-3 px-4 py-3 text-sm hover:bg-surface-2">
                                 <input
                                     type="checkbox"
                                     checked={selected.includes(c.id)}
                                     onChange={() => toggle(c.id)}
-                                    disabled={loading}
+                                    disabled={loading || confirming}
                                     className="h-4 w-4 accent-brass-ink"
                                 />
                                 <span className="min-w-0 flex-1 font-semibold text-ink">{c.name}</span>
@@ -78,7 +81,13 @@ export default function MergeProjectsCard({ projectId, candidates }: Props) {
                 </ul>
                 {confirming ? (
                     <InlineConfirm
-                        question="Projekty źródłowe zostaną usunięte, ich pozycje, dokumenty, pliki i prowizje trafią do tego projektu."
+                        question={
+                            <>
+                                Połączyć do tego projektu: {chosen.map((c, i) => (
+                                    <span key={c.id}>{i > 0 && ', '}<strong>„{c.name}”</strong></span>
+                                ))} (pozycje razem {formatPLN(chosenTotal)})? Projekty źródłowe zostaną usunięte, ich pozycje, dokumenty, pliki i prowizje trafią do tego projektu.
+                            </>
+                        }
                         confirmLabel="Połącz"
                         cancelLabel="Anuluj"
                         danger

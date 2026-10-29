@@ -3,6 +3,9 @@
 export const INPUT_CLASS =
     'h-10 w-full rounded-sm border border-border-strong bg-surface px-3 text-[15px] text-ink tnum placeholder:text-ink-3 focus:border-ink focus:outline-none focus:ring-[3px] focus:ring-ink/10';
 
+export const TEXTAREA_CLASS =
+    'min-h-16 w-full rounded-sm border border-border-strong bg-surface px-3 py-2 text-[15px] text-ink placeholder:text-ink-3 focus:border-ink focus:outline-none focus:ring-[3px] focus:ring-ink/10';
+
 /** Mały select w wierszu tabeli / linii akcji (32 px); szerokość dokłada miejsce użycia. */
 export const SELECT_SM_CLASS =
     'h-8 min-w-0 rounded-sm border border-border-strong bg-surface px-2.5 text-[13px] text-ink focus:border-ink focus:outline-none focus:ring-[3px] focus:ring-ink/10';

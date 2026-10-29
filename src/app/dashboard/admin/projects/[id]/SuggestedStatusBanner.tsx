@@ -2,9 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Banner, Button, InlineConfirm, PROJECT_STATUS, StatusPill } from '@/components/ui';
+import { Banner, Button, InlineConfirm, StatusPill } from '@/components/ui';
 import { applySuggestedStatus } from '@/app/actions/subiekt';
+import { projectStatusLabel } from '@/lib/subiekt/labels';
 import { ErrorBanner } from './ErrorBanner';
+
+const PARTIAL_HINT = 'Status mógł zmienić się częściowo — sprawdź kartę statusu.';
 
 interface Props {
     projectId: string;
@@ -25,18 +28,19 @@ export default function SuggestedStatusBanner({ projectId, suggested, canApply }
         setLoading(true);
         setError('');
         try {
-            await applySuggestedStatus(projectId);
-            setConfirming(false);
-            router.refresh();
+            const result = await applySuggestedStatus(projectId);
+            if (!result.ok) setError(`${result.error} ${PARTIAL_HINT}`);
         } catch (e: unknown) {
-            setError(e instanceof Error && e.message ? e.message : 'Nie udało się zmienić statusu.');
-            setConfirming(false);
+            setError(`${e instanceof Error && e.message ? e.message : 'Nie udało się zmienić statusu.'} ${PARTIAL_HINT}`);
         } finally {
+            // Także po błędzie: kroki statusu nie są jedną transakcją, więc część mogła się już zapisać.
+            setConfirming(false);
             setLoading(false);
+            router.refresh();
         }
     };
 
-    const label = PROJECT_STATUS[suggested]?.label ?? suggested;
+    const label = projectStatusLabel(suggested);
 
     return (
         <div className="space-y-3">

@@ -117,9 +117,12 @@ test('getRecentSyncRuns: newest first, ISO dates, numeric counters, limit clampe
 });
 
 test('inbox helpers: can_create_project, architect options, projects for documents without architect', async () => {
+    // KFS bez rodzica (z kodem architekta) — sama jest korzeniem, ale z korekty projektu się nie zakłada.
+    await sync([doc(340, 'KFS', { architect_code: 'A-001', issued_at: '2026-10-16', net_total: -100, positions: [pos(3400, { net_total: -100, unit_price_net: -100 })] })]);
     const rows = await q.getUnassignedDocuments();
     const canCreate = Object.fromEntries(rows.map((r) => [r.external_id, r.can_create_project]));
-    assert.deepEqual(canCreate, { 300: true, 310: true, 311: true, 320: true, 330: false }, 'pochodna znanego ZK (330) — projekt tylko z korzenia');
+    assert.deepEqual(canCreate, { 300: true, 310: true, 311: true, 320: true, 330: false, 340: false },
+        'pochodna znanego ZK (330) — projekt tylko z korzenia; KFS (340) — nigdy');
 
     assert.deepEqual(await q.getArchitectOptions(), [
         { id: ARCHI_A, name: 'Architekt A', subiekt_code: 'A-001' },

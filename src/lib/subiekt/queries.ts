@@ -1,4 +1,5 @@
 // Zapytania odczytowe integracji Subiekt: status dla agenta i widoki panelu admina (Loop 4).
+import { cache } from 'react';
 import { query } from '@/lib/db';
 import { toDateOnly, toIsoString } from './dates';
 
@@ -235,13 +236,16 @@ export async function getUnknownArchitectCodes(): Promise<Array<{ code: string; 
         .sort((a, b) => b.documents - a.documents || a.code.localeCompare(b.code));
 }
 
-/** Liczba dokumentów w skrzynce (badge w sidebarze). */
-export async function getUnassignedCount(): Promise<number> {
+/**
+ * Liczba dokumentów w skrzynce (badge w sidebarze i kafelek strony integracji). React `cache`: layout i strona
+ * w jednym renderze dzielą jedno zapytanie (poza renderem serwerowym, np. w testach, cache nic nie zapamiętuje).
+ */
+export const getUnassignedCount = cache(async (): Promise<number> => {
     const [row] = await query<{ count: number }>(
         "SELECT COUNT(*) AS count FROM subiekt_documents WHERE assignment_status = 'UNASSIGNED'"
     );
     return Number(row?.count ?? 0);
-}
+});
 
 /** Dokument w sekcji „Dokumenty Subiekt” projektu. */
 export interface DocRow {

@@ -1,5 +1,16 @@
 // Etykiety integracji Subiekt dla panelu admina (czyste dane, bez JSX — testowalne przez node --test).
-import type { Tone } from '@/components/ui/statusMaps';
+import { PROJECT_STATUS, type Tone } from '@/components/ui/statusMaps';
+import { formatPLNFixed } from '@/lib/utils';
+
+/** Polska etykieta statusu projektu; nieznany kod zostaje bez zmian (np. w etykiecie opcji <select>). */
+export function projectStatusLabel(status: string): string {
+    return PROJECT_STATUS[status]?.label ?? status;
+}
+
+/** Kwota dokumentu z groszami: 2400 → "2 400,00 PLN" (na dokumentach grosze mają znaczenie). */
+export function formatDocAmount(value: number): string {
+    return `${formatPLNFixed(value)} PLN`;
+}
 
 /** Powód w skrzynce nieprzypisanych (subiekt_documents.assignment_note) po polsku. Nieznany kod → bez zmian. */
 export function assignmentReasonLabel(note: string | null | undefined): string {
@@ -41,8 +52,9 @@ export function syncRunStatusEntry(status: string): { label: string; tone: Tone 
 
 /** Sposób przypisania dokumentu (subiekt_documents.assignment_status). */
 export const ASSIGNMENT_STATUS: Record<string, { label: string; tone: Tone }> = {
-    AUTO: { label: 'Automatycznie', tone: 'accent' },
-    MANUAL: { label: 'Ręcznie', tone: 'info' },
+    AUTO: { label: 'Automatycznie', tone: 'neutral' },
+    // accent, nie info: niebieski ma już znacznik „Subiekt · …” na pozycjach.
+    MANUAL: { label: 'Ręcznie', tone: 'accent' },
     IGNORED: { label: 'Zignorowany', tone: 'neutral' },
     UNASSIGNED: { label: 'Nieprzypisany', tone: 'warning' },
 };

@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CornerDownRight } from 'lucide-react';
-import { Button, Card, CardBody, CardHeader, InlineConfirm, PROJECT_STATUS, StatusPill, formatPLN } from '@/components/ui';
+import { Button, Card, CardBody, CardHeader, InlineConfirm, StatusPill } from '@/components/ui';
 import { moveDocumentToProject } from '@/app/actions/subiekt';
 import type { DocRow, ProjectDocChain } from '@/lib/subiekt/queries';
-import { assignmentStatusEntry, formatDocDate } from '@/lib/subiekt/labels';
+import { assignmentStatusEntry, formatDocAmount, formatDocDate, projectStatusLabel } from '@/lib/subiekt/labels';
 import { ErrorBanner } from './ErrorBanner';
 import { SELECT_SM_CLASS } from './styles';
 
@@ -35,7 +35,7 @@ export default function SubiektDocumentsCard({ chains, summary, moveTargets, can
                 title="Dokumenty Subiekt"
                 action={
                     <span className="text-right text-[13px] tnum text-ink-2">
-                        ZK: {formatPLN(summary.zkTotal)} · FS: {formatPLN(summary.fsTotal)} · do zafakturowania: {formatPLN(summary.remainingToInvoice)}
+                        ZK: {formatDocAmount(summary.zkTotal)} · FS: {formatDocAmount(summary.fsTotal)} · do zafakturowania: {formatDocAmount(summary.remainingToInvoice)}
                     </span>
                 }
             />
@@ -77,7 +77,7 @@ function DocLine({ doc }: { doc: DocRow }) {
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
             <span className="font-semibold text-ink">{doc.number}</span>
             <span className="tnum text-ink-2">{formatDocDate(doc.issued_at)}</span>
-            <span className="font-semibold tnum text-ink">{formatPLN(doc.net_total)}</span>
+            <span className="font-semibold tnum text-ink">{formatDocAmount(doc.net_total)}</span>
             {doc.type === 'FS' && (
                 <StatusPill tone={doc.is_paid ? 'success' : 'neutral'}>{doc.is_paid ? 'zapłacona' : 'niezapłacona'}</StatusPill>
             )}
@@ -100,13 +100,13 @@ function MoveChain({ root, targets }: { root: DocRow; targets: MoveTarget[] }) {
         setLoading(true);
         setError('');
         try {
-            await moveDocumentToProject(root.id, target.id);
-            setConfirming(false);
-            router.refresh();
+            const result = await moveDocumentToProject(root.id, target.id);
+            if (result.ok) router.refresh();
+            else setError(result.error);
         } catch (e: unknown) {
             setError(e instanceof Error && e.message ? e.message : 'Nie udało się przenieść dokumentu.');
-            setConfirming(false);
         } finally {
+            setConfirming(false);
             setLoading(false);
         }
     };
@@ -133,7 +133,7 @@ function MoveChain({ root, targets }: { root: DocRow; targets: MoveTarget[] }) {
                         className={`${SELECT_SM_CLASS} w-72 max-w-full`}
                     >
                         {targets.map((t) => (
-                            <option key={t.id} value={t.id}>{`${t.name} · ${PROJECT_STATUS[t.status]?.label ?? t.status}`}</option>
+                            <option key={t.id} value={t.id}>{`${t.name} · ${projectStatusLabel(t.status)}`}</option>
                         ))}
                     </select>
                     <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>Przenieś</Button>
