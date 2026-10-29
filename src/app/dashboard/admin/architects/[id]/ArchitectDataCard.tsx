@@ -15,6 +15,7 @@ interface ArchitectData {
     address: string | null;
     bank_account: string | null;
     is_vat_payer: number | boolean;
+    subiekt_code?: string | null;
 }
 
 interface Props {
@@ -169,6 +170,7 @@ export default function ArchitectDataCard({ architect, isAdmin }: Props) {
                             <Row label="VAT" value={Boolean(architect.is_vat_payer) ? 'Płatnik VAT' : 'Nie jest płatnikiem VAT'} />
                             <Row label="Adres" value={architect.address} wide />
                             <Row label="Nr konta" value={architect.bank_account} wide mono />
+                            <Row label="Kod w Subiekcie" value={architect.subiekt_code} wide mono />
                         </dl>
 
                         {/* Usunięcie konta: tylko ADMIN */}
