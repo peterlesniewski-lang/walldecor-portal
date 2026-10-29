@@ -10,5 +10,5 @@ export { Banner } from './Banner';
 export type { BannerTone } from './Banner';
 export { InlineConfirm } from './InlineConfirm';
 export { Logo, LOGO_SOURCES } from './Logo';
-export { formatPLN, formatSignedPLN, formatNumber, formatDate } from './format';
+export { formatPLN, formatSignedPLN, formatNumber, formatDate, formatDateTime } from './format';
 export { cx } from './cx';

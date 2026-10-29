@@ -60,3 +60,33 @@ export async function getSyncStatus(): Promise<SubiektSyncStatus> {
     );
     return { last_run: lastRun ? normalizeRun(lastRun) : null, unassigned_count: Number(count?.count ?? 0) };
 }
+
+/** Wpis „Zmiany zamówienia (Subiekt)” na stronie projektu (SubiektChangesCard). */
+export interface ProjectZkChange {
+    id: string;
+    /** ISO 8601 UTC. */
+    created_at: string;
+    description: string;
+}
+
+/**
+ * Wpisy SUBIEKT_ZK_CHANGED dokumentów, które TERAZ należą do projektu (activity_logs.subject_id =
+ * subiekt_documents.id), od najnowszego. Wpis zapisany, gdy dokument był nieprzypisany, pokazuje się po
+ * przypisaniu, a po przeniesieniu dokumentu do innego projektu idzie razem z nim. Najwyżej 100 wpisów.
+ */
+export async function getProjectZkChanges(projectId: string): Promise<ProjectZkChange[]> {
+    const rows = await query<{ id: string; created_at: unknown; description: string | null }>(
+        `SELECT a.id, a.created_at, a.description
+         FROM activity_logs a
+         WHERE a.event_type = 'SUBIEKT_ZK_CHANGED'
+           AND a.subject_id IN (SELECT id FROM subiekt_documents WHERE project_id = ?)
+         ORDER BY a.created_at DESC, a.id DESC
+         LIMIT 100`,
+        [projectId]
+    );
+    return rows.map((row) => ({
+        id: String(row.id),
+        created_at: toIsoString(row.created_at) ?? '',
+        description: String(row.description ?? ''),
+    }));
+}

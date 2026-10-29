@@ -20,12 +20,16 @@ const requiredColumns = [
     // 019 (loop 1): kod architekta w Subiekcie, trwałe ręczne przełączenie typu pozycji
     { table: 'users', name: 'subiekt_code', definition: 'VARCHAR(64) NULL' },
     { table: 'project_items', name: 'type_overridden', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    // 020: obiekt wpisu w logu aktywności (id dokumentu Subiekta dla wpisów SUBIEKT_*)
+    { table: 'activity_logs', name: 'subject_id', definition: 'VARCHAR(36) NULL' },
 ];
 
 // 019: indeksy na istniejących tabelach (dodawane po kolumnach, sprawdzane po nazwie indeksu).
 const requiredIndexes = [
     { table: 'users', name: 'idx_users_subiekt_code', unique: true, columns: 'subiekt_code' },
     { table: 'project_items', name: 'idx_project_items_subiekt_doc', unique: false, columns: 'subiekt_document_id' },
+    // 020
+    { table: 'activity_logs', name: 'idx_activity_logs_event_subject', unique: false, columns: 'event_type, subject_id' },
 ];
 
 // 017: jednorazowa aktualizacja szablonu maila powitalnego (tylko jeśli nie był ręcznie edytowany —

@@ -41,12 +41,34 @@ export function formatSignedPLN(value: number | string | null | undefined): stri
     return `${n < 0 ? '\u2212' : '+'}${formatPLN(Math.abs(n))}`;
 }
 
+function toDate(value: Date | string | number | null | undefined): Date | null {
+    if (value === null || value === undefined || value === '') return null;
+    // Surowy format SQL ("2026-06-10 12:00:00") pochodzi z CURRENT_TIMESTAMP, czyli UTC — bez 'Z' JS czytałby go
+    // w strefie serwera. ISO z offsetem i Date przechodzą bez zmian.
+    const normalized = typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)
+        ? value.replace(' ', 'T') + 'Z'
+        : value;
+    const d = normalized instanceof Date
+        ? normalized
+        : new Date(typeof normalized === 'string' ? normalized.replace(' ', 'T') : normalized);
+    return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /** Data jako dd.MM.rrrr. Przyjmuje Date, timestamp, ISO lub format SQL ("2026-06-10 12:00:00"). */
 export function formatDate(value: Date | string | number | null | undefined): string {
-    if (value === null || value === undefined || value === '') return NO_VALUE;
-    const d = value instanceof Date
-        ? value
-        : new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
-    if (Number.isNaN(d.getTime())) return NO_VALUE;
+    const d = toDate(value);
+    if (!d) return NO_VALUE;
     return d.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+/**
+ * Data i godzina "dd.MM.rrrr, HH:mm" w strefie Europe/Warsaw — stała strefa, żeby render serwera i klienta
+ * dawał ten sam tekst. Podawać ISO ze strefą (np. "2026-10-20T18:00:00.000Z").
+ */
+export function formatDateTime(value: Date | string | number | null | undefined): string {
+    const d = toDate(value);
+    if (!d) return NO_VALUE;
+    return d.toLocaleString('pl-PL', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Warsaw',
+    });
 }

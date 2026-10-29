@@ -246,7 +246,7 @@ export function formatDiffForLog(docNumber: string, lines: PositionDiffLine[], n
 // → "ZK 45/10/2026: Tapeta Floral 10 → 8 szt; dodano Montaż 1 200,00 zł; wartość 14 300,00 → 13 160,00 zł"
 ```
 
-Dopasowanie pozycji: po `external_id` (ob_Id); GT przy edycji ZK zachowuje ob_Id istniejących pozycji, nowe pozycje mają nowe ob_Id. Gdy `content_hash` dokumentu różni się od ostatniego snapshotu → zapisz snapshot, policz diff, `logActivity(null, 'SUBIEKT_ZK_CHANGED', sformatowany tekst, { projectId, documentId, lines })`. `user_id = null` oznacza „system”; panel pokazuje autora „Subiekt (synchronizacja)”.
+Dopasowanie pozycji: po `external_id` (ob_Id); GT przy edycji ZK zachowuje ob_Id istniejących pozycji, nowe pozycje mają nowe ob_Id. **Klucz historii:** wpis `SUBIEKT_ZK_CHANGED` ma `activity_logs.subject_id = subiekt_documents.id` (migracja 020, indeks `(event_type, subject_id)`); widok „Zmiany zamówienia” pobiera wpisy po dokumentach projektu, więc historia podąża za dokumentem przy przypisaniu, łączeniu i przenoszeniu. Stan „przed” pochodzi z wiersza dokumentu sprzed aktualizacji (nie z poprzedniego snapshotu, bo znaczniki czasu mają rozdzielczość sekundy). Kwoty w logu z separatorem tysięcy U+00A0. Gdy `content_hash` dokumentu różni się od ostatniego snapshotu → zapisz snapshot, policz diff, `logActivity(null, 'SUBIEKT_ZK_CHANGED', sformatowany tekst, { projectId, documentId, lines })`. `user_id = null` oznacza „system”; panel pokazuje autora „Subiekt (synchronizacja)”.
 
 ---
 
@@ -480,7 +480,7 @@ export async function ignoreDocument(documentId: string, note: string): Promise<
 export async function mergeProjects(targetProjectId: string, sourceProjectIds: string[]): Promise<{ success: true }>
 // wymagania: wszystkie projekty tego samego owner_id, żaden nie jest ZAKOŃCZONY ani NIEZREALIZOWANY (inaczej błąd z komunikatem);
 // w withTransaction: UPDATE subiekt_documents SET project_id = target; UPDATE project_items SET project_id = target; UPDATE commissions SET project_id = target;
-// UPDATE project_files SET project_id = target; UPDATE activity_logs metadata nie ruszamy; DELETE FROM projects WHERE id IN (source);
+// UPDATE project_files SET project_id = target; activity_logs bez zmian (historia ZK kluczowana po subject_id dokumentu, więc sama podąża za dokumentami); DELETE FROM projects WHERE id IN (source);
 // logActivity 'PROJECTS_MERGED' z listą nazw; nazwa projektu docelowego bez zmian
 
 export async function moveDocumentToProject(documentId: string, targetProjectId: string): Promise<{ success: true }>

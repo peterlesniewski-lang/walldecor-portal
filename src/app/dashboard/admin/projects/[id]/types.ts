@@ -33,6 +33,8 @@ export interface ProjectItem {
     order_number: string | null;
     invoice_number: string | null;
     is_paid: number | boolean;
+    /** 'MANUAL' (panel, import) lub 'SUBIEKT' (synchronizacja — bez edycji ręcznej). */
+    source?: string | null;
 }
 
 export interface Commission {

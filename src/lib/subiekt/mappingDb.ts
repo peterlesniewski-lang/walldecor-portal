@@ -182,7 +182,7 @@ async function createProjectForRoot(root: StoredDoc, architectId: string): Promi
     await query('UPDATE subiekt_documents SET project_id = ? WHERE id = ?', [projectId, root.id]);
     await logActivity(null, 'SUBIEKT_PROJECT_CREATED', `Subiekt: utworzono projekt „${name}” z dokumentu ${root.number}`, {
         projectId, documentId: root.id, architectId,
-    });
+    }, root.id);
     return projectId;
 }
 
@@ -436,7 +436,7 @@ async function remapStored(current: StoredDoc): Promise<AssignmentResult> {
         if (current.assignment_note !== mismatch) {
             await logActivity(null, 'SUBIEKT_OWNER_MISMATCH',
                 `Subiekt: dokument ${current.number} wskazuje architekta ${architect.code ?? architect.architectId}, a projekt należy do innego architekta`,
-                { projectId, documentId: current.id, architectId: architect.architectId, ownerId: project.owner_id });
+                { projectId, documentId: current.id, architectId: architect.architectId, ownerId: project.owner_id }, current.id);
         }
         if (current.assignment_status !== 'AUTO') {
             await saveAssignment(current.id, { status: current.assignment_status, note: mismatch, ...located, projectId });

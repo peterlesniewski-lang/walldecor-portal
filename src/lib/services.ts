@@ -376,11 +376,18 @@ export async function getUserById(id: string) {
     return res.length > 0 ? res[0] : null;
 }
 
-export async function logActivity(userId: string | null, eventType: string, description: string, metadata?: any) {
+/** subjectId: obiekt, którego dotyczy wpis (np. subiekt_documents.id) — do wyszukiwania bez parsowania metadata. */
+export async function logActivity(
+    userId: string | null,
+    eventType: string,
+    description: string,
+    metadata?: any,
+    subjectId: string | null = null
+) {
     const id = `act_${uuidv4().replace(/-/g, '').substring(0, 12)}`;
     await query(
-        "INSERT INTO activity_logs (id, user_id, event_type, description, metadata) VALUES (?, ?, ?, ?, ?)",
-        [id, userId, eventType, description, metadata ? JSON.stringify(metadata) : null]
+        "INSERT INTO activity_logs (id, user_id, event_type, description, metadata, subject_id) VALUES (?, ?, ?, ?, ?, ?)",
+        [id, userId, eventType, description, metadata ? JSON.stringify(metadata) : null, subjectId]
     );
 }
 
