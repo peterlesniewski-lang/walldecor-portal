@@ -43,9 +43,14 @@ export function formatSignedPLN(value: number | string | null | undefined): stri
 
 function toDate(value: Date | string | number | null | undefined): Date | null {
     if (value === null || value === undefined || value === '') return null;
-    const d = value instanceof Date
-        ? value
-        : new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
+    // Surowy format SQL ("2026-06-10 12:00:00") pochodzi z CURRENT_TIMESTAMP, czyli UTC — bez 'Z' JS czytałby go
+    // w strefie serwera. ISO z offsetem i Date przechodzą bez zmian.
+    const normalized = typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)
+        ? value.replace(' ', 'T') + 'Z'
+        : value;
+    const d = normalized instanceof Date
+        ? normalized
+        : new Date(typeof normalized === 'string' ? normalized.replace(' ', 'T') : normalized);
     return Number.isNaN(d.getTime()) ? null : d;
 }
 
