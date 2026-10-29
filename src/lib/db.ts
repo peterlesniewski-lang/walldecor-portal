@@ -84,6 +84,10 @@ function activeTx(): TxContext | undefined {
  * The callback receives `queryFn` (= `query`, which routes to the transaction's connection).
  * Re-entrant: called inside an active transaction it just runs the callback in that transaction —
  * the outermost call decides commit/rollback. On failure the transaction is rolled back automatically.
+ *
+ * Rule: nested calls join the outer transaction; there are no savepoints, so an error inside must
+ * propagate to the transaction boundary. Catching an error from a nested `withTransaction` and carrying
+ * on would leave its partial writes in the outer transaction — only catch at the outermost call.
  */
 export async function withTransaction<T>(fn: (queryFn: typeof query) => Promise<T>): Promise<T> {
     if (activeTx()) return fn(query);
@@ -106,7 +110,12 @@ export async function withTransaction<T>(fn: (queryFn: typeof query) => Promise<
         const pool = getMySQLPool();
         const conn: PoolConnection = await pool.getConnection();
         const ctx: TxContext = { engine: 'mysql', conn, active: true };
-        await conn.beginTransaction();
+        try {
+            await conn.beginTransaction();
+        } catch (e) {
+            conn.release();
+            throw e;
+        }
 
         try {
             const result = await txStorage.run(ctx, () => fn(query));
@@ -125,6 +134,13 @@ export async function withTransaction<T>(fn: (queryFn: typeof query) => Promise<
 
 export async function query<T>(sql: string, params?: any[]): Promise<T[]> {
     const finalSql = preprocessSQL(sql);
+
+    // Kontekst transakcji istnieje, ale jest już zamknięty (COMMIT/ROLLBACK): to zagubiony callback,
+    // który przeżył transakcję. Zapytanie i tak idzie poza transakcją (pula / połączenie główne).
+    const storedTx = txStorage.getStore();
+    if (storedTx && !storedTx.active) {
+        console.warn('[db] query po zakończeniu transakcji (zagubiony callback?):', finalSql.slice(0, 80));
+    }
 
     if (isSQLite) {
         const db = getSQLiteDb();

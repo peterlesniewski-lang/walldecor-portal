@@ -446,3 +446,15 @@ migrations/
 - Testy integracyjne na prawdziwym SQLite: `tests/helpers/sqliteTestDb.ts` (schemat z bloku `// SCHEMA-START`…`// SCHEMA-END` w `seed-dev.mjs`) + `tests/helpers/srcResolveHooks.ts` (hook Node mapujący `@/…` i importy bez rozszerzenia na `.ts`). `npm test` = `node --test "tests/*.test.ts"` (glob rozwija Node; katalog `tests/` jako argument nie działa); uruchamiać pod Node 25 (natywny `better-sqlite3`).
 - Testy źródłowe (`commissionCorrections`, `commissionConsistency`, `accountValidation`) czytają teraz rdzeń, asercje zachowane.
 - `updateProjectStatus` nietknięty — nadal ma 2× `INSERT INTO commissions` (finalizacja i PENDING przy akceptacji), więc walidator planu `grep -c` daje 2, nie 0.
+
+## 2026-10-29 — Subiekt loop 1: endpoint synchronizacji, tabele pośrednie, run tracking
+
+- Migracja 019 uzupełniona o resztę schematu z planu 2.2 (`users.subiekt_code` + unikalny indeks, `project_items.type_overridden`, `subiekt_documents`, `subiekt_document_snapshots`, `subiekt_sync_runs`); to samo w `seed-dev.mjs` (blok SCHEMA zawiera teraz też `CREATE INDEX`) i `ensure-production-schema.mjs` (nowa lista `requiredIndexes` sprawdzana po `information_schema.STATISTICS`).
+- `src/lib/subiekt/sync.ts` → `processSyncPage`: run upsert poza transakcjami, **jedna `withTransaction` na dokument**, błąd dokumentu → `rejected` z `INTERNAL_ERROR:<msg>`, reszta strony idzie dalej. Bez mapowania: każdy dokument `UNASSIGNED` / `MAPPING_NOT_ENABLED`, więc `unassigned = accepted + unchanged`.
+- Hash równy → tylko `last_seen_at`, `last_run_id`, `is_paid` (bez snapshotu); hash różny → pełny UPDATE + snapshot. Id: `sd_`/`ss_` + 12 hex, run = `run_id` agenta.
+- `processSyncPage` trzeba wołać poza transakcją — w środku zewnętrznej transakcji izolacja per dokument nie działa (brak savepointów, zasada opisana w `db.ts`).
+- Endpointy `POST /api/integrations/subiekt/sync` i `GET …/status` (podpis z pustego body); wspólna bramka `src/lib/subiekt/http.ts` (limit 60/10 min per IP, token + HMAC, 503 po polsku). Zwracają `Response.json` zamiast `NextResponse`, żeby route'y dało się testować w `node:test` (ESM nie rozwiązuje `next/server` bez `.js`).
+- `db.ts`: komentarz o braku savepointów, zwolnienie połączenia MySQL przy błędzie `beginTransaction`, `console.warn` przy `query` z wygaszonego kontekstu transakcji.
+- Testy: `tests/subiektSync.test.ts` (13 — idempotencja, zmiana ilości, `is_paid`, 2 strony, błąd constraintu, rollback zewnętrznej transakcji, zagubiony callback, route'y 200/401/400/413/429/503). `npm test` 162/162, tsc tylko 18× TS5097, `next build` OK.
+- Walidator curl z planu: 200 `accepted:1, unassigned:1` → 200 `unchanged:1` → 401 `BAD_TOKEN`; `5001|ZK|UNASSIGNED`; po restarcie bez env 503 i wiersz nadal jest.
+- Otwarte: powtórzona strona z tym samym `run_id` (np. retry agenta po timeoucie) podbija `pages_received` ponad `pages_expected` — walidator z planu to pokazuje (2/1, status DONE). Do rozważenia w loopie 5 (agent) lub dedup stron w runie.

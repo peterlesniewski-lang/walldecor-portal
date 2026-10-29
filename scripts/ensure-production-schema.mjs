@@ -17,6 +17,15 @@ const requiredColumns = [
     { table: 'project_items', name: 'source', definition: "VARCHAR(16) NOT NULL DEFAULT 'MANUAL'" },
     { table: 'project_items', name: 'subiekt_document_id', definition: 'VARCHAR(36) NULL' },
     { table: 'project_items', name: 'subiekt_position_id', definition: 'INTEGER NULL' },
+    // 019 (loop 1): kod architekta w Subiekcie, trwałe ręczne przełączenie typu pozycji
+    { table: 'users', name: 'subiekt_code', definition: 'VARCHAR(64) NULL' },
+    { table: 'project_items', name: 'type_overridden', definition: 'INTEGER NOT NULL DEFAULT 0' },
+];
+
+// 019: indeksy na istniejących tabelach (dodawane po kolumnach, sprawdzane po nazwie indeksu).
+const requiredIndexes = [
+    { table: 'users', name: 'idx_users_subiekt_code', unique: true, columns: 'subiekt_code' },
+    { table: 'project_items', name: 'idx_project_items_subiekt_doc', unique: false, columns: 'subiekt_document_id' },
 ];
 
 // 017: jednorazowa aktualizacja szablonu maila powitalnego (tylko jeśli nie był ręcznie edytowany —
@@ -56,6 +65,69 @@ const requiredTables = [
             INDEX idx_invitations_status (status)
         )`,
     },
+    // 019: integracja Subiekt GT — tabele pośrednie (dokumenty, snapshoty, uruchomienia agenta).
+    {
+        name: 'subiekt_documents',
+        createSql: `CREATE TABLE IF NOT EXISTS subiekt_documents (
+            id VARCHAR(36) NOT NULL PRIMARY KEY,
+            external_id INTEGER NOT NULL UNIQUE,
+            type VARCHAR(8) NOT NULL,
+            number VARCHAR(64) NOT NULL,
+            issued_at DATE NOT NULL,
+            contractor_name VARCHAR(255) NOT NULL,
+            contractor_nip VARCHAR(20) NULL,
+            architect_code VARCHAR(64) NULL,
+            architect_id VARCHAR(36) NULL,
+            parent_external_id INTEGER NULL,
+            root_external_id INTEGER NULL,
+            project_id VARCHAR(36) NULL,
+            net_total DECIMAL(12,2) NOT NULL,
+            gross_total DECIMAL(12,2) NOT NULL,
+            is_paid INTEGER NOT NULL DEFAULT 0,
+            remarks TEXT NULL,
+            content_hash CHAR(64) NOT NULL,
+            positions_json TEXT NOT NULL,
+            assignment_status VARCHAR(16) NOT NULL DEFAULT 'UNASSIGNED',
+            assignment_note TEXT NULL,
+            first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_run_id VARCHAR(36) NULL,
+            INDEX idx_subiekt_documents_project (project_id),
+            INDEX idx_subiekt_documents_root (root_external_id),
+            INDEX idx_subiekt_documents_assignment (assignment_status)
+        )`,
+    },
+    {
+        name: 'subiekt_document_snapshots',
+        createSql: `CREATE TABLE IF NOT EXISTS subiekt_document_snapshots (
+            id VARCHAR(36) NOT NULL PRIMARY KEY,
+            document_id VARCHAR(36) NOT NULL,
+            run_id VARCHAR(36) NOT NULL,
+            content_hash CHAR(64) NOT NULL,
+            positions_json TEXT NOT NULL,
+            net_total DECIMAL(12,2) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_subiekt_snapshots_document (document_id, created_at)
+        )`,
+    },
+    {
+        name: 'subiekt_sync_runs',
+        createSql: `CREATE TABLE IF NOT EXISTS subiekt_sync_runs (
+            id VARCHAR(36) NOT NULL PRIMARY KEY,
+            agent_version VARCHAR(32) NULL,
+            started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at DATETIME NULL,
+            pages_received INTEGER NOT NULL DEFAULT 0,
+            pages_expected INTEGER NOT NULL DEFAULT 0,
+            documents_accepted INTEGER NOT NULL DEFAULT 0,
+            documents_unchanged INTEGER NOT NULL DEFAULT 0,
+            documents_rejected INTEGER NOT NULL DEFAULT 0,
+            documents_unassigned INTEGER NOT NULL DEFAULT 0,
+            status VARCHAR(16) NOT NULL DEFAULT 'RUNNING',
+            error TEXT NULL
+        )`,
+    },
 ];
 
 // 018: szablon maila z zaproszeniem — dodawany tylko, gdy brak slugu (ręczne edycje admina zostają).
@@ -91,6 +163,20 @@ async function ensureEmailTemplate(connection, template) {
     await connection.execute(
         'INSERT INTO email_templates (id, slug, name, subject, content, description) VALUES (?, ?, ?, ?, ?, ?)',
         [template.id, template.slug, template.name, template.subject, template.content, template.description]
+    );
+    return true;
+}
+
+async function ensureIndex(connection, databaseName, index) {
+    const [rows] = await connection.execute(
+        `SELECT COUNT(*) AS count
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+        [databaseName, index.table, index.name]
+    );
+    if (Number(rows[0]?.count || 0) > 0) return false;
+    await connection.query(
+        `CREATE ${index.unique ? 'UNIQUE ' : ''}INDEX ${index.name} ON ${index.table} (${index.columns})`
     );
     return true;
 }
@@ -139,6 +225,12 @@ async function main() {
             console.log(`[schema] Added columns: ${added.join(', ')}`);
         } else {
             console.log('[schema] Required columns already present.');
+        }
+
+        for (const index of requiredIndexes) {
+            if (await ensureIndex(connection, DB_NAME, index)) {
+                console.log(`[schema] Created index: ${index.table}.${index.name}`);
+            }
         }
 
         const [result] = await connection.execute(
