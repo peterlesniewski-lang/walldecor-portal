@@ -391,7 +391,8 @@ export async function getAdminActivity(limit = 20) {
         : 20;
 
     return await query<any>(`
-        SELECT a.*, u.name as user_name
+        SELECT a.*,
+               COALESCE(u.name, CASE WHEN SUBSTR(a.event_type, 1, 8) = 'SUBIEKT_' THEN 'Subiekt (synchronizacja)' END) as user_name
         FROM activity_logs a
         LEFT JOIN users u ON a.user_id = u.id
         ORDER BY a.created_at DESC

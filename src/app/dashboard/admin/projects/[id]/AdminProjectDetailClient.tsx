@@ -1,6 +1,7 @@
 'use client';
 
 import ProjectFilesSection, { ProjectFile } from '@/components/ProjectFilesSection';
+import SubiektChangesCard, { type SubiektChange } from '@/components/SubiektChangesCard';
 import CommissionsCard from './CommissionsCard';
 import ItemsCard from './ItemsCard';
 import PartnerCard from './PartnerCard';
@@ -16,6 +17,7 @@ interface Props {
     currentUserId: string;
     canChangeStatus: boolean;
     initialFiles: ProjectFile[];
+    zkChanges: SubiektChange[];
 }
 
 export default function AdminProjectDetailClient({
@@ -26,6 +28,7 @@ export default function AdminProjectDetailClient({
     currentUserId,
     canChangeStatus,
     initialFiles,
+    zkChanges,
 }: Props) {
     const isFinalized = project.status === 'ZAKOŃCZONY';
 
@@ -50,6 +53,8 @@ export default function AdminProjectDetailClient({
             <ProjectStatusCard project={project} canChangeStatus={canChangeStatus} allowPrimary={!payoutActionable} />
 
             <ItemsCard projectId={project.id} items={items} isAdmin={isAdmin} isFinalized={isFinalized} />
+
+            <SubiektChangesCard changes={zkChanges} />
 
             {commissions.length > 0 && <CommissionsCard commissions={commissions} />}
 

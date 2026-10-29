@@ -6,6 +6,7 @@ import { ProjectFile } from "@/components/ProjectFilesSection";
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { Banner, Card, KpiTile, StatusPill, formatDate, formatNumber } from '@/components/ui';
+import { getProjectZkChanges } from '@/lib/subiekt/queries';
 import AdminProjectDetailClient from './AdminProjectDetailClient';
 
 export default async function AdminProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -91,6 +92,9 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
         WHERE c.project_id = ?
         ORDER BY c.status DESC
     `, [id]);
+
+    // 5. Zmiany ZK/FP z Subiekta (log synchronizacji)
+    const zkChanges = await getProjectZkChanges(id);
 
     const sumBy = (status: string) =>
         commissionsRes
@@ -179,6 +183,7 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
                 currentUserId={session.user.id}
                 canChangeStatus={canChangeStatus}
                 initialFiles={files}
+                zkChanges={zkChanges}
             />
         </div>
     );

@@ -7,10 +7,12 @@
 // trzeba wołać POZA transakcją — tylko wtedy błąd jednego dokumentu wycofuje wyłącznie jego zapisy.
 import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction } from '@/lib/db';
+import { logActivity } from '@/lib/services';
+import { diffPositions, formatDiffForLog } from './diff';
 import { hashDocument } from './hash';
 import { sortDocumentsForProcessing } from './mapping';
 import { mapDocument, type AssignmentResult, type UpsertOutcome } from './mappingDb';
-import type { SubiektDocumentPayload, SubiektSyncRequest, SubiektSyncResponse } from './types';
+import type { SubiektDocType, SubiektDocumentPayload, SubiektPositionPayload, SubiektSyncRequest, SubiektSyncResponse } from './types';
 
 const shortId = (prefix: string) => `${prefix}_${uuidv4().replace(/-/g, '').slice(0, 12)}`;
 
@@ -86,14 +88,36 @@ async function insertSnapshot(documentId: string, runId: string, contentHash: st
     );
 }
 
+/** Treść dokumentu sprzed zmiany (= ostatni snapshot), do diffu ZK/FP. */
+interface PreviousContent {
+    positions: SubiektPositionPayload[];
+    netTotal: number;
+}
+
+function parsePositions(json: unknown): SubiektPositionPayload[] {
+    if (Array.isArray(json)) return json as SubiektPositionPayload[];
+    try {
+        const parsed = JSON.parse(String(json ?? '[]'));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
 /** Zapis jednego dokumentu (wywoływany wewnątrz withTransaction). */
-async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promise<{ id: string; outcome: UpsertOutcome }> {
+async function upsertDocument(
+    doc: SubiektDocumentPayload,
+    runId: string
+): Promise<{ id: string; outcome: UpsertOutcome; previous?: PreviousContent }> {
     const contentHash = hashDocument(doc);
     const positionsJson = JSON.stringify(doc.positions);
     const isPaid = doc.is_paid ? 1 : 0;
 
-    const [existing] = await query<{ id: string; content_hash: string }>(
-        'SELECT id, content_hash FROM subiekt_documents WHERE external_id = ?',
+    // positions_json / net_total wiersza = treść ostatniego snapshotu (oba zapisywane razem przy każdej zmianie hasha).
+    // Czytamy je stąd, a nie z subiekt_document_snapshots: created_at ma rozdzielczość sekundy, więc „poprzedni
+    // snapshot” po dacie nie jest jednoznaczny przy kilku synchronizacjach w tej samej sekundzie.
+    const [existing] = await query<{ id: string; content_hash: string; positions_json: unknown; net_total: unknown }>(
+        'SELECT id, content_hash, positions_json, net_total FROM subiekt_documents WHERE external_id = ?',
         [doc.external_id]
     );
 
@@ -140,7 +164,11 @@ async function upsertDocument(doc: SubiektDocumentPayload, runId: string): Promi
         ]
     );
     await insertSnapshot(existing.id, runId, contentHash, positionsJson, doc.net_total);
-    return { id: existing.id, outcome: 'CHANGED' };
+    return {
+        id: existing.id,
+        outcome: 'CHANGED',
+        previous: { positions: parsePositions(existing.positions_json), netTotal: Number(existing.net_total) || 0 },
+    };
 }
 
 export interface ProcessedDocument {
@@ -155,9 +183,35 @@ export interface ProcessedDocument {
  */
 export async function processDocument(doc: SubiektDocumentPayload, runId: string): Promise<ProcessedDocument> {
     return withTransaction(async () => {
-        const { id, outcome } = await upsertDocument(doc, runId);
+        const { id, outcome, previous } = await upsertDocument(doc, runId);
         const assignment = await mapDocument(id, outcome);
+        if (outcome === 'CHANGED' && previous) await logOrderChange(doc, id, previous);
         return { id, outcome, assignment };
+    });
+}
+
+/** Dokumenty zamówieniowe, których zmiany trafiają do logu (decyzja 7). FS/KFS/WZ nie są diffowane. */
+const DIFFED_TYPES: ReadonlySet<SubiektDocType> = new Set(['ZK', 'FP']);
+
+/**
+ * Zmiana treści ZK/FP → wpis SUBIEKT_ZK_CHANGED (user_id = NULL = „Subiekt (synchronizacja)”), w tej samej
+ * transakcji co dokument. projectId = project_id dokumentu PO mapowaniu (null dla nieprzypisanych — wpis i tak
+ * powstaje). Sama zmiana poza pozycjami i wartością (np. uwag) zmienia hash, ale nie daje wpisu.
+ */
+async function logOrderChange(doc: SubiektDocumentPayload, documentId: string, previous: PreviousContent): Promise<void> {
+    if (!DIFFED_TYPES.has(doc.type)) return;
+
+    const lines = diffPositions(previous.positions, doc.positions);
+    const netBefore = previous.netTotal;
+    const netAfter = Number(doc.net_total) || 0;
+    if (lines.length === 0 && Math.round(netBefore * 100) === Math.round(netAfter * 100)) return;
+
+    const [row] = await query<{ project_id: string | null }>('SELECT project_id FROM subiekt_documents WHERE id = ?', [documentId]);
+    await logActivity(null, 'SUBIEKT_ZK_CHANGED', formatDiffForLog(doc.number, lines, netBefore, netAfter), {
+        projectId: row?.project_id ?? null,
+        documentId,
+        externalId: doc.external_id,
+        lines,
     });
 }
 

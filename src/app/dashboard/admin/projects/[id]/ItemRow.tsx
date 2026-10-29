@@ -32,6 +32,10 @@ export default function ItemRow({
     const [error, setError] = useState('');
 
     const paid = Boolean(item.is_paid);
+    // Pozycja z Subiekta: treść i numery ustala synchronizacja, akcje serwera ją odrzucają — bez ołówka i kosza.
+    const isSubiekt = item.source === 'SUBIEKT';
+    const subiektNumber = item.invoice_number || item.order_number;
+    const showActions = canEdit && !isSubiekt;
 
     const cancelAmount = () => {
         setPanel(null);
@@ -109,14 +113,19 @@ export default function ItemRow({
                 <td className={TD_CLASS}>
                     <div className="font-semibold text-ink">{item.category}</div>
                     {item.description && <div className="mt-0.5 text-[13px] text-ink-2">{item.description}</div>}
-                    {(item.order_number || item.invoice_number) && (
+                    {(isSubiekt || item.order_number || item.invoice_number) && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            {item.order_number && (
+                            {isSubiekt && (
+                                <span title="Pozycja z Subiekta — zmienia ją tylko synchronizacja">
+                                    <StatusPill tone="info">{subiektNumber ? `Subiekt · ${subiektNumber}` : 'Subiekt'}</StatusPill>
+                                </span>
+                            )}
+                            {item.order_number && !(isSubiekt && subiektNumber === item.order_number) && (
                                 <span className="rounded-sm bg-ink/5 px-1.5 py-0.5 font-mono text-xs text-ink-2">
                                     Zam: {item.order_number}
                                 </span>
                             )}
-                            {item.invoice_number && (
+                            {item.invoice_number && !(isSubiekt && subiektNumber === item.invoice_number) && (
                                 <span className="rounded-sm bg-ink/5 px-1.5 py-0.5 font-mono text-xs text-ink-2">
                                     FV: {item.invoice_number}
                                 </span>
@@ -146,7 +155,7 @@ export default function ItemRow({
                     {formatPLN(item.amount_net)}
                 </td>
                 <td className={TD_CLASS}>
-                    {canEdit && (
+                    {showActions && (
                         <div className="flex items-center justify-end gap-0.5">
                             {!isFinalized && (
                                 <IconButton

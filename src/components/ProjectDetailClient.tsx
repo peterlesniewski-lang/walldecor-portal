@@ -27,11 +27,13 @@ import {
 } from '@/components/ui';
 import { CASHBACK_RATE } from '@/lib/partnerProgram';
 import ProjectFilesSection, { ProjectFile } from "@/components/ProjectFilesSection";
+import SubiektChangesCard, { type SubiektChange } from "@/components/SubiektChangesCard";
 
 interface ProjectDetailClientProps {
     project: any;
     initialFiles: ProjectFile[];
     currentUserId: string;
+    zkChanges: SubiektChange[];
 }
 
 const categoryIcons: any = {
@@ -80,7 +82,7 @@ function buildTimeline(project: any): TimelineEvent[] {
     return events;
 }
 
-export default function ProjectDetailClient({ project, initialFiles, currentUserId }: ProjectDetailClientProps) {
+export default function ProjectDetailClient({ project, initialFiles, currentUserId, zkChanges }: ProjectDetailClientProps) {
     const items: any[] = project.items ?? [];
     const totalNet = items.reduce((acc: number, item: any) => acc + (Number(item.amount_net) || 0), 0);
     const productNet = items
@@ -296,6 +298,8 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                     </Card>
                 </div>
             </div>
+
+            <SubiektChangesCard changes={zkChanges} />
 
             <ProjectFilesSection
                 projectId={project.id}

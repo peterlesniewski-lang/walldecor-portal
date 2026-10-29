@@ -688,10 +688,21 @@ export async function updatePayoutStatus(payoutId: string, newStatus: string) {
 }
 
 // ─── Admin: project item management ──────────────────────────────────────────
-// Cienkie wrappery: sesja + uprawnienia → rdzeń src/lib/projectItems.ts → revalidatePath.
+// Cienkie wrappery: sesja + uprawnienia → blokada pozycji z Subiekta → rdzeń src/lib/projectItems.ts → revalidatePath.
+
+// Pozycje z Subiekta (source = 'SUBIEKT') zmienia tylko synchronizacja (decyzja 6 planu Subiekt). Blokada jest
+// w wrapperach, nie w rdzeniu — sync woła rdzeń bezpośrednio. Brak pozycji → rdzeń zgłasza własny błąd.
+async function assertManualItem(itemId: string) {
+    const rows = await query<{ source: string | null }>("SELECT source FROM project_items WHERE id = ?", [itemId]);
+    if (rows[0]?.source === 'SUBIEKT') {
+        throw new Error("Pozycja pochodzi z Subiekta i nie podlega edycji ręcznej.");
+    }
+}
+
 export async function updateProjectItem(itemId: string, amount_net: number, note?: string) {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
+    await assertManualItem(itemId);
 
     const { projectId } = await updateItemAmountCore(itemId, amount_net, { actorId: session.user.id, note });
 
@@ -736,6 +747,7 @@ export async function addProjectItem(projectId: string, data: {
 export async function deleteProjectItem(itemId: string, note?: string) {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
+    await assertManualItem(itemId);
 
     const deleted = await deleteItemCore(itemId, { actorId: session.user.id, note });
     if (!deleted) return { success: true };
@@ -795,6 +807,7 @@ export async function updateProjectItemMeta(itemId: string, meta: {
     if (!session || (session.user.role !== 'ADMIN' && session.user.role !== 'STAFF')) {
         throw new Error("Unauthorized");
     }
+    await assertManualItem(itemId);
 
     const itemRes = await query<any>("SELECT project_id FROM project_items WHERE id = ?", [itemId]);
     if (itemRes.length === 0) throw new Error("Pozycja nie istnieje");
