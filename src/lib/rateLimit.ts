@@ -45,3 +45,16 @@ export function createRateLimiter({ max, windowMs }: RateLimiterOptions): RateLi
         },
     };
 }
+
+/**
+ * Klucz limitu per IP: pierwszy adres z `x-forwarded-for` (proxy Coolify/Traefik), potem `x-real-ip`,
+ * w ostateczności 'unknown' (wszystkie takie żądania dzielą jeden licznik).
+ */
+export function getClientIp(req: Request): string {
+    const forwarded = req.headers.get('x-forwarded-for');
+    if (forwarded) {
+        const first = forwarded.split(',')[0]?.trim();
+        if (first) return first;
+    }
+    return req.headers.get('x-real-ip')?.trim() || 'unknown';
+}

@@ -2,20 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
-import { createRateLimiter } from '@/lib/rateLimit';
+import { createRateLimiter, getClientIp } from '@/lib/rateLimit';
 
 // Per-process limiters (single PM2 instance); reset on restart.
 const ipLimiter = createRateLimiter({ max: 10, windowMs: 15 * 60 * 1000 });
 const emailLimiter = createRateLimiter({ max: 3, windowMs: 15 * 60 * 1000 });
-
-function getClientIp(req: NextRequest): string {
-    const forwarded = req.headers.get('x-forwarded-for');
-    if (forwarded) {
-        const first = forwarded.split(',')[0]?.trim();
-        if (first) return first;
-    }
-    return req.headers.get('x-real-ip')?.trim() || 'unknown';
-}
 
 export async function POST(req: NextRequest) {
     try {

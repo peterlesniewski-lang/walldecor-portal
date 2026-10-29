@@ -20,7 +20,7 @@ if (existsSync(DB_PATH)) unlinkSync(DB_PATH);
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
-// SCHEMA-START — blok czytany przez tests/helpers/sqliteTestDb.ts (schemat bazy testowej); tylko CREATE TABLE.
+// SCHEMA-START — blok czytany przez tests/helpers/sqliteTestDb.ts (schemat bazy testowej); tylko CREATE TABLE / CREATE INDEX.
 db.exec(`
 CREATE TABLE users (
   id TEXT PRIMARY KEY, name TEXT, email TEXT UNIQUE, password TEXT,
@@ -28,8 +28,9 @@ CREATE TABLE users (
   role TEXT DEFAULT 'ARCHI', commission_rate REAL DEFAULT 0, cashback_rate REAL DEFAULT 2,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP, first_name TEXT, last_name TEXT, studio_name TEXT,
   nip TEXT, address TEXT, is_vat_payer INTEGER DEFAULT 0, bank_account TEXT, tier_override TEXT, last_login_at TEXT,
-  must_change_password INTEGER NOT NULL DEFAULT 0, password_changed_at TEXT
+  must_change_password INTEGER NOT NULL DEFAULT 0, password_changed_at TEXT, subiekt_code TEXT
 );
+CREATE UNIQUE INDEX idx_users_subiekt_code ON users(subiekt_code);
 CREATE TABLE projects (
   id TEXT PRIMARY KEY, owner_id TEXT, name TEXT, client_label TEXT, status TEXT DEFAULT 'ZGŁOSZONY',
   staff_id TEXT, completed_by TEXT, completed_at TEXT, completion_note TEXT,
@@ -38,8 +39,10 @@ CREATE TABLE projects (
 CREATE TABLE project_items (
   id TEXT PRIMARY KEY, project_id TEXT, type TEXT NOT NULL, amount_net REAL NOT NULL, category TEXT,
   description TEXT, commission_rate REAL DEFAULT 0.15, order_number TEXT, invoice_number TEXT, is_paid INTEGER NOT NULL DEFAULT 0,
-  source TEXT NOT NULL DEFAULT 'MANUAL', subiekt_document_id TEXT, subiekt_position_id INTEGER
+  source TEXT NOT NULL DEFAULT 'MANUAL', subiekt_document_id TEXT, subiekt_position_id INTEGER,
+  type_overridden INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX idx_project_items_subiekt_doc ON project_items(subiekt_document_id);
 CREATE TABLE commissions (
   id TEXT PRIMARY KEY, project_item_id TEXT, architect_id TEXT, amount_net REAL NOT NULL, status TEXT DEFAULT 'EARNED',
   payout_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, project_id TEXT, note TEXT, rate REAL
@@ -78,6 +81,34 @@ CREATE TABLE invitations (
   token TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'PENDING', invited_by TEXT, expires_at TEXT NOT NULL,
   sent_at TEXT, send_count INTEGER NOT NULL DEFAULT 0, last_error TEXT, accepted_at TEXT, accepted_user_id TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE subiekt_documents (
+  id TEXT PRIMARY KEY, external_id INTEGER NOT NULL UNIQUE, type TEXT NOT NULL, number TEXT NOT NULL,
+  issued_at TEXT NOT NULL, contractor_name TEXT NOT NULL, contractor_nip TEXT, architect_code TEXT, architect_id TEXT,
+  parent_external_id INTEGER, root_external_id INTEGER, project_id TEXT, net_total REAL NOT NULL, gross_total REAL NOT NULL,
+  is_paid INTEGER NOT NULL DEFAULT 0, remarks TEXT, content_hash TEXT NOT NULL, positions_json TEXT NOT NULL,
+  assignment_status TEXT NOT NULL DEFAULT 'UNASSIGNED', assignment_note TEXT,
+  first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_run_id TEXT
+);
+CREATE INDEX idx_subiekt_documents_project ON subiekt_documents(project_id);
+CREATE INDEX idx_subiekt_documents_root ON subiekt_documents(root_external_id);
+CREATE INDEX idx_subiekt_documents_assignment ON subiekt_documents(assignment_status);
+CREATE TABLE subiekt_document_snapshots (
+  id TEXT PRIMARY KEY, document_id TEXT NOT NULL, run_id TEXT NOT NULL, content_hash TEXT NOT NULL,
+  positions_json TEXT NOT NULL, net_total REAL NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_subiekt_snapshots_document ON subiekt_document_snapshots(document_id, created_at);
+CREATE TABLE subiekt_sync_run_pages (
+  run_id TEXT NOT NULL, page INTEGER NOT NULL, received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (run_id, page)
+);
+CREATE TABLE subiekt_sync_runs (
+  id TEXT PRIMARY KEY, agent_version TEXT, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, finished_at TEXT,
+  pages_received INTEGER NOT NULL DEFAULT 0, pages_expected INTEGER NOT NULL DEFAULT 0,
+  documents_accepted INTEGER NOT NULL DEFAULT 0, documents_unchanged INTEGER NOT NULL DEFAULT 0,
+  documents_rejected INTEGER NOT NULL DEFAULT 0, documents_unassigned INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'RUNNING', error TEXT
 );
 `);
 // SCHEMA-END
