@@ -17,7 +17,7 @@
 3. **Jedna logika prowizji.** Endpoint synchronizacji i panel admina wywołują te same funkcje serwisowe. Zakaz drugiej implementacji `INSERT INTO commissions` poza `src/lib/projectItems.ts` (wyjątek: istniejący import historyczny w `src/app/actions/import.ts`, który zostaje bez zmian).
 4. **Subiekt jest źródłem pozycji z synchronizacji.** Pozycje `source = 'SUBIEKT'` nie dają się edytować ani usuwać ręcznie. Pozycje `source = 'MANUAL'` zachowują dotychczasowe zachowanie.
 5. **Idempotencja.** Ten sam dokument wysłany N razy daje jeden rekord i jeden zestaw pozycji. Każda operacja zapisu dokumentu działa w `withTransaction`.
-6. **Bramka loopa:** `node --test tests/*.test.ts && npx tsc --noEmit && npm run build` zielone, walidator loopa wykonany z wynikiem, scenariusz ręczny z DoD przeklikany. Limit 5 iteracji naprawczych; po przekroczeniu zatrzymać się i opisać problem, nie oznaczać loopa jako ukończony.
+6. **Bramka loopa:** `npm test && npx tsc --noEmit && npm run build` zielone (tsc: dopuszczalne wyłącznie 14 istniejących błędów TS5097 w testach), walidator loopa wykonany z wynikiem, scenariusz ręczny z DoD przeklikany. Limit 5 iteracji naprawczych; po przekroczeniu zatrzymać się i opisać problem, nie oznaczać loopa jako ukończony.
 7. **Dowód, nie deklaracja.** Raport loopa zawiera uruchomione komendy z wynikiem, odpowiedź `curl` z endpointu, rekordy z bazy (`sqlite3` lub zapytanie), zrzut ekranu panelu. Loop bez sekcji DOWÓD nie jest ukończony.
 8. **Nic nie dotyka produkcji** do momentu loopa 7. Dev na SQLite (`DB_TYPE=sqlite`, `DB_PATH=dev.sqlite`).
 
@@ -269,7 +269,7 @@ Dopasowanie pozycji: po `external_id` (ob_Id); GT przy edycji ZK zachowuje ob_Id
 | `agent-subiekt/` | **Nowy katalog w repo.** Agent Node/TS: `src/config.ts`, `src/db.ts`, `src/queries.ts`, `src/chain.ts`, `src/payload.ts`, `src/send.ts`, `src/main.ts`, `README.md`, `install-task.ps1` |
 | `tests/subiektAuth.test.ts`, `tests/subiektValidate.test.ts`, `tests/subiektHash.test.ts`, `tests/subiektMapping.test.ts`, `tests/subiektDiff.test.ts`, `tests/subiektSync.test.ts`, `tests/projectItemsCore.test.ts` | Testy `node:test` |
 
-Testy integracyjne (`subiektSync`, `projectItemsCore`) uruchamiają się na tymczasowym pliku SQLite tworzonym z `scripts/seed-dev.mjs` (schemat) + migracja 019; ścieżka przez `process.env.DB_PATH` ustawiana w teście przed importem `src/lib/db.ts`.
+Testy integracyjne (`subiektSync`, `projectItemsCore`) uruchamiają się na tymczasowym pliku SQLite budowanym helperem `tests/helpers/sqliteTestDb.ts` (schemat z bloku SCHEMA-START/END w `scripts/seed-dev.mjs`); moduły `src/` ładowane przez `tests/helpers/srcResolveHooks.ts`; `process.env.DB_TYPE/DB_PATH` ustawiane przed dynamicznym importem `src/lib/db.ts`. Uruchomienie: `npm test` (Node 25 z brew, bo Node 26 nie ma prebuiltów `better-sqlite3`).
 
 ---
 
@@ -297,12 +297,14 @@ export interface NewItemInput {
     subiekt_position_id?: number | null;
 }
 
-export async function addItemCore(projectId: string, input: NewItemInput, actor: ItemActor, queryFn = query): Promise<{ itemId: string }>
-export async function updateItemAmountCore(itemId: string, amountNet: number, actor: ItemActor, queryFn = query): Promise<void>
-export async function deleteItemCore(itemId: string, actor: ItemActor, queryFn = query): Promise<void>
+export async function addItemCore(projectId: string, input: NewItemInput, actor: ItemActor): Promise<{ itemId: string }>
+export async function updateItemAmountCore(itemId: string, amountNet: number, actor: ItemActor): Promise<{ projectId: string }>
+export async function deleteItemCore(itemId: string, actor: ItemActor): Promise<{ projectId: string; status: string } | null>
 ```
 
-Zasady przeniesienia: ciało funkcji przenieść 1:1, zamienić `session.user.id` na `actor.actorId`, `note` na `actor.note`, usunąć `revalidatePath` (zostaje w akcji). `logActivity` zostaje w rdzeniu (loguje `actorId`, może być `null`). `INSERT INTO project_items` rozszerzyć o kolumny `source, subiekt_document_id, subiekt_position_id`.
+Zasady przeniesienia: ciało funkcji przenieść 1:1, zamienić `session.user.id` na `actor.actorId`, `note` na `actor.note`, usunąć `revalidatePath` (zostaje w akcji). `logActivity` zostaje w rdzeniu (loguje `actorId`, może być `null`). `INSERT INTO project_items` rozszerzyć o kolumny `source, subiekt_document_id, subiekt_position_id`. Każdy rdzeń jest atomowy (`withTransaction`).
+
+**Transakcje re-entrantne (decyzja po przeglądzie jakości loopa 0):** `src/lib/db.ts` trzyma kontekst transakcji w `AsyncLocalStorage`. Zagnieżdżony `withTransaction` dołącza do trwającej transakcji (zewnętrzna decyduje o commit/rollback), a `query` wewnątrz transakcji MySQL sam trafia na jej połączenie. Dzięki temu rdzeń nie przyjmuje `queryFn`, a `processSyncPage` w loopie 2 woła rdzenie z własnej transakcji bez żadnych flag. `logActivity` dołącza do transakcji na obu silnikach.
 
 - [ ] Krok 1: napisać `tests/projectItemsCore.test.ts` z testami na tymczasowej bazie SQLite:
   - `addItemCore` na projekcie PRZYJĘTY tworzy pozycję i prowizję PENDING ze stawką architekta;
@@ -318,13 +320,15 @@ Zasady przeniesienia: ciało funkcji przenieść 1:1, zamienić `session.user.id
 
 **DoD:** admin dodaje pozycję 5 000 PLN do projektu PRZYJĘTY; w tabeli `commissions` pojawia się PENDING = 5 000 × stawka; po zmianie na 4 000 kwota PENDING się aktualizuje; po usunięciu PENDING znika. Na projekcie ZAKOŃCZONY korekta 10 000 → 8 000 daje wpis korygujący prowizję i cashback o −2 000 × stawka. Wszystko bez dotykania bazy ręcznie.
 
-**Walidator:** `node --test tests/projectItemsCore.test.ts` zielony; `grep -c "INSERT INTO commissions" src/app/actions/projects.ts` zwraca `0`.
+**Walidator:** `node --test tests/projectItemsCore.test.ts` zielony; `INSERT INTO commissions` w `src/app/actions/projects.ts` występuje wyłącznie wewnątrz `updateProjectStatus` (finalizacja projektu zostaje w akcji; sync korzysta z niej przez `applySuggestedStatus`, więc nie wymaga przeniesienia).
 
 ---
 
 ### Loop 1 — Uwierzytelnienie maszynowe, tabele pośrednie, endpoint przyjmujący paczkę
 
 **Pliki:** `migrations/019_subiekt_integration.sql`, `scripts/ensure-production-schema.mjs`, `scripts/seed-dev.mjs` (dodać nowe tabele i kolumny do schematu dev), `src/lib/subiekt/{types,auth,validate,hash,sync}.ts`, `src/app/api/integrations/subiekt/sync/route.ts`, `src/app/api/integrations/subiekt/status/route.ts`, `tests/subiektAuth.test.ts`, `tests/subiektValidate.test.ts`, `tests/subiektHash.test.ts`, `tests/subiektSync.test.ts`.
+
+Zagnieżdżone transakcje są już obsłużone w loopie 0 (`AsyncLocalStorage` w `src/lib/db.ts`); `processSyncPage` woła rdzenie bez flag, jedna transakcja na dokument (zob. 2.1). Drobne uzupełnienia `db.ts` w tym loopie: komentarz dokumentujący zasadę „błąd wewnętrzny musi propagować do granicy transakcji (brak savepointów)”; zwolnienie połączenia MySQL także gdy `beginTransaction` rzuci; `console.warn` gdy `query` zostanie wywołane po zakończeniu transakcji (kontekst `active = false`), bo oznacza to zagubiony callback. Trasa MySQL w `query` nie ma testu automatycznego (testy działają na SQLite); weryfikacja ręczna na produkcyjnej bazie w loopie 7.
 
 W tym loopie `processSyncPage` zapisuje dokumenty, snapshoty i run, ale **nie** mapuje na projekty (każdy dokument `UNASSIGNED`, powód `MAPPING_NOT_ENABLED`). Mapowanie wchodzi w loopie 2.
 
@@ -370,7 +374,7 @@ function safeEqual(a: string, b: string): boolean {
 
 Route handler czyta `await req.text()` (surowe body, nie `req.json()`), bo podpis liczy się z bajtów. Rate limit: `createRateLimiter({ max: 60, windowMs: 10 * 60 * 1000 })` z `src/lib/rateLimit.ts`, klucz = IP z `x-forwarded-for`.
 
-`processSyncPage` (szkic przebiegu, w `withTransaction`):
+`processSyncPage` (szkic przebiegu). **Granica transakcji = jeden dokument**, nie cała strona: zagnieżdżony `withTransaction` dołącza do zewnętrznej transakcji bez savepointu, więc błąd wewnętrznego wywołania musi propagować do granicy transakcji. Każdy dokument jest przetwarzany w osobnym `withTransaction`; wyjątek w jego obrębie wycofuje tylko ten dokument, trafia do `rejected` z powodem `INTERNAL_ERROR:<komunikat>` i jest logowany, a przetwarzanie reszty paczki trwa. Aktualizacja `subiekt_sync_runs` odbywa się poza transakcjami dokumentów.
 
 1. `INSERT` lub `UPDATE subiekt_sync_runs` po `run_id` (`pages_received += 1`, `pages_expected = pages`).
 2. Dla każdego dokumentu: `content_hash = hashDocument(doc)`; `SELECT id, content_hash FROM subiekt_documents WHERE external_id = ?`.
@@ -380,7 +384,7 @@ Route handler czyta `await req.text()` (surowe body, nie `req.json()`), bo podpi
 3. Gdy `pages_received === pages_expected` → `status = 'DONE'`, `finished_at = NOW()`.
 4. Zwrócić `SubiektSyncResponse`.
 
-- [ ] Krok 1: migracja 019 + aktualizacja `seed-dev.mjs` i `ensure-production-schema.mjs`. Uruchomić migrację na `dev.sqlite` (`sqlite3 dev.sqlite < migrations/019_subiekt_integration.sql`), sprawdzić `.schema subiekt_documents`.
+- [ ] Krok 1: migracja 019 (plik już istnieje po loopie 0 z trzema `ALTER TABLE project_items`; dopisać resztę schematu z 2.2) + aktualizacja `seed-dev.mjs` i `ensure-production-schema.mjs`. Uruchomić migrację na `dev.sqlite` (`sqlite3 dev.sqlite < migrations/019_subiekt_integration.sql`), sprawdzić `.schema subiekt_documents`.
 - [ ] Krok 2: testy `subiektAuth` (brak env → 503; zły token → 401 BAD_TOKEN; timestamp sprzed 10 min → STALE_TIMESTAMP; zły podpis → BAD_SIGNATURE; poprawne → ok; podpis policzony z body z dodatkową spacją → BAD_SIGNATURE).
 - [ ] Krok 3: testy `subiektValidate` (brak `documents` → błąd; `external_id` jako string → błąd; `type: 'XX'` → błąd; 201 dokumentów → błąd `TOO_MANY`; poprawna paczka → obiekt z typami).
 - [ ] Krok 4: testy `subiektHash` (zmiana kolejności pozycji nie zmienia hasha; zmiana `quantity` zmienia; zmiana `is_paid` nie zmienia; zmiana `remarks` zmienia).
@@ -601,7 +605,7 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 - [ ] Wysłałem tę samą paczkę dwa razy. Liczba dokumentów, pozycji, prowizji nie wzrosła.
 - [ ] Zalogowałem się jako architekt A i sprawdziłem, że nie widzę projektów ani dokumentów architekta B.
 - [ ] Zalogowałem się jako STAFF i sprawdziłem, że operacje finansowe (połącz, przenieś, typ pozycji) są niedostępne.
-- [ ] `grep -rn "INSERT INTO commissions" src/ --include=*.ts` wskazuje wyłącznie `src/lib/projectItems.ts` i `src/app/actions/import.ts`.
+- [ ] `grep -rn "INSERT INTO commissions" src/ --include=*.ts` wskazuje wyłącznie `src/lib/projectItems.ts`, `src/app/actions/import.ts` oraz `updateProjectStatus` w `src/app/actions/projects.ts`.
 - [ ] Raport loopa zawiera komendy, wyniki, zrzuty.
 
 ---
