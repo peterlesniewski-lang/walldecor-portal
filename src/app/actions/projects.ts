@@ -693,10 +693,9 @@ export async function updateProjectItem(itemId: string, amount_net: number, note
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
 
-    await updateItemAmountCore(itemId, amount_net, { actorId: session.user.id, note });
+    const { projectId } = await updateItemAmountCore(itemId, amount_net, { actorId: session.user.id, note });
 
-    const itemRes = await query<any>("SELECT project_id FROM project_items WHERE id = ?", [itemId]);
-    revalidatePath(`/dashboard/admin/projects/${itemRes[0]?.project_id}`);
+    revalidatePath(`/dashboard/admin/projects/${projectId}`);
     revalidatePath('/dashboard/admin');
     revalidatePath('/dashboard/wallet');
 
@@ -738,16 +737,9 @@ export async function deleteProjectItem(itemId: string, note?: string) {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
 
-    const itemRes = await query<any>(`
-        SELECT i.project_id, p.status
-        FROM project_items i
-        JOIN projects p ON i.project_id = p.id
-        WHERE i.id = ?
-    `, [itemId]);
-    if (itemRes.length === 0) return { success: true };
-    const { project_id: projectId, status } = itemRes[0];
-
-    await deleteItemCore(itemId, { actorId: session.user.id, note });
+    const deleted = await deleteItemCore(itemId, { actorId: session.user.id, note });
+    if (!deleted) return { success: true };
+    const { projectId, status } = deleted;
 
     revalidatePath(`/dashboard/admin/projects/${projectId}`);
     revalidatePath('/dashboard/admin');

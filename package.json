@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "node scripts/ensure-production-schema.mjs && next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --test \"tests/*.test.ts\""
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",

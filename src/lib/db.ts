@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
 import mysql from 'mysql2/promise';
+import type { PoolConnection } from 'mysql2/promise';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 const isSQLite = process.env.DB_TYPE === 'sqlite';
 
@@ -62,39 +64,57 @@ function preprocessSQL(sql: string): string {
     return processed;
 }
 
+// Bieżąca transakcja w łańcuchu async (per żądanie / per wywołanie). Dzięki temu `query` i
+// zagnieżdżone `withTransaction` same dołączają do otwartej transakcji — także w kodzie, który
+// nie dostał `queryFn` (np. logActivity, rdzeń src/lib/projectItems.ts).
+// `active` gasi kontekst po COMMIT/ROLLBACK, gdyby jakaś kontynuacja async przeżyła transakcję.
+type TxContext =
+    | { engine: 'sqlite'; active: boolean }
+    | { engine: 'mysql'; conn: PoolConnection; active: boolean };
+
+const txStorage = new AsyncLocalStorage<TxContext>();
+
+function activeTx(): TxContext | undefined {
+    const ctx = txStorage.getStore();
+    return ctx?.active ? ctx : undefined;
+}
+
 /**
  * Runs a callback inside a DB transaction.
- * The callback receives a `queryFn` bound to the transaction's connection.
- * On failure the transaction is rolled back automatically.
+ * The callback receives `queryFn` (= `query`, which routes to the transaction's connection).
+ * Re-entrant: called inside an active transaction it just runs the callback in that transaction —
+ * the outermost call decides commit/rollback. On failure the transaction is rolled back automatically.
  */
 export async function withTransaction<T>(fn: (queryFn: typeof query) => Promise<T>): Promise<T> {
+    if (activeTx()) return fn(query);
+
     if (isSQLite) {
         const db = getSQLiteDb();
+        const ctx: TxContext = { engine: 'sqlite', active: true };
         db.prepare('BEGIN').run();
         try {
-            const result = await fn(query);
+            const result = await txStorage.run(ctx, () => fn(query));
+            ctx.active = false;
             db.prepare('COMMIT').run();
             return result;
         } catch (e) {
+            ctx.active = false;
             try { db.prepare('ROLLBACK').run(); } catch { /* ignore rollback error */ }
             throw e;
         }
     } else {
         const pool = getMySQLPool();
-        const conn = await pool.getConnection();
+        const conn: PoolConnection = await pool.getConnection();
+        const ctx: TxContext = { engine: 'mysql', conn, active: true };
         await conn.beginTransaction();
 
-        const transactionalQuery = async <R>(sql: string, params?: any[]): Promise<R[]> => {
-            const finalSql = preprocessSQL(sql);
-            const [rows] = await conn.execute(finalSql, params || []);
-            return rows as R[];
-        };
-
         try {
-            const result = await fn(transactionalQuery as typeof query);
+            const result = await txStorage.run(ctx, () => fn(query));
+            ctx.active = false;
             await conn.commit();
             return result;
         } catch (e) {
+            ctx.active = false;
             await conn.rollback();
             throw e;
         } finally {
@@ -121,6 +141,11 @@ export async function query<T>(sql: string, params?: any[]): Promise<T[]> {
             throw error;
         }
     } else {
+        const ctx = activeTx();
+        if (ctx?.engine === 'mysql') {
+            const [rows] = await ctx.conn.execute(finalSql, params || []);
+            return rows as T[];
+        }
         const pool = getMySQLPool();
         const [rows] = await pool.execute(finalSql, params);
         return rows as T[];

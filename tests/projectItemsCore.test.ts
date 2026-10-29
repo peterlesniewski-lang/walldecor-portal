@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 type TestDbModule = typeof import('./helpers/sqliteTestDb');
 type CoreModule = typeof import('../src/lib/projectItems');
+type DbModule = typeof import('../src/lib/db');
 
 // Importy przez URL (nie literał ścieżki), bo src/ używa aliasu `@/` rozwiązywanego przez hook,
 // a env bazy musi być ustawiony przed pierwszym importem src/lib/db.ts.
@@ -12,6 +13,7 @@ await import(new URL('./helpers/srcResolveHooks.ts', import.meta.url).href);
 const { createTestDb }: TestDbModule = await import(new URL('./helpers/sqliteTestDb.ts', import.meta.url).href);
 const testDb = createTestDb();
 const core: CoreModule = await import(new URL('../src/lib/projectItems.ts', import.meta.url).href);
+const { withTransaction }: DbModule = await import(new URL('../src/lib/db.ts', import.meta.url).href);
 const db = testDb.db;
 
 test.after(() => testDb.cleanup());
@@ -192,4 +194,67 @@ test('addItemCore with source SUBIEKT stores source, subiekt_document_id and sub
     // Synchronizacja maszynowa nie ma użytkownika — log zapisuje actorId = null.
     const log = db.prepare("SELECT * FROM activity_logs WHERE event_type = 'PROJECT_ITEM_ADDED' AND description LIKE ?").get(`%${itemId}%`) as any;
     assert.equal(log.user_id, null);
+});
+
+// ─── Transakcje re-entrant (src/lib/db.ts, AsyncLocalStorage) ────────────────
+
+test('updateItemAmountCore called inside withTransaction joins the outer transaction instead of failing', async () => {
+    const projectId = createProject('PRZYJĘTY');
+    const { itemId } = await core.addItemCore(projectId, { type: 'PRODUCT', category: 'Tapety', amount_net: 5000 }, admin);
+
+    await withTransaction(async () => {
+        await core.updateItemAmountCore(itemId, 3000, admin);
+    });
+
+    const item = db.prepare('SELECT amount_net FROM project_items WHERE id = ?').get(itemId) as any;
+    approx(item.amount_net, 3000);
+    approx(commissionsOfItem(itemId)[0].amount_net, 3000 * ARCHI_RATE);
+});
+
+test('an error in the outer transaction after nested core calls rolls back the core writes', async () => {
+    const projectId = createProject('ZAKOŃCZONY', WALLET_ARCHI_ID);
+    const { itemId } = await core.addItemCore(projectId, { type: 'PRODUCT', category: 'Tapety', amount_net: 10000 }, admin);
+    const walletBefore = walletBalance(WALLET_ARCHI_ID);
+    const itemsBefore = (db.prepare('SELECT COUNT(*) AS n FROM project_items WHERE project_id = ?').get(projectId) as any).n;
+
+    await assert.rejects(
+        withTransaction(async () => {
+            await core.updateItemAmountCore(itemId, 8000, admin);
+            await core.addItemCore(projectId, { type: 'PRODUCT', category: 'Sztukateria', amount_net: 2000 }, admin);
+            throw new Error('błąd po zapisie rdzenia');
+        }),
+        /błąd po zapisie rdzenia/
+    );
+
+    const item = db.prepare('SELECT amount_net FROM project_items WHERE id = ?').get(itemId) as any;
+    approx(item.amount_net, 10000, 'kwota pozycji po rollbacku');
+    const comms = commissionsOfItem(itemId);
+    assert.equal(comms.length, 1, 'brak wpisu korygującego po rollbacku');
+    approx(comms[0].amount_net, 10000 * ARCHI_RATE);
+    approx(walletBalance(WALLET_ARCHI_ID), walletBefore, 'saldo cashback po rollbacku');
+    assert.equal((db.prepare('SELECT COUNT(*) AS n FROM project_items WHERE project_id = ?').get(projectId) as any).n, itemsBefore);
+    // logActivity też dołącza do transakcji — log zmiany wycofany razem z nią.
+    const logs = db.prepare("SELECT id FROM activity_logs WHERE event_type = 'PROJECT_ITEM_VALUE_CHANGED' AND description LIKE ?").all(`%${itemId}%`);
+    assert.equal(logs.length, 0);
+});
+
+test('withTransaction nested in withTransaction on SQLite commits once, when the outer call finishes', async () => {
+    const outerId = 'u_tx_outer';
+    const innerId = 'u_tx_inner';
+    const visibleOutside = (id: string) => db.prepare('SELECT id FROM users WHERE id = ?').get(id) !== undefined;
+
+    await withTransaction(async (outerQuery) => {
+        await outerQuery("INSERT INTO users (id, name, email, role) VALUES (?, 'Tx outer', 'tx-outer@test.local', 'STAFF')", [outerId]);
+        await withTransaction(async (innerQuery) => {
+            await innerQuery("INSERT INTO users (id, name, email, role) VALUES (?, 'Tx inner', 'tx-inner@test.local', 'STAFF')", [innerId]);
+        });
+        // Wewnętrzne wywołanie nie zrobiło COMMIT: drugie połączenie jeszcze nie widzi żadnego zapisu.
+        assert.equal(visibleOutside(innerId), false);
+        assert.equal(visibleOutside(outerId), false);
+        const seenInside = await outerQuery<any>('SELECT id FROM users WHERE id IN (?, ?)', [outerId, innerId]);
+        assert.equal(seenInside.length, 2);
+    });
+
+    assert.equal(visibleOutside(outerId), true);
+    assert.equal(visibleOutside(innerId), true);
 });

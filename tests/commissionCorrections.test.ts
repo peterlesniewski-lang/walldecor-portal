@@ -34,9 +34,30 @@ test('item correction sums EARNED, IN_PAYMENT and PAID commissions but not PENDI
 test('item correction runs item update, commission and cashback in one transaction', async () => {
     const action = await loadItemAmountCore();
 
-    // Wszystkie zapisy w jednym callbacku transakcyjnym; własna transakcja, chyba że wywołujący podał swój queryFn.
-    assert.match(action, /const applyCorrection = async \(txQuery: typeof query\) => \{[\s\S]*txQuery\("UPDATE project_items SET amount_net = \?[\s\S]*INSERT INTO commissions[\s\S]*spendCashback\([\s\S]*\};\s*if \(queryFn === query\) \{\s*await withTransaction\(applyCorrection\);\s*\} else \{\s*await applyCorrection\(queryFn\);\s*\}/);
-    assert.doesNotMatch(action, /await (query|queryFn)\("UPDATE project_items SET amount_net/);
+    // Wszystkie zapisy (pozycja, prowizja, cashback, log) leżą wewnątrz jednego callbacku withTransaction.
+    const txStart = action.indexOf('await withTransaction(async (txQuery) => {');
+    const txEnd = action.indexOf('return { projectId };');
+    assert.ok(txStart > -1, 'brak withTransaction w updateItemAmountCore');
+    assert.ok(txEnd > txStart, 'withTransaction musi zamykać się przed zwrotem wyniku');
+    assert.equal(action.split('withTransaction(').length - 1, 1, 'dokładnie jedna transakcja');
+
+    const writes = [
+        /txQuery\("UPDATE project_items SET amount_net = \?/g,
+        /INSERT INTO commissions/g,
+        /UPDATE commissions SET/g,
+        /DELETE FROM commissions/g,
+        /INSERT INTO wallet_transactions/g,
+        /spendCashback\(/g,
+        /logActivity\(/g,
+    ];
+    for (const pattern of writes) {
+        const hits = [...action.matchAll(pattern)].map(m => m.index ?? -1);
+        assert.ok(hits.length > 0, `brak zapisu ${pattern}`);
+        for (const at of hits) assert.ok(at > txStart && at < txEnd, `${pattern} poza transakcją`);
+    }
+    assert.match(action, /txQuery\("UPDATE project_items SET amount_net = \?[\s\S]*INSERT INTO commissions[\s\S]*spendCashback\(/);
+    // Żaden zapis nie idzie zwykłym query(...) z pominięciem transakcji.
+    assert.doesNotMatch(action, /await query(<any>)?\(\s*["`]\s*(UPDATE|INSERT|DELETE)/);
 });
 
 test('negative cashback correction uses FIFO spendCashback instead of a SPEND row pointing at the item', async () => {

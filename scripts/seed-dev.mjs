@@ -20,6 +20,7 @@ if (existsSync(DB_PATH)) unlinkSync(DB_PATH);
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
+// SCHEMA-START — blok czytany przez tests/helpers/sqliteTestDb.ts (schemat bazy testowej); tylko CREATE TABLE.
 db.exec(`
 CREATE TABLE users (
   id TEXT PRIMARY KEY, name TEXT, email TEXT UNIQUE, password TEXT,
@@ -79,6 +80,7 @@ CREATE TABLE invitations (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `);
+// SCHEMA-END
 
 const PASSWORD = 'Portal-Test-2026!';
 const hash = bcrypt.hashSync(PASSWORD, 10);
