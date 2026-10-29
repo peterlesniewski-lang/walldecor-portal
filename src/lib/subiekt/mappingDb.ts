@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { query } from '@/lib/db';
 import { logActivity } from '@/lib/services';
 import { addItemCore, deleteItemCore, updateItemAmountCore, type ItemActor } from '@/lib/projectItems';
+import { clearDocumentItems } from './chainOps';
 import { buildItemInput, leadingDocType, positionToItemType, resolveArchitectCode, resolveRoot } from './mapping';
 import type { SubiektDocType, SubiektDocumentPayload, SubiektPositionPayload } from './types';
 
@@ -450,6 +451,17 @@ async function remapRules(current: StoredDoc): Promise<AssignmentResult> {
     const architect = await resolveArchitect(rowToPayload(current));
     const root = await findRoot(current.external_id);
     const rootExternalId = root ? Number(root.external_id) : null;
+    // Zignorowany korzeń → dokument pochodny dziedziczy IGNORED (bez projektu i pozycji); przypisanie korzenia
+    // przez admina przywraca łańcuch (adminOps → remapDocument).
+    if (root && root.id !== current.id && root.assignment_status === 'IGNORED') {
+        if (current.project_id) await clearDocumentItems(current.id, current.project_id, actorFor(current));
+        await query(
+            `UPDATE subiekt_documents SET assignment_status = 'IGNORED', assignment_note = 'ROOT_IGNORED',
+                architect_code = ?, architect_id = ?, root_external_id = ?, project_id = NULL WHERE id = ?`,
+            [architect.ownCode, architect.architectId, rootExternalId, current.id]
+        );
+        return 'IGNORED';
+    }
     if ('note' in architect) {
         return unassigned(architect.note, { architectCode: architect.ownCode, architectId: null, rootExternalId });
     }

@@ -42,7 +42,10 @@ const CLOSED_STATUSES = new Set(['ZAKOŃCZONY', 'NIEZREALIZOWANY']);
 const MAX_NOTE_LENGTH = 500;
 const MAX_MERGE_SOURCES = 20;
 
+const ROOT_IGNORED = 'ROOT_IGNORED';
 const isRootType = (type: SubiektDocType) => type === 'ZK' || type === 'FP';
+const isRootIgnored = (doc: Pick<DocRow, 'assignment_status' | 'assignment_note'>) =>
+    doc.assignment_status === 'IGNORED' && doc.assignment_note === ROOT_IGNORED;
 const toNumberOrNull = (value: unknown) => (value === null || value === undefined ? null : Number(value));
 const unique = (ids: Array<string | null | undefined>) => [...new Set(ids.filter((id): id is string => Boolean(id)))];
 
@@ -82,7 +85,8 @@ async function loadProject(projectId: string): Promise<ProjectRow> {
  *    Pozostałe nieprzypisane dokumenty łańcucha tracą stary projekt i przechodzą zwykłe reguły mapowania
  *    (remapDocument) po przeniesieniu korzenia — np. FS z kodem innego architekta zostaje w skrzynce
  *    (OWNER_MISMATCH), a KFS trafia do mapy korekt tylko wtedy, gdy pasuje do faktur projektu.
- *    Korzeń innego architekta (lub w jego projekcie) blokuje przeniesienie całego łańcucha.
+ *    Korzeń innego architekta (lub w jego projekcie) blokuje przeniesienie całego łańcucha. Dokumenty
+ *    zignorowane razem z korzeniem (ROOT_IGNORED) wracają tą samą drogą — przypisanie korzenia je przywraca.
  * 4. Pozycje odtwarzane w projekcie docelowym (syncChainItems), faktury starych projektów resynchronizowane
  *    (korekty KFS, które odeszły z łańcuchem). Zwraca stare projekty.
  */
@@ -106,7 +110,7 @@ async function reassignChain(selected: DocRow, target: ProjectRow, actor: ItemAc
         )).map(normalizeDoc)
         : [selected];
     if (!chain.some((d) => d.id === selected.id)) chain.push(selected);
-    const moving = chain.filter((d) => d.id === selected.id || d.assignment_status !== 'IGNORED');
+    const moving = chain.filter((d) => d.id === selected.id || d.assignment_status !== 'IGNORED' || isRootIgnored(d));
 
     const oldProjectIds = unique(moving.map((d) => d.project_id)).filter((id) => id !== target.id);
     for (const projectId of oldProjectIds) {
@@ -124,7 +128,13 @@ async function reassignChain(selected: DocRow, target: ProjectRow, actor: ItemAc
                 [target.id, rootExternalId, target.owner_id, doc.id]
             );
         } else {
-            await query('UPDATE subiekt_documents SET project_id = NULL WHERE id = ?', [doc.id]);
+            // ROOT_IGNORED (korzeń był zignorowany) wraca do skrzynki i dalej idzie zwykłymi regułami.
+            await query(
+                isRootIgnored(doc)
+                    ? "UPDATE subiekt_documents SET project_id = NULL, assignment_status = 'UNASSIGNED', assignment_note = NULL WHERE id = ?"
+                    : 'UPDATE subiekt_documents SET project_id = NULL WHERE id = ?',
+                [doc.id]
+            );
             toRemap.push(doc);
         }
     }
@@ -142,18 +152,15 @@ async function reassignChain(selected: DocRow, target: ProjectRow, actor: ItemAc
 }
 
 /**
- * Ręczne przypisanie dokumentu ze skrzynki (lub zignorowanego / przypisanego automatycznie) do projektu.
- * Wymagania: dokument nie jest MANUAL, projekt istnieje i nie jest NIEZREALIZOWANY, a gdy dokument zna
+ * Ręczne przypisanie dokumentu (ze skrzynki, zignorowanego albo już przypisanego — także ręcznie: nowa decyzja
+ * admina zastępuje poprzednią; pozycje ze starego projektu sprząta reassignChain). Wymagania: projekt istnieje i nie jest NIEZREALIZOWANY, a gdy dokument zna
  * architekta — projekt należy do niego. Dokument bez architekta dostaje właściciela projektu (dokumenty
  * pochodne bez kodu odziedziczą go po nim). Korzeń bez root_external_id staje się korzeniem samego siebie.
  */
 export async function assignDocumentToProjectOp(documentId: string, projectId: string, actorId: string): Promise<AdminOpResult & { projectName: string; documentNumber: string }> {
     return withTransaction(async () => {
         const doc = await loadDoc(documentId);
-        if (doc.assignment_status === 'MANUAL') {
-            throw new Error('Dokument jest już przypisany ręcznie. Aby zmienić projekt, przenieś łańcuch dokumentu.');
-        }
-        if (doc.assignment_status === 'AUTO' && doc.project_id === projectId) throw new Error('Dokument jest już w tym projekcie.');
+        if (ASSIGNED.has(doc.assignment_status) && doc.project_id === projectId) throw new Error('Dokument jest już w tym projekcie.');
         const project = await loadProject(projectId);
         if (project.status === 'NIEZREALIZOWANY') throw new Error('Nie można przypisać dokumentu do projektu niezrealizowanego.');
         if (doc.architect_id && doc.architect_id !== project.owner_id) throw new Error('Projekt należy do innego architekta.');
@@ -206,7 +213,8 @@ export async function createProjectFromDocumentOp(documentId: string, ownerId: s
 /**
  * Admin odrzuca dokument (np. duplikat testowy): IGNORED + notatka, project_id bez zmian. Pozycje dokumentu
  * znikają z projektu, a reszta łańcucha w projekcie jest odtwarzana (bez FS wraca ZK; korekty bez tej KFS).
- * Kolejna synchronizacja IGNORED pomija.
+ * Zignorowany korzeń (ZK/FP) zabiera ze sobą dokumenty łańcucha AUTO / nieprzypisane (ROOT_IGNORED), a nowe
+ * dokumenty pochodne dziedziczą IGNORED w mapowaniu. Kolejna synchronizacja IGNORED pomija.
  */
 export async function ignoreDocumentOp(documentId: string, note: string, actorId: string): Promise<AdminOpResult> {
     const reason = typeof note === 'string' ? note.trim() : '';
@@ -214,10 +222,34 @@ export async function ignoreDocumentOp(documentId: string, note: string, actorId
 
     return withTransaction(async () => {
         const doc = await loadDoc(documentId);
+        const actor: ItemActor = { actorId, note: `Subiekt: zignorowano ${doc.number}` };
         await query("UPDATE subiekt_documents SET assignment_status = 'IGNORED', assignment_note = ? WHERE id = ?", [reason, doc.id]);
 
+        // Korzeń: dokumenty łańcucha AUTO / w skrzynce idą za nim (ROOT_IGNORED, bez projektu i pozycji);
+        // MANUAL zostają — to osobna decyzja admina.
+        const chainProjects: string[] = [];
+        if (isRootType(doc.type)) {
+            const chain = (await query<DocRow>(
+                `SELECT * FROM subiekt_documents
+                 WHERE root_external_id = ? AND id <> ? AND assignment_status IN ('AUTO', 'UNASSIGNED')`,
+                [doc.external_id, doc.id]
+            )).map(normalizeDoc);
+            for (const child of chain) {
+                if (child.project_id) {
+                    await clearDocumentItems(child.id, child.project_id, actor);
+                    chainProjects.push(child.project_id);
+                }
+                await query(
+                    "UPDATE subiekt_documents SET assignment_status = 'IGNORED', assignment_note = ?, project_id = NULL WHERE id = ?",
+                    [ROOT_IGNORED, child.id]
+                );
+            }
+        }
+        for (const projectId of unique(chainProjects).filter((id) => id !== doc.project_id)) {
+            await resyncProjectInvoices(projectId, actor);
+        }
+
         if (doc.project_id) {
-            const actor: ItemActor = { actorId, note: `Subiekt: zignorowano ${doc.number}` };
             await clearDocumentItems(doc.id, doc.project_id, actor);
             const root = doc.root_external_id === null || doc.root_external_id === doc.external_id
                 ? undefined : await loadDocByExternalId(doc.root_external_id);
@@ -230,7 +262,7 @@ export async function ignoreDocumentOp(documentId: string, note: string, actorId
         await logActivity(actorId, 'SUBIEKT_DOC_IGNORED', `Zignorowano dokument ${doc.number}: ${reason}`, {
             documentId, projectId: doc.project_id, note: reason,
         }, documentId);
-        return { affectedProjectIds: unique([doc.project_id]) };
+        return { affectedProjectIds: unique([doc.project_id, ...chainProjects]) };
     });
 }
 

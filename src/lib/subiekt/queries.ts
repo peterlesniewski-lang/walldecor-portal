@@ -288,6 +288,8 @@ export async function getProjectSubiektDocuments(projectId: string): Promise<Pro
 /**
  * Projekty, z którymi można połączyć projekt: ten sam architekt, poza ZAKOŃCZONY / NIEZREALIZOWANY, bez niego
  * samego, z sumą netto pozycji. Pusta, gdy projekt nie istnieje albo sam jest ZAKOŃCZONY / NIEZREALIZOWANY.
+ * Projekt ZGŁOSZONY dostaje tylko zgłoszonych kandydatów (mergeProjectsOp odrzuca przyjęte źródła dla
+ * zgłoszonego celu), więc UI nie zaproponuje połączenia, które się nie uda.
  */
 export async function getMergeCandidates(projectId: string): Promise<Array<{ id: string; name: string; status: string; itemsTotal: number }>> {
     const [project] = await query<{ owner_id: string; status: string }>('SELECT owner_id, status FROM projects WHERE id = ?', [projectId]);
@@ -298,6 +300,7 @@ export async function getMergeCandidates(projectId: string): Promise<Array<{ id:
          FROM projects p
          LEFT JOIN project_items i ON i.project_id = p.id
          WHERE p.owner_id = ? AND p.id <> ? AND p.status NOT IN ('ZAKOŃCZONY', 'NIEZREALIZOWANY')
+           ${project.status === 'ZGŁOSZONY' ? "AND p.status = 'ZGŁOSZONY'" : ''}
          GROUP BY p.id, p.name, p.status, p.created_at
          ORDER BY p.created_at DESC, p.id DESC`,
         [project.owner_id, projectId]

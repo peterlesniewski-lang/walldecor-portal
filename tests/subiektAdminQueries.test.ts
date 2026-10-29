@@ -94,6 +94,11 @@ test('getMergeCandidates: same owner, live projects only, with items total', asy
     assert.deepEqual(candidates, [{ id: docRow(200).project_id, name: 'Jan Testowy — ZK 200/10/2026', status: 'PRZYJĘTY', itemsTotal: 1000 }]);
     assert.deepEqual(await q.getMergeCandidates('p_done'), [], 'projekt zakończony nie ma kandydatów');
     assert.deepEqual(await q.getMergeCandidates('p_missing'), []);
+
+    db.prepare("INSERT INTO projects (id, owner_id, name, client_label, status, created_at) VALUES ('p_sub1', ?, 'Zgłoszony 1', 'K', 'ZGŁOSZONY', CURRENT_TIMESTAMP)").run(ARCHI_A);
+    db.prepare("INSERT INTO projects (id, owner_id, name, client_label, status, created_at) VALUES ('p_sub2', ?, 'Zgłoszony 2', 'K', 'ZGŁOSZONY', CURRENT_TIMESTAMP)").run(ARCHI_A);
+    assert.deepEqual((await q.getMergeCandidates('p_sub1')).map((c) => c.id), ['p_sub2'], 'zgłoszony: tylko zgłoszeni kandydaci');
+    assert.ok((await q.getMergeCandidates(docRow(100).project_id)).some((c) => c.id === 'p_sub1'), 'przyjęty: zgłoszeni też');
 });
 
 test('getRecentSyncRuns: newest first, ISO dates, numeric counters, limit clamped', async () => {

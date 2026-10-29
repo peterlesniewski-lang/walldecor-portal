@@ -106,7 +106,7 @@ test('assign: UNASSIGNED FS (NO_ARCHITECT) → MANUAL in the project, items with
     approx(pendingSum('p_assign'), 900 * RATE);
 });
 
-test('assign: owner mismatch, cancelled project and MANUAL document are rejected without changes', async () => {
+test('assign: owner mismatch, cancelled project and the document’s own project are rejected without changes', async () => {
     await sync([doc(110, 'FS', { architect_code: 'C-003' })]);
     const row = docRow(110);
     assert.equal(row.assignment_note, 'NO_ROOT_DOCUMENT');
@@ -118,8 +118,21 @@ test('assign: owner mismatch, cancelled project and MANUAL document are rejected
 
     newProject('p_cancelled', ARCHI_C, 'NIEZREALIZOWANY');
     await assert.rejects(ops.assignDocumentToProjectOp(row.id, 'p_cancelled', ADMIN), /niezrealizowanego/);
-    await assert.rejects(ops.assignDocumentToProjectOp(docRow(100).id, 'p_assign', ADMIN), /przypisany ręcznie/);
+    await assert.rejects(ops.assignDocumentToProjectOp(docRow(100).id, 'p_assign', ADMIN), /już w tym projekcie/);
     await assert.rejects(ops.assignDocumentToProjectOp(row.id, 'p_nope', ADMIN), /Projekt nie istnieje\./);
+});
+
+test('assign: MANUAL FS in project A → project B of the same owner → items and PENDING only in B', async () => {
+    assert.equal(docRow(100).assignment_status, 'MANUAL');
+    newProject('p_assign_b');
+    const result = await ops.assignDocumentToProjectOp(docRow(100).id, 'p_assign_b', ADMIN);
+    assert.deepEqual(result.affectedProjectIds, ['p_assign_b', 'p_assign']);
+    assert.equal(docRow(100).project_id, 'p_assign_b');
+    assert.equal(docRow(100).assignment_status, 'MANUAL');
+    assert.equal(itemsOfProject('p_assign').length, 0);
+    approx(pendingSum('p_assign'), 0);
+    assert.equal(subiektItems('p_assign_b').length, 1);
+    approx(pendingSum('p_assign_b'), 900 * RATE);
 });
 
 test('assign: derived FS whose root ZK is unassigned → the whole chain goes MANUAL, FS items lead', async () => {
@@ -257,6 +270,51 @@ test('ignore: the only FS of a chain → FS items gone, ZK items come back; igno
     assert.equal(items.length, 1);
     assert.equal(items[0].subiekt_document_id, docRow(310).id, 'wiodący znowu ZK');
     approx(pendingSum(projectId), 1000 * RATE);
+});
+
+test('ignore root ZK → a later FS of that ZK inherits IGNORED (ROOT_IGNORED), assigning the ZK again re-activates it', async () => {
+    await sync([doc(320, 'ZK')]);
+    const projectId = docRow(320).project_id;
+    await ops.ignoreDocumentOp(docRow(320).id, 'test', ADMIN);
+
+    const response = await sync([doc(321, 'FS', { parent_external_id: 320 })]);
+    assert.deepEqual([response.accepted, response.unassigned], [1, 0]);
+    let fs = docRow(321);
+    assert.equal(fs.assignment_status, 'IGNORED');
+    assert.equal(fs.assignment_note, 'ROOT_IGNORED');
+    assert.equal(fs.project_id, null);
+    assert.equal(fs.root_external_id, 320);
+    assert.equal(itemsOfProject(projectId).length, 0);
+
+    await ops.assignDocumentToProjectOp(docRow(320).id, projectId, ADMIN);
+    assert.equal(docRow(320).assignment_status, 'MANUAL');
+    fs = docRow(321);
+    assert.equal(fs.assignment_status, 'AUTO');
+    assert.equal(fs.assignment_note, null);
+    assert.equal(fs.project_id, projectId);
+    const items = subiektItems(projectId);
+    assert.equal(items.length, 1);
+    assert.equal(items[0].subiekt_document_id, fs.id);
+});
+
+test('ignore root ZK with existing chain → AUTO FS follows (ROOT_IGNORED, items cleared), MANUAL FS keeps its items', async () => {
+    await sync([doc(330, 'ZK'), doc(331, 'FS', { parent_external_id: 330 }), doc(332, 'FS', { parent_external_id: 330, positions: [pos(3320, { net_total: 400 })] })]);
+    const projectId = docRow(330).project_id;
+    db.prepare("UPDATE subiekt_documents SET assignment_status = 'MANUAL' WHERE external_id = 332").run();
+    assert.equal(subiektItems(projectId).length, 2);
+
+    await ops.ignoreDocumentOp(docRow(330).id, 'duplikat', ADMIN);
+    const auto = docRow(331);
+    assert.deepEqual([auto.assignment_status, auto.assignment_note, auto.project_id], ['IGNORED', 'ROOT_IGNORED', null]);
+    assert.equal(docRow(332).assignment_status, 'MANUAL');
+    const items = subiektItems(projectId);
+    assert.deepEqual(items.map((i) => i.subiekt_document_id), [docRow(332).id]);
+    approx(pendingSum(projectId), 400 * RATE);
+
+    // Ponowny sync zignorowanej FS nic nie zmienia.
+    await sync([doc(331, 'FS', { parent_external_id: 330, positions: [pos(3310, { net_total: 1500 })] })]);
+    assert.equal(docRow(331).assignment_status, 'IGNORED');
+    assert.equal(subiektItems(projectId).length, 1);
 });
 
 // --- mergeProjects ---
