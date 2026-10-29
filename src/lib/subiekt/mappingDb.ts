@@ -87,7 +87,7 @@ async function loadProject(projectId: string, documentNumber: string): Promise<P
     return project;
 }
 
-const positionsOf = (row: StoredDoc) => JSON.parse(row.positions_json) as SubiektPositionPayload[];
+const positionsOf = (row: Pick<StoredDoc, 'positions_json'>) => JSON.parse(row.positions_json) as SubiektPositionPayload[];
 
 /** Wiersz z bazy → payload (dla buildItemInput i resolveArchitectCode). */
 function rowToPayload(row: StoredDoc): SubiektDocumentPayload {
@@ -170,15 +170,28 @@ function truncate(text: string, max: number): string {
     return text.length > max ? text.slice(0, max).trimEnd() : text;
 }
 
-async function createProjectForRoot(root: StoredDoc, architectId: string): Promise<string> {
+/**
+ * Nowy projekt dla dokumentu (jak przy automatycznym mapowaniu ZK/FP): `p_` + 8 hex, nazwa „kontrahent — numer”
+ * (≤ 200 zn.), client_label = kontrahent, status PRZYJĘTY. Tylko INSERT do projects — przypisanie dokumentu
+ * i wpis w logu robi wołający (sync albo panel admina).
+ */
+export async function insertProjectForDocument(
+    doc: { number: string; contractor_name: string },
+    ownerId: string,
+): Promise<{ projectId: string; name: string }> {
     const projectId = `p_${uuidv4().replace(/-/g, '').slice(0, 8)}`;
-    const suffix = ` — ${root.number}`;
-    const name = truncate(truncate(root.contractor_name, Math.max(1, MAX_LABEL_LENGTH - suffix.length)) + suffix, MAX_LABEL_LENGTH);
+    const suffix = ` — ${doc.number}`;
+    const name = truncate(truncate(doc.contractor_name, Math.max(1, MAX_LABEL_LENGTH - suffix.length)) + suffix, MAX_LABEL_LENGTH);
     await query(
         `INSERT INTO projects (id, owner_id, name, client_label, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, 'PRZYJĘTY', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [projectId, architectId, name, truncate(root.contractor_name, MAX_LABEL_LENGTH)]
+        [projectId, ownerId, name, truncate(doc.contractor_name, MAX_LABEL_LENGTH)]
     );
+    return { projectId, name };
+}
+
+async function createProjectForRoot(root: StoredDoc, architectId: string): Promise<string> {
+    const { projectId, name } = await insertProjectForDocument(root, architectId);
     await query('UPDATE subiekt_documents SET project_id = ? WHERE id = ?', [projectId, root.id]);
     await logActivity(null, 'SUBIEKT_PROJECT_CREATED', `Subiekt: utworzono projekt „${name}” z dokumentu ${root.number}`, {
         projectId, documentId: root.id, architectId,
@@ -188,11 +201,12 @@ async function createProjectForRoot(root: StoredDoc, architectId: string): Promi
 
 // --- d) pozycje ---
 
-async function loadItemsOfDocument(documentId: string): Promise<StoredItem[]> {
+/** Pozycje dokumentu W TYM projekcie — pozycje tego samego dokumentu w innym projekcie nie są ruszane. */
+async function loadItemsOfDocument(documentId: string, projectId: string): Promise<StoredItem[]> {
     return query<StoredItem>(
         `SELECT id, type, amount_net, description, order_number, invoice_number, is_paid, type_overridden, subiekt_position_id
-         FROM project_items WHERE subiekt_document_id = ? AND source = 'SUBIEKT' ORDER BY id`,
-        [documentId]
+         FROM project_items WHERE subiekt_document_id = ? AND project_id = ? AND source = 'SUBIEKT' ORDER BY id`,
+        [documentId, projectId]
     );
 }
 
@@ -244,7 +258,7 @@ async function syncDocumentItems(
     actor: ItemActor,
 ) {
     const payload = rowToPayload(source);
-    const existing = await loadItemsOfDocument(source.id);
+    const existing = await loadItemsOfDocument(source.id, project.id);
     const byPosition = new Map<number, StoredItem>();
     for (const item of existing) {
         if (item.subiekt_position_id !== null && !byPosition.has(Number(item.subiekt_position_id))) {
@@ -318,7 +332,7 @@ async function invoicePositionsOfProject(projectId: string): Promise<Map<number,
 }
 
 /** Czy każda pozycja KFS wskazuje pozycję przypisanej FS projektu (wszystko albo nic). */
-async function correctionMatches(kfs: StoredDoc, projectId: string): Promise<boolean> {
+async function correctionMatches(kfs: Pick<StoredDoc, 'positions_json'>, projectId: string): Promise<boolean> {
     const targets = await invoicePositionsOfProject(projectId);
     return positionsOf(kfs).every((pos) =>
         pos.corrects_position_external_id !== null && pos.corrects_position_external_id !== undefined &&
@@ -328,7 +342,7 @@ async function correctionMatches(kfs: StoredDoc, projectId: string): Promise<boo
 /**
  * Odtwarza pozycje łańcucha dokumentu. Łańcuch = dokumenty tego samego korzenia w tym projekcie, przypisane
  * (AUTO/MANUAL) + sam dokument. Jest FS → pozycje ZK łańcucha znikają, a każda FS synchronizuje swoje
- * pozycje (z korektami KFS); brak FS → pozycje z ZK. KFS → resync łańcuchów FS, które koryguje.
+ * pozycje (z korektami KFS); brak FS → pozycje z ZK. KFS → resync łańcuchów wszystkich FS projektu.
  * Brak projektu lub projekt NIEZREALIZOWANY → nic.
  */
 async function syncChainOf(doc: StoredDoc, actor: ItemActor): Promise<void> {
@@ -336,16 +350,9 @@ async function syncChainOf(doc: StoredDoc, actor: ItemActor): Promise<void> {
     const project = await loadProject(doc.project_id, doc.number);
     if (project.status === 'NIEZREALIZOWANY') return;
 
-    if (doc.type === 'KFS') {
-        const targets = await invoicePositionsOfProject(project.id);
-        const affected = new Map<string, StoredDoc>();
-        for (const pos of positionsOf(doc)) {
-            const fs = pos.corrects_position_external_id == null ? undefined : targets.get(pos.corrects_position_external_id);
-            if (fs) affected.set(fs.id, fs);
-        }
-        for (const fs of affected.values()) await syncChainOf(fs, actor);
-        return;
-    }
+    // KFS → resync WSZYSTKICH faktur projektu, nie tylko obecnych celów: korekta, która zmieniła cel albo
+    // wypadła z mapy, musi zdjąć starą kwotę z pozycji FS, którą korygowała wcześniej (idempotentne).
+    if (doc.type === 'KFS') return resyncInvoicesOf(project.id, actor);
 
     const chain = doc.root_external_id === null || doc.root_external_id === undefined
         ? [doc]
@@ -363,11 +370,27 @@ async function syncChainOf(doc: StoredDoc, actor: ItemActor): Promise<void> {
 
     if (leadingDocType(chain.map((d) => d.type)) === 'FS') {
         for (const zk of chain.filter((d) => d.type === 'ZK')) {
-            for (const item of await loadItemsOfDocument(zk.id)) await removeItem(item, project.status, actor);
+            for (const item of await loadItemsOfDocument(zk.id, project.id)) await removeItem(item, project.status, actor);
         }
         for (const fs of chain.filter((d) => d.type === 'FS')) await syncDocumentItems(fs, project, rootZkNumber, corrections, actor);
     } else {
         for (const zk of chain.filter((d) => d.type === 'ZK')) await syncDocumentItems(zk, project, rootZkNumber, corrections, actor);
+    }
+}
+
+/** Resync łańcuchów wszystkich przypisanych FS projektu (raz na korzeń), z bieżącą mapą korekt KFS. */
+async function resyncInvoicesOf(projectId: string, actor: ItemActor): Promise<void> {
+    const invoices = await query<StoredDoc>(
+        `SELECT * FROM subiekt_documents WHERE type = 'FS' AND project_id = ? AND assignment_status IN ${ASSIGNED_STATUSES}
+         ORDER BY issued_at, external_id`,
+        [projectId]
+    );
+    const done = new Set<string>();
+    for (const fs of invoices) {
+        const chainKey = fs.root_external_id === null || fs.root_external_id === undefined ? `doc:${fs.id}` : `root:${fs.root_external_id}`;
+        if (done.has(chainKey)) continue;
+        done.add(chainKey);
+        await syncChainOf(fs, actor);
     }
 }
 
@@ -395,15 +418,29 @@ async function saveAssignment(
 }
 
 async function refreshPaidFlag(doc: StoredDoc) {
-    // Zapłata nie wchodzi do hasha; is_paid pozycji nie wpływa na prowizję.
+    // Zapłata nie wchodzi do hasha; is_paid pozycji nie wpływa na prowizję. Tylko pozycje w projekcie dokumentu.
+    if (!doc.project_id) return;
     await query(
-        "UPDATE project_items SET is_paid = ? WHERE subiekt_document_id = ? AND source = 'SUBIEKT' AND is_paid <> ?",
-        [Number(doc.is_paid), doc.id, Number(doc.is_paid)]
+        "UPDATE project_items SET is_paid = ? WHERE subiekt_document_id = ? AND project_id = ? AND source = 'SUBIEKT' AND is_paid <> ?",
+        [Number(doc.is_paid), doc.id, doc.project_id, Number(doc.is_paid)]
     );
 }
 
-/** Pełne mapowanie zapisanego wiersza: architekt → korzeń → projekt → pozycje (reguły 2.4). */
+/**
+ * Pełne mapowanie zapisanego wiersza. KFS, która była w mapie korekt (AUTO/MANUAL w projekcie), a po
+ * mapowaniu jest nieprzypisana (np. UNMATCHED_CORRECTION) → resync faktur jej projektu, żeby pozycje FS
+ * zrzuciły starą korektę (przegląd loopa 2, pkt c).
+ */
 async function remapStored(current: StoredDoc): Promise<AssignmentResult> {
+    const wasCorrection = current.type === 'KFS' && Boolean(current.project_id) &&
+        (current.assignment_status === 'AUTO' || current.assignment_status === 'MANUAL');
+    const result = await remapRules(current);
+    if (wasCorrection && result !== 'ASSIGNED') await resyncInvoicesOf(current.project_id as string, actorFor(current));
+    return result;
+}
+
+/** Reguły 2.4: architekt → korzeń → projekt → pozycje. */
+async function remapRules(current: StoredDoc): Promise<AssignmentResult> {
     const unassigned = async (note: string, fields: { architectCode: string | null; architectId: string | null; rootExternalId: number | null; projectId?: string | null }) => {
         await saveAssignment(current.id, { status: 'UNASSIGNED', note, ...fields, projectId: fields.projectId ?? null });
         return 'UNASSIGNED' as const;
@@ -463,11 +500,27 @@ async function remapStored(current: StoredDoc): Promise<AssignmentResult> {
 /**
  * Odtwarza pozycje projektu wynikające z łańcucha dokumentu (usunięcie pozycji ZK, gdy wiodą FS; resync
  * pozycji FS/ZK z korektami KFS). Bez zmiany przypisania. Dla loopu 4: po ręcznym przypisaniu/przeniesieniu
- * (project_id + assignment_status = 'MANUAL') wywołać dla dokumentu. Wołać w transakcji.
+ * (project_id + assignment_status = 'MANUAL') wywołać dla dokumentu. `actor` domyślnie = system z numerem
+ * dokumentu (panel admina podaje admina). Wołać w transakcji.
  */
-export async function syncChainItems(subiektDocumentId: string): Promise<void> {
+export async function syncChainItems(subiektDocumentId: string, actor?: ItemActor): Promise<void> {
     const doc = await loadDocById(subiektDocumentId);
-    await syncChainOf(doc, actorFor(doc));
+    await syncChainOf(doc, actor ?? actorFor(doc));
+}
+
+/**
+ * Resync pozycji wszystkich przypisanych FS projektu z bieżącą mapą korekt KFS — po tym, jak KFS wypadła
+ * z mapy (zignorowana, przeniesiona). No-op dla projektu NIEZREALIZOWANY. Wołać w transakcji.
+ */
+export async function resyncProjectInvoices(projectId: string, actor: ItemActor): Promise<void> {
+    const project = await loadProject(projectId, projectId);
+    if (project.status === 'NIEZREALIZOWANY') return;
+    await resyncInvoicesOf(projectId, actor);
+}
+
+/** Czy KFS (wszystkie jej pozycje) wskazuje pozycje przypisanych FS projektu — warunek wejścia do mapy korekt. */
+export async function kfsMatchesProject(subiektDocumentId: string, projectId: string): Promise<boolean> {
+    return correctionMatches(await loadDocById(subiektDocumentId), projectId);
 }
 
 /** Pełne mapowanie jednego zapisanego dokumentu niezależnie od jego obecnego statusu. Wołać w transakcji. */

@@ -58,6 +58,11 @@ export function positionToItemType(pos: Pick<SubiektPositionPayload, 'product_id
     return pos.product_id === null || pos.product_id === undefined ? 'INSTALLATION' : 'PRODUCT';
 }
 
+/** Kategoria pozycji z Subiekta dla typu (także po ręcznej zmianie typu w panelu admina). */
+export function subiektCategory(type: 'PRODUCT' | 'INSTALLATION'): string {
+    return type === 'PRODUCT' ? 'Produkt (Subiekt)' : 'Montaż (Subiekt)';
+}
+
 /** Buduje NewItemInput dla pozycji dokumentu wiodącego: type wg positionToItemType (lub `forcedType` gdy podany — używane dla pozycji z type_overridden), category 'Produkt (Subiekt)' / 'Montaż (Subiekt)', description = pos.name, amount_net = pos.net_total, order_number = rootZkNumber (może być null), invoice_number = doc.number gdy doc.type === 'FS', inaczej null, is_paid = doc.is_paid, source 'SUBIEKT', subiekt_document_id, subiekt_position_id = pos.external_id. */
 export function buildItemInput(
     doc: SubiektDocumentPayload,
@@ -67,7 +72,7 @@ export function buildItemInput(
     const type = ctx.forcedType ?? positionToItemType(pos);
     return {
         type,
-        category: type === 'PRODUCT' ? 'Produkt (Subiekt)' : 'Montaż (Subiekt)',
+        category: subiektCategory(type),
         description: pos.name,
         amount_net: pos.net_total,
         order_number: ctx.rootZkNumber,
