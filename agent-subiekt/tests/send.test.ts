@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifySubiektRequest } from '../../src/lib/subiekt/auth.ts';
-import { buildPages, createFileLogger, postPage, sendAll, RETRY_DELAYS_MS, type SendDeps } from '../src/send.ts';
+import { buildPages, createFileLogger, postPage, sendAll, sortForSending, RETRY_DELAYS_MS, type SendDeps } from '../src/send.ts';
 import type { SubiektDocumentPayload, SubiektSyncRequest } from '../src/contract.ts';
 
 const AUTH = { token: 't'.repeat(64), secret: 's'.repeat(64) };
@@ -12,15 +12,15 @@ const ENDPOINT = 'https://portal.test/api/integrations/subiekt/sync';
 const NOW_MS = 1_800_000_000_000;
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 
-function doc(id: number): SubiektDocumentPayload {
+function doc(id: number, type: SubiektDocumentPayload['type'] = 'ZK', issuedAt = '2026-10-05'): SubiektDocumentPayload {
     return {
-        external_id: id, type: 'ZK', number: `ZK ${id}/10/2026`, issued_at: '2026-10-05', contractor_name: 'Jan',
+        external_id: id, type, number: `${type} ${id}/10/2026`, issued_at: issuedAt, contractor_name: 'Jan',
         contractor_nip: null, architect_code: null, parent_external_id: null, net_total: 1, gross_total: 1.23,
         is_paid: false, remarks: '#A-001', positions: [],
     };
 }
 
-type Call = { url: string; headers: Record<string, string>; body: string };
+type Call = { url: string; headers: Record<string, string>; body: string; signal: unknown };
 
 function okResponse(request: SubiektSyncRequest) {
     return new Response(JSON.stringify({ run_id: request.run_id, accepted: request.documents.length, unchanged: 0, rejected: [], unassigned: 0 }), { status: 200 });
@@ -32,7 +32,7 @@ function deps(responder: (call: Call, attempt: number) => Response | Promise<Res
     const lines: string[] = [];
     const d: SendDeps = {
         fetch: async (url, init) => {
-            const call = { url: String(url), headers: { ...(init?.headers as Record<string, string>) }, body: String(init?.body) };
+            const call = { url: String(url), headers: { ...(init?.headers as Record<string, string>) }, body: String(init?.body), signal: init?.signal };
             calls.push(call);
             return responder(call, calls.length);
         },
@@ -137,4 +137,34 @@ test('log do pliku logs/YYYY-MM-DD.log (data lokalna), dopisywanie kolejnych wie
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
+});
+
+test('retry: HTTP 429 (limit wywołań portalu) i przekroczony czas żądania są ponawiane; każde żądanie ma AbortSignal', async () => {
+    const limited = deps((call, attempt) => {
+        if (attempt === 1) return new Response('{"error":"RATE_LIMITED"}', { status: 429 });
+        if (attempt === 2) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+        return okResponse(JSON.parse(call.body));
+    });
+    const [page] = buildPages([doc(1)], RUN_ID, '0.1.0');
+    await postPage(ENDPOINT, page, AUTH, limited.d);
+    assert.deepEqual(limited.sleeps, [10_000, 60_000]);
+    assert.ok(limited.calls.every((c) => c.signal instanceof AbortSignal));
+});
+
+test('odpowiedź 200 bez pól accepted / unchanged / rejected[] / unassigned albo nie-JSON → czytelny błąd, bez ponowień', async () => {
+    const [page] = buildPages([doc(1)], RUN_ID, '0.1.0');
+    for (const body of ['{"ok":true}', '<html>Bramka sieci</html>', '{"accepted":1,"unchanged":0,"unassigned":0,"rejected":[{"external_id":"x"}]}']) {
+        const bad = deps(() => new Response(body, { status: 200 }));
+        await assert.rejects(postPage(ENDPOINT, page, AUTH, bad.d), /Nieprawidłowa odpowiedź portalu/, body);
+        assert.equal(bad.calls.length, 1);
+    }
+});
+
+test('kolejność wysyłki: rodzice przed dziećmi (ZK → WZ → FS → KFS), potem data i id — także między stronami', () => {
+    const mixed = [doc(5, 'KFS', '2026-10-01'), doc(4, 'FS', '2026-10-02'), doc(3, 'WZ', '2026-10-03'), doc(2, 'ZK', '2026-10-04'), doc(1, 'ZK', '2026-10-04'), doc(0, 'ZK', '2026-09-30')];
+    assert.deepEqual(sortForSending(mixed).map((d) => d.external_id), [0, 1, 2, 3, 4, 5]);
+    assert.deepEqual(mixed.map((d) => d.external_id), [5, 4, 3, 2, 1, 0], 'wejście bez zmian');
+    const pages = buildPages([doc(9999, 'KFS'), ...Array.from({ length: 200 }, (_, i) => doc(i + 1))], RUN_ID, '0.1.0');
+    assert.equal(pages[0]?.documents[0]?.type, 'ZK');
+    assert.deepEqual(pages[1]?.documents.map((d) => d.external_id), [9999]);
 });

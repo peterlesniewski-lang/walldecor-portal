@@ -12,6 +12,8 @@ import {
 
 /** Przerwy przed kolejnymi ponowieniami: 3 ponowienia po pierwszej próbie. */
 export const RETRY_DELAYS_MS: readonly number[] = [10_000, 60_000, 300_000];
+/** Limit czasu jednego żądania; przekroczenie = błąd sieci (ponawiany). */
+export const REQUEST_TIMEOUT_MS = 90_000;
 
 export interface Logger {
     info(message: string): void;
@@ -20,7 +22,7 @@ export interface Logger {
 }
 
 export interface SendDeps {
-    fetch: (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<Response>;
+    fetch: (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<Response>;
     sleep: (ms: number) => Promise<void>;
     /** Czas w milisekundach (Date.now). */
     now: () => number;
@@ -37,13 +39,27 @@ export function signBody(secret: string, timestampSeconds: number, rawBody: stri
     return createHmac('sha256', secret).update(`${timestampSeconds}.${rawBody}`).digest('hex');
 }
 
-/** Strony po `pageSize` dokumentów z tym samym run_id. Pusta paczka = jedna pusta strona (portal zapisuje przebieg). */
+const TYPE_ORDER: Record<SubiektDocumentPayload['type'], number> = { ZK: 0, FP: 0, WZ: 1, FS: 2, KFS: 3 };
+
+/**
+ * Rodzice przed dziećmi: ZK/FP → WZ → FS → KFS, w obrębie typu po dacie i id (jak sortDocumentsForProcessing
+ * w portalu). Portal sortuje w obrębie strony; to sortowanie dba o kolejność między stronami. Nie mutuje wejścia.
+ */
+export function sortForSending(documents: SubiektDocumentPayload[]): SubiektDocumentPayload[] {
+    return [...documents].sort((a, b) =>
+        TYPE_ORDER[a.type] - TYPE_ORDER[b.type]
+        || (a.issued_at === b.issued_at ? 0 : a.issued_at < b.issued_at ? -1 : 1)
+        || a.external_id - b.external_id);
+}
+
+/** Strony po `pageSize` dokumentów (po sortForSending) z tym samym run_id. Pusta paczka = jedna pusta strona (portal zapisuje przebieg). */
 export function buildPages(
-    documents: SubiektDocumentPayload[],
+    unsorted: SubiektDocumentPayload[],
     runId: string,
     agentVersion: string,
     pageSize = SUBIEKT_SYNC_MAX_DOCUMENTS,
 ): SubiektSyncRequest[] {
+    const documents = sortForSending(unsorted);
     const pages = Math.max(1, Math.ceil(documents.length / pageSize));
     return Array.from({ length: pages }, (_, index) => ({
         run_id: runId,
@@ -62,9 +78,29 @@ export class PortalHttpError extends Error {
     }
 }
 
-/** 5xx i 429 (limit wywołań) mogą minąć — ponawiamy; pozostałe 4xx (zły token, podpis, koperta) nie. */
+/** Odpowiedź 200, której treść nie jest odpowiedzią synchronizacji (np. strona bramki sieciowej). */
+export class PortalResponseError extends Error {}
+
+/** 5xx i 429 (limit wywołań) mogą minąć — ponawiamy; pozostałe 4xx (zły token, podpis, koperta) i zła treść 200 nie. */
 const isRetryable = (error: unknown) =>
-    !(error instanceof PortalHttpError) || error.status >= 500 || error.status === 429;
+    !(error instanceof PortalResponseError) && (!(error instanceof PortalHttpError) || error.status >= 500 || error.status === 429);
+
+const isCount = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
+function parseResponse(text: string): SubiektSyncResponse {
+    let json: unknown;
+    try {
+        json = JSON.parse(text);
+    } catch {
+        json = null;
+    }
+    const r = json as Partial<SubiektSyncResponse> | null;
+    const valid = r !== null && typeof r === 'object'
+        && isCount(r.accepted) && isCount(r.unchanged) && isCount(r.unassigned) && Array.isArray(r.rejected)
+        && r.rejected.every((x) => x !== null && typeof x === 'object' && typeof x.external_id === 'number' && typeof x.reason === 'string');
+    if (!valid) throw new PortalResponseError(`Nieprawidłowa odpowiedź portalu (HTTP 200): ${text.slice(0, 300)}`);
+    return r as SubiektSyncResponse;
+}
 
 async function attempt(endpoint: string, request: SubiektSyncRequest, auth: PortalAuth, deps: SendDeps): Promise<SubiektSyncResponse> {
     const body = JSON.stringify(request);
@@ -79,10 +115,11 @@ async function attempt(endpoint: string, request: SubiektSyncRequest, auth: Port
             'Content-Type': 'application/json',
         },
         body,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     const text = await response.text();
     if (!response.ok) throw new PortalHttpError(response.status, text);
-    return JSON.parse(text) as SubiektSyncResponse;
+    return parseResponse(text);
 }
 
 /** Jedna strona z ponowieniami (RETRY_DELAYS_MS). Rzuca ostatni błąd, gdy wszystkie próby zawiodły. */
