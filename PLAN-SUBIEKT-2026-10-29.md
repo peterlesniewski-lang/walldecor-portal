@@ -743,6 +743,16 @@ npm run build               → exit 0 (Compiled successfully, 23/23 stron)
 
 **Bramka i DoD:** `npm test`, `tsc` (tylko znane TS5097), `npm run build`, e2e, DOWÓD w `docs/subiekt/LOOP5B-DOWOD-<data>.md`, checklist §5. DoD: FS zbiorcza na kwotę równą ZK nie zmienia prowizji względem rozbicia z ZK i nie wymaga kliknięć; FS o innej kwocie blokuje zakończenie projektu do czasu uzgodnienia, które admin wykonuje w jednym formularzu; kolejny sync nie cofa decyzji admina; nowa faktura w łańcuchu przywraca pytanie.
 
+- [x] `reconcile.ts`: `mirrors`, `chainMode`, `fingerprint` (+ `chainTotals`, `sameBreakdownKey`) z testami
+- [x] `syncChainOf`: ORDER_ONLY / INVOICE_ONLY / MIRROR / ORDER_BREAKDOWN / RECONCILE, `subiekt_reconciliations` (OPEN / RESOLVED / AUTO_CLOSED), wpisy OPENED / CLOSED tylko przy przejściu
+- [x] Blokada: `getSuggestedStatus` (`reason: 'RECONCILE_OPEN'`), `updateProjectStatus(…, 'ZAKOŃCZONY')` → `{ success: false, error }`
+- [x] `resolveReconciliationOp` + `resolveReconciliationAction` (ADMIN, STAFF; `{ ok, error }`), wpis RESOLVED z kwotami przed/po
+- [x] UI: `ReconciliationCard`, baner z powodem, linia „Faktury uzgodnione ręcznie … · historia”, „Do uzgodnienia (n)”, plakietka „nieprzypisane + uzgodnienia”, „Faktury w uzgadnianiu” u architekta, historia z wpisami `SUBIEKT_RECONCILIATION_*` (architekt — bez kwot)
+- [x] Łączenie / przenoszenie / ignorowanie z wierszami uzgodnień; `REMARKS_MARKER` zawężony (§6 pkt 18)
+- [x] Migracja 021 + `ensure-production-schema.mjs` + seed; testy z listy; e2e; checklist §5
+
+**DOWÓD (2026-10-30):** `docs/subiekt/LOOP5B-DOWOD-2026-10-30.md` — bramka 395/395, `test:agent` 56/56, tsc 18× TS5097, build OK; e2e na `next start` (4 fazy, wszystkie 4 punkty DoD potwierdzone; 2 asercje skryptu poprawione — opis w dowodzie). Otwarte do decyzji: §6 pkt 19–21.
+
 ---
 
 ### Loop 6 — Scenariusz końcowy „dzień z życia” (na czystej bazie dev)
@@ -818,4 +828,7 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 15. **Pozycje KFS (Loop 5, hipoteza do sprawdzenia sondą).** Agent pomija na KFS wiersze `ob_Znak = −1` (zakładany stan „przed korektą”) i wysyła wiersze po korekcie, zgodnie z konwencją portalu (pozycja KFS = stan po korekcie, `net_total` dokumentu = różnica). Struktura KFS w bazie biura nie była w raporcie 30.10.2026 — sekcja sondy „Pozycje najnowszej KFS …” pokazuje `ob_Znak`/`ob_DoId`; jeśli wiersze nie mają par −1/1, trzeba zmienić `payload.ts`.
 16. **FS '+' bez jednoznacznego ZK (Loop 5, po przeglądzie jakości).** Heurystyka liczy się na całej historii płatnika (ZK architektów i ich FS/WZ bez limitu daty; starsze FS '+' też „zajmują” swoje ZK), więc wynik nie zależy od początku okna. Do ręcznej obsługi (lista w podsumowaniu, kod wyjścia 4) idą FS '+', których płatnik ma ZK architekta, ale kandydatów jest 0 lub ≥ 2; FS '+' płatników bez żadnego ZK architekta jest tylko liczona jako zwykła sprzedaż. Do potwierdzenia na dry-runie.
 17. **Statusy dokumentów GT (Loop 5).** Agent nie filtruje po `dok_Status` (np. dokumenty anulowane / odłożone) — znaczenia wartości nie zweryfikowano. Sonda pokazuje liczność ZK i FS ze zbioru wg `dok_Status`; na tej podstawie zdecydować o filtrze.
-18. **Znacznik w Uwagach: agent węższy niż portal (Loop 5, po przeglądzie jakości).** Agent uznaje za korzeń tylko `#A` + 1–6 cyfr (`/#A[-_]?\d{1,6}(?![A-Za-z0-9])/i`), portal czyta kod szerszym `/#A[-_]?([A-Za-z0-9]{1,16})/i` i bierze pierwsze trafienie — Uwagi „#Adam … #A-0002” dadzą w portalu kod „A-DAM” (dokument w skrzynce „nieznany kod”). Do decyzji: zawęzić wzorzec w portalu.
+18. **[Rozstrzygnięte w Loop 5b — portal zawężony do `#A` + 1–6 cyfr jak agent.]** **Znacznik w Uwagach: agent węższy niż portal (Loop 5, po przeglądzie jakości).** Agent uznaje za korzeń tylko `#A` + 1–6 cyfr (`/#A[-_]?\d{1,6}(?![A-Za-z0-9])/i`), portal czyta kod szerszym `/#A[-_]?([A-Za-z0-9]{1,16})/i` i bierze pierwsze trafienie — Uwagi „#Adam … #A-0002” dadzą w portalu kod „A-DAM” (dokument w skrzynce „nieznany kod”). Do decyzji: zawęzić wzorzec w portalu.
+19. **(Loop 5b) KFS w łańcuchu ZK zawsze otwiera uzgodnienie.** `mirrors` porównuje pozycje FS po korekcie KFS, więc korekta (np. Loop 6 krok 8) rozbija odzwierciedlenie: w projekcie ZAKOŃCZONY pozycja FS idzie do 0, pozycja z ZK wraca z pełną kwotą ZK (EARNED + cashback) do decyzji admina. Do decyzji: sprawdzać mirror na pozycjach FS przed KFS i stosować korekty jak dotąd.
+20. **(Loop 5b) Faktura częściowa** otwiera uzgodnienie, które zamyka się samo przy kolejnej FS (wpisy OPENED + CLOSED w historii). Do decyzji, czy np. wstrzymywać otwarcie, dopóki FS < ZK i nie wszystkie zapłacone.
+21. **(Loop 5b) Kwoty faktur u architekta.** Wpisy uzgodnienia ich nie pokazują, ale istniejący wpis `SUBIEKT_CORRECTION` (Loop 6, D1) pokazuje architektowi numer FS i ceny przed/po korekcie KFS.

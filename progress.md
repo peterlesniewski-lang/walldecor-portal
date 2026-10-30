@@ -550,3 +550,16 @@ migrations/
 - Dzienny log tylko z liczbami i ostrzeżeniami, szczegóły w nadpisywanym `logs/last-sync.txt`, retencja 90 dni. Timeout żądania 90 s, kontrola treści odpowiedzi, strony w kolejności rodzic → dziecko.
 - Znacznik korzenia w agencie tylko `#A` + 1–6 cyfr (portal bez zmian — plan §6 pkt 18). Sonda: ZK/FS wg `dok_Status`. `install-task.ps1 -Force` + `ZeroFreeBSTR`.
 - Bramka: `test:agent` 54/54, `npm test` 353/353, tsc portalu 18× TS5097, tsc agenta 0, oba buildy OK; ponowny test na SQL Edge + `next dev` zgodny z oczekiwaniami.
+
+## 2026-10-30 — Subiekt loop 5b: uzgodnienie faktur z zamówieniem (dowód: `docs/subiekt/LOOP5B-DOWOD-2026-10-30.md`)
+
+- `src/lib/subiekt/reconcile.ts` (czyste): `mirrors` (klucz `product_id` / nazwa, kwota ± `AMOUNT_EPSILON`, pozycje > 0), `chainTotals`, `chainMode` (ORDER_ONLY / INVOICE_ONLY / MIRROR / ORDER_BREAKDOWN / RECONCILE), `fingerprint` (`id:net` FS+KFS, > 2000 zn. → sha256).
+- `syncChainOf`: ORDER_BREAKDOWN i RECONCILE → pozycje z ZK z numerami FS i zapłatą „wszystkie FS”; RECONCILE → wiersz `subiekt_reconciliations` OPEN; RESOLVED z tym samym odciskiem i pokryciem pozycji ZK stosuje `amounts_json`; inne tryby zamykają (AUTO_CLOSED). FS `UNCHANGED` też resynchronizuje łańcuch (zapłata).
+- Blokada: `getSuggestedStatus` → `reason: 'RECONCILE_OPEN'`; `updateProjectStatus(…, 'ZAKOŃCZONY')` → `{ success: false, error }` (typ `ProjectStatusResult`, UI obsługuje).
+- `resolveReconciliationOp` (jedna transakcja, rdzeń prowizji, walidacja sumy / odcisku / kompletu pozycji) + `resolveReconciliationAction` (ADMIN, STAFF). Merge/move przenoszą wiersze, ignorowanie zamyka.
+- Widoki: `getOpenReconciliations` / `getOpenReconciliationCount` (plakietka = nieprzypisane + uzgodnienia), `getProjectReconciliations`, `getProjectZkChanges(id, 'ARCHITECT')` — wpisy uzgodnienia bez kwot faktur.
+- UI: `ReconciliationCard` nad pozycjami, baner z powodem, linia „Faktury uzgodnione ręcznie … · historia” (#zmiany-subiekt), sekcja „Do uzgodnienia (n)”, „Faktury w uzgadnianiu” u architekta.
+- `REMARKS_MARKER` = `#A` + 1–6 cyfr jak agent (§6 pkt 18 zamknięty). Migracja 021 + ensure-production-schema + seed.
+- Testy KFS z Loopów 2–4 przeszły na korzeń FP (INVOICE_ONLY) — w łańcuchu ZK korekta otwiera uzgodnienie (§6 pkt 19).
+- Bramka: `npm test` 395/395, `test:agent` 56/56, tsc 18× TS5097, build OK; e2e `next start` 4 fazy (DoD 1–4), restart, idempotencja, izolacja architektów, STAFF.
+
