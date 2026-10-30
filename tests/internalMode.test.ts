@@ -161,6 +161,26 @@ test('authorize in internal mode refuses ARCHI with the preparation message, adm
     assert.equal(admin?.role, 'ADMIN');
 });
 
+test('authorize in internal mode refuses the DEMO_MODE architect too', async () => {
+    setMode('1');
+    const savedDemo = process.env.DEMO_MODE;
+    process.env.DEMO_MODE = 'true';
+    try {
+        await assert.rejects(
+            () => auth.authorizeCredentials({ email: 'architekt@demo.pl', password: 'cokolwiek' }),
+            (err: Error) => err.message === 'Portal dla architektów jest w przygotowaniu. Spróbuj później.',
+        );
+        const demoAdmin = await auth.authorizeCredentials({ email: 'admin@walldecor.pl', password: 'cokolwiek' });
+        assert.equal(demoAdmin?.role, 'ADMIN');
+        setMode(undefined);
+        const demoArchi = await auth.authorizeCredentials({ email: 'architekt@demo.pl', password: 'cokolwiek' });
+        assert.equal(demoArchi?.role, 'ARCHI');
+    } finally {
+        if (savedDemo === undefined) delete process.env.DEMO_MODE;
+        else process.env.DEMO_MODE = savedDemo;
+    }
+});
+
 test('authorize without the variable admits ARCHI as before', async () => {
     setMode(undefined);
     const archi = await auth.authorizeCredentials({ email: 'archi@test.local', password: PASSWORD });

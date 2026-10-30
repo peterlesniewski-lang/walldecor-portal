@@ -27,6 +27,14 @@ export interface AuthorizedUser {
     role: 'ARCHI' | 'STAFF' | 'ADMIN';
 }
 
+/** Tryb wewnętrzny: architekt (także demo) dostaje komunikat o przygotowaniu zamiast sesji. */
+function refuseArchitectInInternalMode<T extends { role: string }>(user: T): T {
+    if (isInternalMode() && user.role === 'ARCHI') {
+        throw new Error(INTERNAL_MODE_LOGIN_MESSAGE);
+    }
+    return user;
+}
+
 export async function authorizeCredentials(
     credentials: Record<'email' | 'password', string> | undefined
 ): Promise<AuthorizedUser | null> {
@@ -38,7 +46,7 @@ export async function authorizeCredentials(
 
     if (process.env.DEMO_MODE === 'true') {
         if (credentials.email === 'architekt@demo.pl') {
-            return { id: 'u2', name: 'Piotr Architekt', email: 'architekt@demo.pl', role: 'ARCHI' };
+            return refuseArchitectInInternalMode({ id: 'u2', name: 'Piotr Architekt', email: 'architekt@demo.pl', role: 'ARCHI' });
         }
         if (credentials.email === 'admin@walldecor.pl') {
             return { id: 'u1', name: 'Admin WallDecor', email: 'admin@walldecor.pl', role: 'ADMIN' };
@@ -55,9 +63,7 @@ export async function authorizeCredentials(
     if (user && user.password && await bcrypt.compare(credentials.password, user.password)) {
         resetRateLimit(credentials.email);
         // Tryb wewnętrzny: architekt z poprawnym hasłem dostaje komunikat zamiast sesji (bez last_login_at).
-        if (isInternalMode() && user.role === 'ARCHI') {
-            throw new Error(INTERNAL_MODE_LOGIN_MESSAGE);
-        }
+        refuseArchitectInInternalMode(user);
         query("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?", [user.id]).catch(() => {});
         return {
             id: user.id,
