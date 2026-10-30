@@ -691,6 +691,21 @@ Ponowny test integracyjny (SQL Edge 15.0, baza z pierwszego testu + `dok_Status`
 - sync na `next dev` (świeża baza) → exit 4 dwa razy: `przyjęte 11, nieprzypisane 3`, potem `bez zmian 11`; `subiekt_documents` 1000/1001/31700 `AUTO` (łańcuch 1000), 31800 `UNASSIGNED NO_ARCHITECT`; dzienny log bez nazw kontrahentów (0 trafień), szczegóły i „WYNIK WYSYŁKI” w `logs/last-sync.txt`.
 - `env -i node dist/main.js --since 2026-02-30` → exit 1, w `logs/RRRR-MM-DD.log`: `ERROR Błąd konfiguracji: --since: „2026-02-30” nie jest poprawną datą …`.
 
+#### DOWÓD — poprawki przed merge (2026-10-30)
+
+Commit `8d6d65f`: `pruneLogsSafely` (plik logu, którego nie da się usunąć, i nieczytelny katalog → ostrzeżenie, uruchomienie trwa); logger nie rzuca przy błędzie zapisu pliku (wiersz na konsolę, jednorazowa informacja — wykryte przy teście zablokowanego pliku: ostrzeżenie o nim samo przerywało uruchomienie); każdy błąd fazy konfiguracji (nie tylko `ConfigError`) → dzienny log i kod 1; sonda pokazuje kolację bazy.
+
+```
+npm run test:agent          → ℹ tests 56 · pass 56 · fail 0   (send 12: + pruneLogsSafely z rm rzucającym EBUSY i readdir rzucającym EACCES, + logger przy EACCES)
+npm test                    → ℹ tests 353 · pass 353 · fail 0
+npx tsc --noEmit            → 18 × error TS5097 (bez innych)
+cd agent-subiekt && npx tsc -p tsconfig.json --noEmit → exit 0;  npm run build → exit 0
+npm run build               → exit 0 (Compiled successfully, 23/23 stron)
+```
+
+- `.env` z `chmod 000` → exit 1, w dziennym logu `ERROR Błąd konfiguracji (odczyt .env lub argumentów): EACCES: permission denied, open '…/agent-subiekt/.env'`.
+- SQL Edge, `logs/2026-01-01.log` z `chflags uchg` (nieusuwalny) + `logs/2026-01-02.log`: `--probe` → exit 0, w logu `WARN Nie udało się usunąć starego logu 2026-01-01.log: EPERM, Operation not permitted …`, `Usunięto logi starsze niż 90 dni: 1` (2026-01-02.log usunięty), sonda: `Kolacja: Polish_CI_AS — bez rozróżniania wielkości liter`, `WYNIK: OK (kod 0)`.
+
 ---
 
 ### Loop 6 — Scenariusz końcowy „dzień z życia” (na czystej bazie dev)
