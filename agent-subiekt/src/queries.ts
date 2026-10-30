@@ -40,6 +40,15 @@ SELECT d.dok_Id, d.dok_Typ, d.dok_Podtyp, d.dok_NrPelny,
 FROM dbo.dok__Dokument d
 WHERE d.dok_Typ IN (${CHAIN_TYPES}) AND d.dok_DataWyst >= ${SINCE}`;
 
+/** Nagłówki przodków spoza okresu (chain.ts fetchAncestors) — bez limitu daty, tylko typy łańcucha. */
+export const sqlHeadersByIds = (inList: string) => `
+SELECT d.dok_Id, d.dok_Typ, d.dok_Podtyp, d.dok_NrPelny,
+       CONVERT(char(10), d.dok_DataWyst, 23) AS dok_DataWyst,
+       d.dok_DoDokId, d.dok_DoDokNrPelny, d.dok_PlatnikId, d.dok_KatId, d.dok_Uwagi,
+       d.dok_WartNetto, d.dok_WartBrutto
+FROM dbo.dok__Dokument d
+WHERE d.dok_Typ IN (${CHAIN_TYPES}) AND d.dok_Id IN (${inList})`;
+
 /** Kontrahent dokumentu: historia adresu z dokumentu, zapasowo adres główny z ewidencji, symbol z kartoteki. */
 export const sqlContractors = (inList: string) => `
 SELECT d.dok_Id, ah.adrh_Nazwa, ah.adrh_NazwaPelna, ah.adrh_NIP,

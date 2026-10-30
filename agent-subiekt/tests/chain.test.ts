@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { selectChains, GT_DOC_TYPE, type HeaderRow } from '../src/chain.ts';
+import { fetchAncestors, selectChains, GT_DOC_TYPE, type HeaderRow } from '../src/chain.ts';
 
 const CATEGORY = 14;
 const OPTIONS = { architectCategoryId: CATEGORY };
@@ -107,4 +107,51 @@ test("FS '+' wskazująca dokument ze zbioru → zwykłe powiązanie, bez heuryst
     ], OPTIONS);
     assert.equal(parentOf(selection, 10), 2);
     assert.deepEqual([selection.heuristic, selection.ambiguous], [[], []]);
+});
+
+// --- Przodkowie spoza okresu (przegląd jakości Loopa 5, pkt 1) i samoodwołanie (pkt 4) ---
+
+test('fetchAncestors: dociąga brakujących przodków po dok_DoDokId bez limitu daty, iteracyjnie, bez cykli', async () => {
+    const db = new Map<number, HeaderRow>([
+        [2, h(2, 'FS', { dok_DoDokId: 1, dok_DataWyst: '2024-03-01' })],
+        [1, h(1, 'ZK', { dok_KatId: CATEGORY, dok_DataWyst: '2024-02-01' })],
+        [7, h(7, 'FS', { dok_DoDokId: 8 })],
+        [8, h(8, 'WZ', { dok_DoDokId: 7 })], // cykl 7 ↔ 8
+    ]);
+    const calls: number[][] = [];
+    const fetchByIds = async (ids: number[]) => { calls.push([...ids].sort()); return ids.map((id) => db.get(id)).filter((x): x is HeaderRow => !!x); };
+    const period = [h(3, 'KFS', { dok_DoDokId: 2 }), h(4, 'ZK', { dok_DoDokId: 99 }), h(5, 'FS', { dok_DoDokId: 5 }), h(6, 'KFS', { dok_DoDokId: 7 })];
+    const ancestors = await fetchAncestors(period, fetchByIds);
+    assert.deepEqual(ancestors.map((a) => a.dok_Id).sort(), [1, 2, 7, 8]);
+    assert.deepEqual(calls, [[2, 7], [1, 8]], 'ZK (4) nie jest pochodnym — bez zapytania; samoodwołanie (5) pomijane; 7 nie pobierane drugi raz');
+});
+
+test('KFS w okresie do FS sprzed okresu → FS i jej ZK architekta w łańcuchu', () => {
+    const selection = selectChains(
+        [h(3, 'KFS', { dok_DoDokId: 2, dok_DataWyst: '2026-10-20', dok_WartNetto: -50 })],
+        OPTIONS,
+        { ancestors: [h(2, 'FS', { dok_DoDokId: 1, dok_DataWyst: '2024-03-01' }), h(1, 'ZK', { dok_Uwagi: '#A-0002', dok_DataWyst: '2024-02-01' })] },
+    );
+    assert.deepEqual(ids(selection), [1, 2, 3]);
+    assert.deepEqual([parentOf(selection, 1), parentOf(selection, 2), parentOf(selection, 3)], [null, 1, 2]);
+});
+
+test('FS w okresie do ZK architekta sprzed okresu → ZK jako korzeń; przodek bez architekta nie wciąga zwykłej sprzedaży', () => {
+    const selection = selectChains(
+        [h(2, 'FS', { dok_DoDokId: 1 }), h(12, 'FS', { dok_DoDokId: 11 })],
+        OPTIONS,
+        { ancestors: [h(1, 'ZK', { dok_KatId: CATEGORY, dok_DataWyst: '2024-02-01' }), h(11, 'ZK', { dok_DataWyst: '2024-02-01' })] },
+    );
+    assert.deepEqual(ids(selection), [1, 2]);
+    assert.equal(selection.documents.find((d) => d.header.dok_Id === 1)?.rootReason, 'CATEGORY');
+});
+
+test('dok_DoDokId wskazujący sam dokument = brak rodzica', () => {
+    const selection = selectChains([
+        h(1, 'ZK', { dok_KatId: CATEGORY }),
+        h(2, 'FS', { dok_DoDokId: 2 }),
+        h(3, 'FS', { dok_DoDokId: 3, dok_Uwagi: '#A-1' }),
+    ], OPTIONS);
+    assert.deepEqual(ids(selection), [1, 3]);
+    assert.equal(parentOf(selection, 3), null);
 });

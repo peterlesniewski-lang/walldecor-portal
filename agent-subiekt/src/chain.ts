@@ -60,24 +60,67 @@ export function rootReason(header: HeaderRow, architectCategoryId: number): Root
     return byMarker ? 'MARKER' : null;
 }
 
+/** Rodzic z dok_DoDokId; samoodwołanie (dok_DoDokId = dok_Id) = brak rodzica. */
+export const linkedParentId = (header: HeaderRow): number | null =>
+    header.dok_DoDokId !== null && header.dok_DoDokId !== header.dok_Id ? header.dok_DoDokId : null;
+
+const MAX_CHAIN_DEPTH = 32;
+
+/**
+ * Przodkowie dokumentów pochodnych z okresu, których nie ma wśród wierszy okresu (np. FS sprzed okresu dla KFS
+ * z okresu, ZK sprzed okresu dla FS). `fetchByIds` czyta nagłówki bez limitu daty; najwyżej 32 poziomy, każdy
+ * identyfikator pobierany raz. O tym, które dokumenty POCHODNE wchodzą do paczki, decyduje wyłącznie okres.
+ */
+export async function fetchAncestors(
+    period: HeaderRow[],
+    fetchByIds: (ids: number[]) => Promise<HeaderRow[]>,
+): Promise<HeaderRow[]> {
+    const known = new Set(period.map((h) => h.dok_Id));
+    const requested = new Set<number>();
+    const ancestors: HeaderRow[] = [];
+    let frontier = period;
+    for (let depth = 0; depth < MAX_CHAIN_DEPTH && frontier.length > 0; depth++) {
+        const missing = [...new Set(frontier
+            .filter((h) => DERIVED_TYPES.has(h.dok_Typ))
+            .map(linkedParentId)
+            .filter((id): id is number => id !== null && !known.has(id) && !requested.has(id)))];
+        if (missing.length === 0) break;
+        for (const id of missing) requested.add(id);
+        frontier = (await fetchByIds(missing)).filter((h) => !known.has(h.dok_Id));
+        for (const h of frontier) {
+            known.add(h.dok_Id);
+            ancestors.push(h);
+        }
+    }
+    return ancestors;
+}
+
 const isMultiSource = (header: HeaderRow) => (header.dok_DoDokNrPelny ?? '').trim() === '+';
 const byDateThenId = (a: HeaderRow, b: HeaderRow) =>
     a.dok_DataWyst === b.dok_DataWyst ? a.dok_Id - b.dok_Id : a.dok_DataWyst < b.dok_DataWyst ? -1 : 1;
 
 /**
- * Korzenie: ZK/FS z kategorią Architekt lub znacznikiem w Uwagach (wiersze są już ograniczone datą w SQL).
- * Pochodne: WZ/FS/KFS, których dok_DoDokId wskazuje dokument ze zbioru — do ustalenia się zbioru. FS z
+ * Korzenie: ZK/FS z kategorią Architekt lub znacznikiem w Uwagach — z okresu albo wśród przodków (`ancestors`,
+ * fetchAncestors) dokumentów okresu. Pochodne: WZ/FS/KFS, których dok_DoDokId wskazuje dokument ze zbioru — do
+ * ustalenia się zbioru; spoza okresu wchodzą tylko przodkowie dokumentów okresu. FS z
  * dok_DoDokNrPelny = '+' spoza zbioru: dokładnie jeden korzeń ZK tego samego płatnika z datą ≤ data FS i
  * bez FS w łańcuchu → rodzic z heurystyki; inaczej pominięta (raport `ambiguous` / licznik).
  */
-export function selectChains(headers: HeaderRow[], options: { architectCategoryId: number }): ChainSelection {
-    const byId = new Map(headers.map((h) => [h.dok_Id, h]));
+export function selectChains(
+    period: HeaderRow[],
+    options: { architectCategoryId: number },
+    extra: { ancestors?: HeaderRow[] } = {},
+): ChainSelection {
+    const byId = new Map(period.map((h) => [h.dok_Id, h]));
+    for (const h of extra.ancestors ?? []) if (!byId.has(h.dok_Id)) byId.set(h.dok_Id, h);
+    const headers = [...byId.values()];
     const children = new Map<number, HeaderRow[]>();
     for (const h of headers) {
-        if (h.dok_DoDokId === null || !DERIVED_TYPES.has(h.dok_Typ)) continue;
-        const list = children.get(h.dok_DoDokId) ?? [];
+        const parent = linkedParentId(h);
+        if (parent === null || !DERIVED_TYPES.has(h.dok_Typ)) continue;
+        const list = children.get(parent) ?? [];
         list.push(h);
-        children.set(h.dok_DoDokId, list);
+        children.set(parent, list);
     }
 
     const reasons = new Map<number, RootReason>();
@@ -105,7 +148,8 @@ export function selectChains(headers: HeaderRow[], options: { architectCategoryI
     const parentOf = (id: number): number | null => {
         const viaHeuristic = heuristicParent.get(id);
         if (viaHeuristic !== undefined) return viaHeuristic;
-        const parent = byId.get(id)?.dok_DoDokId ?? null;
+        const header = byId.get(id);
+        const parent = header ? linkedParentId(header) : null;
         return parent !== null && inSet.has(parent) ? parent : null;
     };
     const rootOf = (id: number): number => {

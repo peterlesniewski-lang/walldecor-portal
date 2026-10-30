@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { selectChains, GT_DOC_TYPE, type ChainSelection, type HeaderRow } from './chain.ts';
+import { fetchAncestors, selectChains, GT_DOC_TYPE, type ChainSelection, type HeaderRow } from './chain.ts';
 import { AGENT_DIR, AGENT_VERSION, ConfigError, loadConfig, lookbackStart, parseArgs, type AgentConfig } from './config.ts';
 import { categoryParam, openPool, queryByIds, queryByNames, queryRows, sinceParam, type Pool } from './db.ts';
 import { isPaid, paidByDocument, type FinanceRow } from './paid.ts';
@@ -11,7 +11,7 @@ import { buildPayloads, type BuildResult, type ContractorRow, type PositionRow }
 import { findMissingColumns, type ColumnRow } from './probe.ts';
 import {
     REQUIRED_COLUMNS, SQL_ADDRESS_HISTORY_SAMPLE, SQL_CATEGORY, SQL_CHAIN_HEADERS, SQL_TABLES, SQL_TYPE_COUNTS,
-    sqlColumns, sqlContractors, sqlFinance, sqlPositions,
+    sqlColumns, sqlContractors, sqlFinance, sqlHeadersByIds, sqlPositions,
 } from './queries.ts';
 import { formatSummary, money, typeLabel } from './report.ts';
 import { buildPages, createFileLogger, localDate, sendAll, type Logger } from './send.ts';
@@ -44,7 +44,8 @@ interface Collected {
 
 async function collect(pool: Pool, config: AgentConfig, since: string): Promise<Collected> {
     const headers = await queryRows<HeaderRow>(pool, SQL_CHAIN_HEADERS, sinceParam(since));
-    const selection = selectChains(headers, { architectCategoryId: config.architectCategoryId });
+    const ancestors = await fetchAncestors(headers, (ids) => queryByIds<HeaderRow>(pool, sqlHeadersByIds, ids));
+    const selection = selectChains(headers, { architectCategoryId: config.architectCategoryId }, { ancestors });
     const ids = selection.documents.map((d) => d.header.dok_Id);
     const contractorRows = await queryByIds<ContractorRow>(pool, sqlContractors, [...ids, ...selection.ambiguous.map((a) => a.fs.dok_Id)]);
     const positionRows = ids.length > 0 ? await queryByIds<PositionRow>(pool, sqlPositions, ids) : [];
