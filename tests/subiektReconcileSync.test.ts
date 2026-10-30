@@ -91,6 +91,9 @@ const logs = (eventType: string, subjectId?: string) =>
     (subjectId
         ? db.prepare('SELECT * FROM activity_logs WHERE event_type = ? AND subject_id = ? ORDER BY rowid').all(eventType, subjectId)
         : db.prepare('SELECT * FROM activity_logs WHERE event_type = ? ORDER BY rowid').all(eventType)) as any[];
+const walletBalance = (userId: string) => Number((db.prepare(
+    "SELECT COALESCE(SUM(CASE WHEN type = 'EARN' THEN amount ELSE -amount END), 0) AS s FROM wallet_transactions WHERE user_id = ?",
+).get(userId) as any).s);
 const amountsOf = (projectId: string) => liveItems(projectId).map((i) => Math.round(Number(i.amount_net) * 100) / 100);
 
 async function resolve(projectId: string, root: number, amounts: number[], note?: string) {
@@ -310,6 +313,88 @@ test('advance FS 300 + final FS 836.59 (sum above ZK) → RECONCILE', async () =
     assert.equal(itemsOfDoc(411).length + itemsOfDoc(412).length, 0);
 });
 
+// --- KFS na łańcuchu z rozbiciem ZK (poprawka po przeglądzie: mirror przed korektą) ---
+
+test('downward KFS on a mirroring chain (loop 6 step 8) → stays MIRROR, the invoice item is corrected, no reconciliation', async (t) => {
+    t.mock.method(console, 'warn', () => {});
+    await sync([zk(1300, { architect_code: 'A-002' })]);
+    await sync([fs(1310, 1300, [product(13101), service(13102)], { is_paid: true })]);
+    const projectId = projectOf(1300);
+    assert.deepEqual(await projectActions.updateProjectStatus(projectId, 'ZAKOŃCZONY'), { success: true });
+    const [fsProduct] = itemsOfDoc(1310);
+    const earnedBefore = commissionSum(projectId, ['EARNED']);
+
+    await sync([doc(1320, 'KFS', [product(13201, { net_total: 436.59, corrects_position_external_id: 13101 })], {
+        parent_external_id: 1310, net_total: -100,
+    })]);
+    assert.equal(docRow(1320).assignment_status, 'AUTO');
+    assert.equal(reconciliation(projectId, 1300), undefined, 'bez uzgodnienia');
+    assert.equal(itemsOfDoc(1300).length, 0, 'pozycje ZK nie wracają');
+    const items = itemsOfDoc(1310);
+    assert.deepEqual(items.map((i) => Number(i.amount_net)), [436.59, 300], 'korekta na pozycji FS');
+    assert.equal(items[0].id, fsProduct.id);
+    approx(commissionSum(projectId, ['EARNED']), earnedBefore - 100 * RATE, 'korekta prowizji −100 × stawka');
+    assert.equal((await status.getSuggestedStatus(projectId)).reason, null);
+    assert.equal(logs('SUBIEKT_RECONCILIATION_OPENED', docRow(1300).id).length, 0);
+});
+
+test('KFS on a non-mirroring chain (collective FS = ZK) changes the fingerprint → ORDER_BREAKDOWN becomes RECONCILE', async () => {
+    await sync([zk(1400)]);
+    await sync([fs(1410, 1400, [collective(14101, 836.59)])]);
+    const projectId = projectOf(1400);
+    assert.equal(reconciliation(projectId, 1400), undefined, 'równe sumy');
+    await sync([doc(1420, 'KFS', [{ ...collective(14201, 736.59), corrects_position_external_id: 14101 }], {
+        parent_external_id: 1410, net_total: -100,
+    })]);
+    const row = reconciliation(projectId, 1400);
+    assert.equal(row.status, 'OPEN');
+    assert.equal(row.fingerprint, '1410:836.59;1420:-100.00');
+    approx(row.invoiced_net, 736.59);
+    assert.deepEqual(amountsOf(projectId), [536.59, 300], 'pozycje z ZK');
+});
+
+// --- pozycja uzgodniona na 0 wraca przy ponownym otwarciu ---
+
+test('reopened RESOLVED reconciliation re-creates items resolved to 0 at the order amount; later syncs keep them', async () => {
+    await sync([zk(1500)]);
+    await sync([fs(1510, 1500, [collective(15101, 900)])]);
+    const projectId = projectOf(1500);
+    await resolve(projectId, 1500, [900, 0]);
+    assert.deepEqual(amountsOf(projectId), [900], 'montaż usunięty decyzją admina');
+    assert.deepEqual(JSON.parse(reconciliation(projectId, 1500).amounts_json), { 15001: 900, 15002: 0 });
+
+    // Nowa KFS → OPEN; montaż wraca z kwotą z ZK, produkt zostaje z decyzją admina.
+    await sync([doc(1520, 'KFS', [{ ...collective(15201, 850), corrects_position_external_id: 15101 }], {
+        parent_external_id: 1510, net_total: -50,
+    })]);
+    const row = reconciliation(projectId, 1500);
+    assert.equal(row.status, 'OPEN');
+    assert.deepEqual(amountsOf(projectId), [900, 300]);
+    assert.deepEqual(JSON.parse(row.amounts_json), { 15001: 900 }, 'zerowe kwoty zdjęte z decyzji');
+    const [card] = await queries.getProjectReconciliations(projectId);
+    assert.deepEqual(card.items.map((i) => [i.description, i.amount_net]), [['Tapeta Floral', 900], ['Montaż', 300]], 'obie pozycje w formularzu');
+
+    // Kolejny sync nie usuwa przywróconej pozycji.
+    await sync([zk(1500, { remarks: 'resync' })]);
+    assert.deepEqual(amountsOf(projectId), [900, 300]);
+    // Admin może znów rozłożyć 850 na obie pozycje.
+    await resolve(projectId, 1500, [550, 300]);
+    assert.deepEqual(amountsOf(projectId), [550, 300]);
+});
+
+test('reopen after an order change (same fingerprint) also re-creates items resolved to 0 — ZAKOŃCZONY project', async (t) => {
+    t.mock.method(console, 'warn', () => {});
+    await sync([zk(1600, { architect_code: 'A-002' })]);
+    await sync([fs(1610, 1600, [collective(16101, 900)], { is_paid: true })]);
+    const projectId = projectOf(1600);
+    await resolve(projectId, 1600, [900, 0]);
+    assert.deepEqual(await projectActions.updateProjectStatus(projectId, 'ZAKOŃCZONY'), { success: true });
+    // ZK dostaje nową pozycję → decyzja nie pokrywa rozbicia → OPEN; wyzerowany montaż wraca (korekta w górę przez rdzeń).
+    await sync([doc(1600, 'ZK', [product(16001), service(16002), product(16003, { ordinal: 3, product_id: 88, name: 'Klej', net_total: 50, unit_price_net: 50 })], { architect_code: 'A-002' })]);
+    assert.equal(reconciliation(projectId, 1600).status, 'OPEN');
+    assert.deepEqual(amountsOf(projectId), [900, 300, 50]);
+});
+
 // --- przejścia MIRROR ↔ RECONCILE ---
 
 test('MIRROR → RECONCILE → MIRROR keeps commissions consistent (in progress)', async () => {
@@ -343,6 +428,7 @@ test('MIRROR → RECONCILE → MIRROR on a ZAKOŃCZONY project: corrections net 
     const projectId = projectOf(600);
     assert.deepEqual(await projectActions.updateProjectStatus(projectId, 'ZAKOŃCZONY'), { success: true });
     approx(commissionSum(projectId, ['EARNED']), 536.59 * RATE);
+    const walletBefore = walletBalance(ARCHI_B);
 
     await sync([fs(611, 600, [collective(6111, 100, 'Dopłata')], { is_paid: true })]);
     assert.equal(reconciliation(projectId, 600).status, 'OPEN');
@@ -353,8 +439,7 @@ test('MIRROR → RECONCILE → MIRROR on a ZAKOŃCZONY project: corrections net 
     assert.equal(reconciliation(projectId, 600).status, 'AUTO_CLOSED');
     assert.equal(itemsOfDoc(610).length, 2);
     approx(commissionSum(projectId, ['EARNED']), 536.59 * RATE);
-    const wallet = db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'EARN' THEN amount ELSE -amount END), 0) AS s FROM wallet_transactions WHERE user_id = ?").get(ARCHI_B) as any;
-    approx(wallet.s, 536.59 * 0.02, 'cashback netto bez zmian');
+    approx(walletBalance(ARCHI_B), walletBefore, 'cashback netto bez zmian');
 });
 
 test('type_overridden on a ZK item is kept in ORDER_BREAKDOWN', async () => {

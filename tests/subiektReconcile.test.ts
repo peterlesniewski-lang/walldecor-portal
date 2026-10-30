@@ -82,10 +82,16 @@ test('chainMode: the five modes', () => {
         ],
         corrections: [],
     }), 'RECONCILE');
-    // Mirror sprawdza pozycje FS po korekcie KFS (tu: 536,59 → 436,59) — korekta w dół to RECONCILE.
+    // Mirror porównuje pozycje FS PRZED korektą KFS: faktura z rozbiciem ZK + KFS w dół → MIRROR (korekta trafia w pozycję FS).
     assert.equal(chainMode({
         orders: [zk],
-        invoices: [{ net_total: 836.59, positions: [product({ net_total: 436.59 }), service()] }],
+        invoices: [{ net_total: 836.59, positions: [product(), service()] }],
+        corrections: [{ net_total: -100 }],
+    }), 'MIRROR');
+    // Faktura bez rozbicia ZK + KFS → reguła sum z KFS: 836,59 − 100 ≠ 836,59 → RECONCILE.
+    assert.equal(chainMode({
+        orders: [zk],
+        invoices: [{ net_total: 836.59, positions: [service({ name: 'Usługa', net_total: 836.59 })] }],
         corrections: [{ net_total: -100 }],
     }), 'RECONCILE');
 });
