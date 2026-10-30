@@ -2,7 +2,7 @@
 
 Plan: `PLAN-SUBIEKT-2026-10-29.md`, sekcja „Loop 4b”. Gałąź `subiekt/loop-4b-internal-mode`.
 
-**Wynik:** zakres 1–5 zrobiony; testy, tsc, build i e2e zielone. Odstępstwa i uwagi na końcu.
+**Wynik:** zakres 1–5 zrobiony; testy, tsc i build zielone. E2E zielone **po poprawkach skryptu i powtórzonych przebiegach** (faza A: pierwszy przebieg 11/14 przez błędny selektor, po poprawce i ponownym zasianiu bazy 14/14; faza B: 13/15, dwa kroki rejestracji powtórzone osobno 2/2 po dopisaniu wymaganego hasła w skrypcie) — szczegóły przy fazach. Po przeglądzie spec dodane poprawki i faza C (sekcja „Poprawki po przeglądzie” na końcu). Odstępstwa i uwagi przed nią.
 
 ## Commity
 
@@ -134,14 +134,14 @@ console errors: 0
 RESULT phase B2: 2/2 passed
 ```
 
-Edycja kodu nadanego automatycznie (checklista §5 — zmiana w bazie, ręczny kod wygrywa):
+Kroki **B7** — edycja kodu nadanego automatycznie (checklista §5 — zmiana w bazie, ręczny kod wygrywa). Osobny przebieg na tym samym serwerze fazy B, uruchomiony jako `e2e.mjs B3` — stąd „phase B3” w ostatniej linii; to nie jest krok B3 fazy B (cashback 24 mies.):
 
 ```
 PASS B7 modal pokazuje automatyczny kod A-001 — A-001
 PASS B7 ręczna zmiana zapisana w bazie (A-050) — {"subiekt_code":"A-050"}
 PASS B7 lista po edycji — ["Kamila Wiśniewska | A-050"]
 console errors: 0
-RESULT phase B3: 3/3 passed
+RESULT phase B3: 3/3 passed      (= kroki B7, edycja kodu)
 ```
 
 Pierwszy przebieg fazy A miał 3 FAIL z winy selektora skryptu (pierwsza linia komórki to inicjały awatara „AB/KW/MC”, nie nazwisko); po poprawce selektora baza została zasiana od nowa i faza A przeszła 14/14 (wynik wyżej). „console errors: 2” w fazie B to odpowiedzi 401 z `/api/auth/callback/credentials` przy odmowie logowania architekta (oczekiwane).
@@ -201,5 +201,70 @@ Zrzuty (`<scratchpad>/loop4b/shots/`): `A1-admin-list-before` (kolumna Kod, „�
 
 - Logowanie Google: w trybie wewnętrznym callback `signIn` odmawia także architektowi z kontem Google (inaczej DoD „architekt nie zaloguje się” miałby obejście, gdy Google jest skonfigurowany). Odmowa daje standardowe przekierowanie NextAuth bez komunikatu o przygotowaniu.
 - Istniejące sesje JWT architektów (zalogowanych przed włączeniem zmiennej) nie są unieważniane — tryb blokuje nowe logowania, nie wylogowuje. Do decyzji, jeśli na produkcji są aktywne sesje architektów.
-- W trybie wewnętrznym wywołujący `sendEmail` widzą `success: false`: rejestracja architekta pokazuje „nie udało się wysłać maila powitalnego”, wysyłka zaproszeń liczy je jako nieudane (`last_error`) — zgodnie ze specyfikacją („traktują to jak dotąd”).
+- ~~W trybie wewnętrznym wywołujący `sendEmail` widzą `success: false` (rejestracja: „nie udało się wysłać maila”, zaproszenia jako nieudane).~~ Naprawione po przeglądzie — patrz „Poprawki po przeglądzie spec”.
 - `CASHBACK_EXPIRY_MONTHS` musi być liczbą całkowitą (np. `1.5` → 12 z ostrzeżeniem).
+
+## Poprawki po przeglądzie spec (2026-10-30)
+
+| SHA | Temat |
+|---|---|
+| `ce30253` | fix(auth): internal mode also refuses the DEMO_MODE architect |
+| `a18e868` | fix(auth): keep the literal role type on the DEMO_MODE architect (tsc) |
+| `81b2fd0` | fix(mail): internal-mode skips are reported as skipped, not as failures |
+
+1. **DEMO_MODE:** demo-architekt (`architekt@demo.pl`) w trybie wewnętrznym dostaje ten sam komunikat co zwykły ARCHI (wspólne `refuseArchitectInInternalMode` w `src/lib/authorizeCredentials.ts`); demo-admin wchodzi.
+2. **Pominięty mail ≠ błąd** (stałe i `isSkippedByInternalMode()` w `src/lib/internalMode.ts`):
+   - `registerArchitect` → `emailSkipped: 'Mail powitalny pominięty (tryb wewnętrzny)'`, `emailError: null`; modal pokazuje baner info zamiast ostrzeżenia o nieudanej wysyłce.
+   - `sendInvitations` / `resendInvitation` → nowe pole `skippedInternalMode` (nie wchodzi do `failed`), wiersz `{ ok: false, skippedInternalMode: true }`, `invitations.last_error = 'pominięto: tryb wewnętrzny'`, `sent_at` i `send_count` bez zmian. Panel: w postępie „Pominięte (tryb wewnętrzny): n” zamiast „Nieudane”, przy wierszu „Pominięto (tryb wewnętrzny)” zamiast „Błąd wysyłki”, „Wyślij” przy wierszu → komunikat info. Późniejsza udana wysyłka czyści `last_error` (jak dotąd).
+   - Pozostali wywołujący `sendEmail`: `notifyArchitectProfileIncomplete` (przycisk w kolejce wypłat mówił „Wysłano”) → zwraca `skipped`, przycisk „Pominięto (tryb wewnętrzny)”; test maila z szablonu (`EmailsClient`, dotąd „Błąd wysyłki: Unknown error”) → komunikat info. Bez zmian, bo wynik tylko logowany / ignorowany: `import.ts` (ARCHITECT_REGISTERED), `projects.ts` (PROJECT_ADDED_*, PROJECT_ACCEPTED, PAYOUT_PROCESSED), `cashback.ts` (PAYOUT_REDEEMED_CARD), `forgot-password`.
+
+Nowe testy (najpierw czerwone: 10 FAIL przed implementacją, potem zielone):
+
+```
+✔ authorize in internal mode refuses the DEMO_MODE architect too (0.142542ms)
+✔ constants: welcome-mail and invitation notes for internal mode (0.544375ms)
+✔ registerArchitect in internal mode reports the skipped welcome mail, not an error (51.613416ms)
+✔ registerArchitect without the variable sends as before (no skip note) (48.13975ms)
+✔ sendInvitations in internal mode: skipped, not failed; distinguishable last_error (10.6145ms)
+✔ sendInvitations without the variable sends and clears the skip note (1.851584ms)
+✔ invitations UI: skipped mails counted separately, row shows the internal-mode note, not "Błąd wysyłki" (0.6125ms)
+✔ notifyArchitectProfileIncomplete reports the skip in internal mode (0.55475ms)
+✔ test e-mail from template settings shows the internal-mode skip, not "Błąd wysyłki" (0.287292ms)
+ℹ tests 19
+ℹ pass 19
+ℹ fail 0
+```
+
+### Bramka po poprawkach
+
+```
+$ npm test
+ℹ tests 339
+ℹ pass 339
+ℹ fail 0
+(329 → 339: internalMode +1 (DEMO_MODE), internalModeMailOutcomes 9)
+
+$ npx tsc --noEmit | grep -oE "error TS[0-9]+" | sort | uniq -c
+  19 error TS5097
+
+$ npm run build
+✓ Compiled successfully in 2.3s
+  Finished TypeScript in 1939ms ...
+✓ Generating static pages using 14 workers (23/23) in 150ms
+(exit 0)
+```
+
+### E2E faza C (nowy build, `PORTAL_INTERNAL_MODE=1`, świeża baza z seed-dev + 2 zaproszenia PENDING wstawione jako dane startowe)
+
+```
+PASS C1 baner „Mail powitalny pominięty (tryb wewnętrzny)”
+PASS C1 brak ostrzeżenia „mail powitalny nie został wysłany”
+PASS C2 postęp: „Pominięte (tryb wewnętrzny): 2”, bez „Nieudane” — Wysyłka zakończona | 2 z 2 | Wysłane: 0 | Pominięte (tryb wewnętrzny): 2
+PASS C2 wiersze: „Pominięto (tryb wewnętrzny)” ×2, brak „Błąd wysyłki”
+PASS C2 baza: last_error „pominięto: tryb wewnętrzny”, sent_at puste — [{"id":"inv_c1","sent_at":null,"send_count":0,"last_error":"pominięto: tryb wewnętrzny"},{"id":"inv_c2","sent_at":null,"send_count":0,"last_error":"pominięto: tryb wewnętrzny"}]
+PASS C3 „Wyślij” przy wierszu → komunikat o trybie wewnętrznym
+console errors: 0
+RESULT phase C: 6/6 passed
+```
+
+Log serwera: `[internal-mode] pominięto mail ARCHITECT_REGISTERED do ewa.pominieta@dev.local`, 3× `ARCHITECT_INVITED` (2 przy „Wyślij niewysłane”, 1 przy „Wyślij” w wierszu). Zrzuty: `C1-register-skipped-info`, `C2-invitations-skipped`, `C3-invitation-resend-info` (`<scratchpad>/loop4b/shots/`). Skrypt: `<scratchpad>/loop4b/e2e-c.mjs`.
