@@ -10,11 +10,11 @@ import { isPaid, paidByDocument, type FinanceRow } from './paid.ts';
 import { buildPayloads, type BuildResult, type ContractorRow, type PositionRow } from './payload.ts';
 import { findMissingColumns, type ColumnRow } from './probe.ts';
 import {
-    REQUIRED_COLUMNS, SQL_ADDRESS_HISTORY_SAMPLE, SQL_CATEGORY, SQL_CHAIN_HEADERS, SQL_TABLES, SQL_TYPE_COUNTS,
+    REQUIRED_COLUMNS, SQL_ADDRESS_HISTORY_SAMPLE, SQL_CATEGORY, SQL_COLLATION, SQL_CHAIN_HEADERS, SQL_TABLES, SQL_TYPE_COUNTS,
     sqlArchitectZkOfPayers, sqlColumns, sqlContractors, sqlFinance, sqlHeadersByIds, sqlInvoicesOfPayers, sqlPositions,
 } from './queries.ts';
 import { countsLine, docNumber, formatSummary, manualReviewCount, money, statusCounts, typeLabel } from './report.ts';
-import { buildPages, createFileLogger, localDate, pruneLogs, sendAll, type Logger } from './send.ts';
+import { buildPages, createFileLogger, localDate, pruneLogsSafely, sendAll, type Logger } from './send.ts';
 
 export const EXIT = {
     OK: 0,
@@ -170,6 +170,13 @@ async function probe(pool: Pool, config: AgentConfig, since: string, logger: Log
         }
     });
 
+    await section('Kolacja bazy (wielkość liter w LIKE \'%#A%\' przy szukaniu ZK architektów)', async () => {
+        const [row] = await queryRows<{ kolacja: string | null }>(pool, SQL_COLLATION);
+        const collation = row?.kolacja ?? '(nieznana)';
+        const insensitive = /_CI_/i.test(collation);
+        print(`Kolacja: ${collation} — ${insensitive ? 'bez rozróżniania wielkości liter (OK: „#a-7” też jest znajdowane)' : 'UWAGA: rozróżnia wielkość liter albo nieznana — „#a…” może nie zostać znalezione przez LIKE'}`);
+    });
+
     await section(`Dokumenty wg dok_Typ / dok_Podtyp od ${since}`, async () => {
         const rows = await queryRows<{ dok_Typ: number; dok_Podtyp: number; ile: number }>(pool, SQL_TYPE_COUNTS, sinceParam(since));
         for (const row of rows) print(`${typeLabel(row.dok_Typ).padEnd(4)} dok_Typ ${String(row.dok_Typ).padStart(2)} podtyp ${row.dok_Podtyp}: ${row.ile}`);
@@ -269,13 +276,15 @@ export async function main(argv: string[]): Promise<number> {
         if (existsSync(envFile)) applyEnvFile(envFile, process.env);
         config = loadConfig(process.env);
     } catch (error) {
-        if (!(error instanceof ConfigError)) throw error;
-        logger.error(`Błąd konfiguracji: ${error.message}`);
+        // Każdy błąd fazy konfiguracji (także np. nieczytelny .env) → dzienny log i kod 1.
+        logger.error(error instanceof ConfigError
+            ? `Błąd konfiguracji: ${error.message}`
+            : `Błąd konfiguracji (odczyt .env lub argumentów): ${error instanceof Error ? error.message : String(error)}`);
         console.error(`\n${HELP}`);
         return EXIT.CONFIG;
     }
 
-    const pruned = pruneLogs(config.logsDir);
+    const pruned = pruneLogsSafely(config.logsDir, logger);
     if (pruned.length > 0) logger.info(`Usunięto logi starsze niż 90 dni: ${pruned.length}`);
     const since = args.since ?? lookbackStart(new Date(), config.lookbackMonths);
     logger.info(`Start ${args.mode} · agent ${AGENT_VERSION} · dokumenty od ${since}`);

@@ -175,16 +175,46 @@ const pad = (n: number) => String(n).padStart(2, '0');
 export const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const localTime = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 
-/** Logger dopisujący do `<dir>/YYYY-MM-DD.log` (data lokalna w chwili zapisu) i — domyślnie — na konsolę. */
-export function createFileLogger(dir: string, options: { now?: () => Date; echo?: boolean } = {}): Logger & { readonly file: string } {
+/**
+ * Logger dopisujący do `<dir>/YYYY-MM-DD.log` (data lokalna w chwili zapisu) i — domyślnie — na konsolę.
+ * Błąd zapisu pliku (brak uprawnień, pełny dysk) nigdy nie przerywa uruchomienia: wiersz trafia wtedy na
+ * konsolę, a informacja o problemie z logiem pojawia się raz.
+ */
+export function createFileLogger(
+    dir: string,
+    options: {
+        now?: () => Date;
+        echo?: boolean;
+        append?: (path: string, text: string) => void;
+        mkdir?: (dir: string) => void;
+    } = {},
+): Logger & { readonly file: string } {
     const now = options.now ?? (() => new Date());
     const echo = options.echo ?? true;
-    mkdirSync(dir, { recursive: true });
+    const append = options.append ?? ((path: string, text: string) => appendFileSync(path, text, 'utf8'));
+    const mkdir = options.mkdir ?? ((path: string) => { mkdirSync(path, { recursive: true }); });
+    let failureReported = false;
+    const reportFailure = (error: unknown) => {
+        if (failureReported) return;
+        failureReported = true;
+        console.error(`Nie można zapisać logu w ${dir}: ${error instanceof Error ? error.message : String(error)} — dalsze wpisy tylko na konsoli`);
+    };
+    try {
+        mkdir(dir);
+    } catch (error) {
+        reportFailure(error);
+    }
     const write = (level: 'INFO' | 'WARN' | 'ERROR', message: string) => {
         const at = now();
         const line = `${localDate(at)} ${localTime(at)} ${level} ${message}`;
-        appendFileSync(join(dir, `${localDate(at)}.log`), `${line}\n`, 'utf8');
-        if (echo) (level === 'INFO' ? console.log : console.error)(line);
+        let written = true;
+        try {
+            append(join(dir, `${localDate(at)}.log`), `${line}\n`);
+        } catch (error) {
+            written = false;
+            reportFailure(error);
+        }
+        if (echo || !written) (level === 'INFO' && written ? console.log : console.error)(line);
     };
     return {
         get file() { return join(dir, `${localDate(now())}.log`); },
@@ -207,10 +237,42 @@ export function staleLogFiles(names: string[], today: Date, days = LOG_RETENTION
     }).sort();
 }
 
-/** Usuwa stare dzienne logi z `dir`; zwraca nazwy usuniętych plików. */
-export function pruneLogs(dir: string, now = new Date(), days = LOG_RETENTION_DAYS): string[] {
+export interface PruneFs {
+    readdir: (dir: string) => string[];
+    rm: (path: string) => void;
+}
+const realFs: PruneFs = { readdir: (dir) => readdirSync(dir), rm: (path) => rmSync(path, { force: true }) };
+
+/** Usuwa stare dzienne logi z `dir`; zwraca nazwy usuniętych plików. Rzuca przy błędzie systemu plików. */
+export function pruneLogs(dir: string, now = new Date(), days = LOG_RETENTION_DAYS, fs: PruneFs = realFs): string[] {
     if (!existsSync(dir)) return [];
-    const stale = staleLogFiles(readdirSync(dir), now, days);
-    for (const name of stale) rmSync(join(dir, name), { force: true });
+    const stale = staleLogFiles(fs.readdir(dir), now, days);
+    for (const name of stale) fs.rm(join(dir, name));
     return stale;
+}
+
+/**
+ * Sprzątanie logów przy starcie, które nigdy nie przerywa uruchomienia: plik, którego nie da się usunąć
+ * (np. otwarty w Notatniku), i błąd odczytu katalogu dają ostrzeżenie w dziennym logu.
+ */
+export function pruneLogsSafely(dir: string, logger: Logger, now = new Date(), fs: Partial<PruneFs> = {}): string[] {
+    const io: PruneFs = { ...realFs, ...fs };
+    const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+    let stale: string[];
+    try {
+        stale = existsSync(dir) ? staleLogFiles(io.readdir(dir), now) : [];
+    } catch (error) {
+        logger.warn(`Nie udało się przejrzeć starych logów: ${message(error)}`);
+        return [];
+    }
+    const removed: string[] = [];
+    for (const name of stale) {
+        try {
+            io.rm(join(dir, name));
+            removed.push(name);
+        } catch (error) {
+            logger.warn(`Nie udało się usunąć starego logu ${name}: ${message(error)}`);
+        }
+    }
+    return removed;
 }

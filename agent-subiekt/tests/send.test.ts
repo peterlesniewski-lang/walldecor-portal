@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifySubiektRequest } from '../../src/lib/subiekt/auth.ts';
-import { buildPages, createFileLogger, postPage, pruneLogs, sendAll, sortForSending, staleLogFiles, RETRY_DELAYS_MS, type SendDeps } from '../src/send.ts';
+import { buildPages, createFileLogger, postPage, pruneLogs, pruneLogsSafely, sendAll, sortForSending, staleLogFiles, RETRY_DELAYS_MS, type SendDeps } from '../src/send.ts';
 import type { SubiektDocumentPayload, SubiektSyncRequest } from '../src/contract.ts';
 
 const AUTH = { token: 't'.repeat(64), secret: 's'.repeat(64) };
@@ -183,4 +183,43 @@ test('retencja logów: dzienne RRRR-MM-DD.log starsze niż 90 dni są usuwane; i
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
+});
+
+test('pruneLogsSafely: plik, którego nie da się usunąć (zablokowany), nie przerywa uruchomienia — ostrzeżenie w logu, reszta usunięta', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-subiekt-prune-locked-'));
+    try {
+        for (const name of ['2026-07-01.log', '2026-07-02.log', '2026-10-30.log']) writeFileSync(join(dir, name), 'x');
+        const warnings: string[] = [];
+        const logger = { info: () => {}, warn: (m: string) => warnings.push(m), error: (m: string) => warnings.push(`ERROR ${m}`) };
+        const rm = (path: string) => {
+            if (path.endsWith('2026-07-01.log')) throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+            rmSync(path, { force: true });
+        };
+        const removed = pruneLogsSafely(dir, logger, new Date(2026, 9, 30), { rm });
+        assert.deepEqual(removed, ['2026-07-02.log']);
+        assert.deepEqual(readdirSync(dir).sort(), ['2026-07-01.log', '2026-10-30.log']);
+        assert.equal(warnings.length, 1);
+        assert.match(warnings[0] as string, /Nie udało się usunąć starego logu 2026-07-01\.log: EBUSY/);
+
+        const broken = pruneLogsSafely(dir, logger, new Date(2026, 9, 30), { readdir: () => { throw new Error('EACCES: permission denied'); } });
+        assert.deepEqual(broken, []);
+        assert.match(warnings[1] as string, /Nie udało się przejrzeć starych logów: EACCES/);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test('logger: błąd zapisu pliku logu (np. brak uprawnień) nie przerywa uruchomienia — wiersz idzie na konsolę z jednorazową informacją', (t) => {
+    const consoleLines: string[] = [];
+    t.mock.method(console, 'error', (line: string) => { consoleLines.push(line); });
+    const logger = createFileLogger('/katalog/ktorego/nie/ma', {
+        now: () => new Date(2026, 9, 30, 20, 0, 5),
+        echo: false,
+        append: () => { throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }); },
+        mkdir: () => { throw new Error('EACCES: permission denied, mkdir'); },
+    });
+    assert.doesNotThrow(() => { logger.warn('pierwsze'); logger.info('drugie'); });
+    assert.equal(consoleLines.filter((l) => /Nie można zapisać logu/.test(l)).length, 1, 'informacja o błędzie zapisu tylko raz');
+    assert.ok(consoleLines.some((l) => /WARN pierwsze$/.test(l)));
+    assert.ok(consoleLines.some((l) => /INFO drugie$/.test(l)));
 });

@@ -114,3 +114,6 @@ ORDER BY d.dok_Typ, d.dok_Podtyp`;
 export const SQL_CATEGORY = `SELECT k.kat_Id, k.kat_Nazwa FROM dbo.sl_Kategoria k WHERE k.kat_Id = @categoryId`;
 
 export const SQL_ADDRESS_HISTORY_SAMPLE = `SELECT TOP 1 * FROM dbo.adrh__Historia`;
+
+/** Kolacja bazy — czy LIKE '%#A%' w sqlArchitectZkOfPayers jest bez rozróżniania wielkości liter. */
+export const SQL_COLLATION = `SELECT CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS nvarchar(128)) AS kolacja`;
