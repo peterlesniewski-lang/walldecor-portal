@@ -606,7 +606,9 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 
 - [ ] Ustawić w Coolify `SUBIEKT_SYNC_TOKEN`, `SUBIEKT_SYNC_SECRET` (wygenerowane `openssl rand -hex 32`, dwa różne).
 - [ ] Merge do `main`, trigger deployu przez API Coolify (zob. pamięć `reference_coolify`), `ensure-production-schema.mjs` dodaje kolumny i tabele przy starcie — sprawdzić w logach startu kontenera komunikaty o dodanych tabelach.
-- [ ] Sprawdzić strefę czasową MySQL (`SELECT @@global.time_zone, NOW()`) i procesu Node w kontenerze; jeśli nie obie UTC, ustawić `timezone: 'Z'` w poolu `src/lib/db.ts`, bo `getSyncStatus` zakłada UTC.
+- [ ] Sprawdzić strefę czasową MySQL (`SELECT @@global.time_zone, NOW()`) i procesu Node w kontenerze (`date`, `echo $TZ`); mysql2 czyta DATETIME w czasie lokalnym Node, a `CURRENT_TIMESTAMP` zapisuje czas serwera MySQL — jeśli nie obie UTC, ustawić `TZ=UTC` w Coolify dla aplikacji (najprościej) albo `timezone: 'Z'` w poolu `src/lib/db.ts` + `SET time_zone='+00:00'`. Dotyczy `started_at/finished_at` przebiegów, historii ZK i `expires_at` cashbacku (§6 pkt 11).
+- [ ] Sprawdzić kolację bazy produkcyjnej: `SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE();` oraz `SHOW CREATE TABLE invitations;`. Nowe tabele Subiekta mają jawnie `utf8mb4_unicode_ci` (ensure-production-schema.mjs), tak jak stare z `deploy/schema.mysql.sql`; przy `utf8mb4_0900_ai_ci` na starych tabelach złączenia padłyby błędem 1267 (sprawdzone na MySQL 8.4 w Dockerze, 2026-10-30).
+- [ ] `positions_json` jest `MEDIUMTEXT` (16 MB), `remarks` `VARCHAR(4000)` z walidacją po stronie API; baza nie ma obsługi `DB_PORT` — jeśli MySQL produkcyjny nie słucha na 3306, dopisać w `db.ts`.
 - [ ] Smoke test: `curl` z pustą paczką (`documents: []`) → 200, run DONE w panelu. `curl` ze złym tokenem → 401.
 - [ ] Nadać kody wszystkim aktywnym architektom w panelu (lista z `/dashboard/admin/architects`).
 - [ ] Na PC z bazą: `.env` agenta z adresem `https://archi.walldecor.pl`, `npm run sync -- --dry-run`, przegląd pliku, potem `npm run sync`. Przegląd skrzynki nieprzypisanych i ręczne przypisanie historycznych dokumentów.
