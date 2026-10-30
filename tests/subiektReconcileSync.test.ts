@@ -13,6 +13,7 @@ type AdminOpsModule = typeof import('../src/lib/subiekt/adminOps');
 type StatusModule = typeof import('../src/lib/subiekt/status');
 type ProjectsModule = typeof import('../src/app/actions/projects');
 type SubiektActionsModule = typeof import('../src/app/actions/subiekt');
+type QueriesModule = typeof import('../src/lib/subiekt/queries');
 
 await import(new URL('./helpers/srcResolveHooks.ts', import.meta.url).href);
 const { setTestSession }: StubsModule = await import(new URL('./helpers/nextServerStubs.ts', import.meta.url).href);
@@ -23,6 +24,7 @@ const ops: AdminOpsModule = await import(new URL('../src/lib/subiekt/adminOps.ts
 const status: StatusModule = await import(new URL('../src/lib/subiekt/status.ts', import.meta.url).href);
 const projectActions: ProjectsModule = await import(new URL('../src/app/actions/projects.ts', import.meta.url).href);
 const subiektActions: SubiektActionsModule = await import(new URL('../src/app/actions/subiekt.ts', import.meta.url).href);
+const queries: QueriesModule = await import(new URL('../src/lib/subiekt/queries.ts', import.meta.url).href);
 const db = testDb.db;
 
 test.after(() => testDb.cleanup());
@@ -424,4 +426,85 @@ test('resolveReconciliationAction: ADMIN and STAFF, domain errors as { ok: false
     assert.equal(reconciliation(projectId, 1100).status, 'RESOLVED');
     assert.equal(reconciliation(projectId, 1100).note, null);
     setTestSession({ id: ADMIN, role: 'ADMIN', name: 'Admin Główny' });
+});
+
+// --- widoki (queries.ts) ---
+
+test('getOpenReconciliations / getOpenReconciliationCount: OPEN rows of live projects with architect, ZK and amounts', async () => {
+    await sync([zk(1200)]);
+    await sync([fs(1210, 1200, [collective(12101, 900)])]);
+    const projectId = projectOf(1200);
+    db.prepare("UPDATE subiekt_reconciliations SET opened_at = '2026-10-29 08:00:00' WHERE project_id = ?").run(projectId);
+
+    const open = await queries.getOpenReconciliations();
+    const row = open.find((r) => r.projectId === projectId);
+    assert.ok(row);
+    assert.deepEqual({ ...row, projectName: undefined }, {
+        projectId, projectName: undefined, rootExternalId: 1200, architectName: 'Architekt A', zkNumber: 'ZK 1200/10/2026',
+        zkNet: 836.59, invoicedNet: 900, difference: 63.41, openedAt: '2026-10-29T08:00:00.000Z',
+    });
+    assert.ok(open.every((r) => reconciliation(r.projectId, r.rootExternalId).status === 'OPEN'));
+    const count = await queries.getOpenReconciliationCount();
+    assert.equal(count, open.length);
+
+    // Projekt niezrealizowany nie trafia na listę ani do licznika.
+    db.prepare("UPDATE projects SET status = 'NIEZREALIZOWANY' WHERE id = ?").run(projectId);
+    assert.equal((await queries.getOpenReconciliations()).some((r) => r.projectId === projectId), false);
+    assert.equal(await queries.getOpenReconciliationCount(), count - 1);
+    db.prepare("UPDATE projects SET status = 'PRZYJĘTY' WHERE id = ?").run(projectId);
+});
+
+test('getProjectReconciliations: OPEN with invoices and chain items (ZK amount per item), RESOLVED with who and when', async () => {
+    const openProject = projectOf(1200);
+    const [open] = await queries.getProjectReconciliations(openProject);
+    assert.equal(open.status, 'OPEN');
+    assert.equal(open.rootExternalId, 1200);
+    assert.equal(open.zkNumber, 'ZK 1200/10/2026');
+    assert.deepEqual([open.zkNet, open.invoicedNet, open.difference], [836.59, 900, 63.41]);
+    assert.deepEqual(open.invoices, [{ number: 'FS 1210/10/2026', type: 'FS', issued_at: '2026-10-20', net_total: 900 }]);
+    assert.deepEqual(open.items.map((i) => [i.description, i.type, i.amount_net, i.zk_amount]), [
+        ['Tapeta Floral', 'PRODUCT', 536.59, 536.59],
+        ['Montaż', 'INSTALLATION', 300, 300],
+    ]);
+    assert.equal(open.resolvedAt, null);
+
+    const resolvedProject = projectOf(1100); // rozstrzygnięte przez STAFF w teście akcji
+    db.prepare("INSERT INTO users (id, name, email, role) VALUES ('u_staff', 'Zespół Biuro', 'staff@test.local', 'STAFF')").run();
+    db.prepare("UPDATE subiekt_reconciliations SET resolved_at = '2026-10-30 09:15:00' WHERE project_id = ?").run(resolvedProject);
+    const [resolved] = await queries.getProjectReconciliations(resolvedProject);
+    assert.equal(resolved.status, 'RESOLVED');
+    assert.equal(resolved.resolvedAt, '2026-10-30T09:15:00.000Z');
+    assert.equal(resolved.resolvedByName, 'Zespół Biuro');
+    assert.deepEqual(resolved.items.map((i) => i.amount_net), [600, 300]);
+
+    // AUTO_CLOSED nie jest pokazywane.
+    assert.deepEqual(await queries.getProjectReconciliations(projectOf(500)), []);
+});
+
+test('getProjectZkChanges: reconciliation entries for the admin (with amounts, author) and neutral text for the architect', async () => {
+    const projectId = projectOf(100);
+    const admin = await queries.getProjectZkChanges(projectId);
+    const opened = admin.filter((c) => /faktury niezgodne z zamówieniem/.test(c.description));
+    const resolvedEntries = admin.filter((c) => /faktury uzgodnione ręcznie/.test(c.description));
+    assert.equal(opened.length, 3, 'otwarcie, ponowne otwarcie po KFS, po zmianie pozycji ZK');
+    assert.equal(resolvedEntries.length, 2);
+    assert.match(opened[opened.length - 1].description, /zamówienie 836,59 zł, faktury 900,00 zł \(FS 110\/10\/2026\)/);
+    assert.match(resolvedEntries[resolvedEntries.length - 1].description, /Tapeta Floral 536,59 → 600,00 zł; Montaż 300,00 zł bez zmian; razem 900,00 zł\. Notatka: Zbiorcza FS/);
+    assert.equal(resolvedEntries[0].author, 'Admin Główny');
+    assert.equal(opened[0].author, null, 'wpis synchronizacji');
+
+    const architect = await queries.getProjectZkChanges(projectId, 'ARCHITECT');
+    assert.equal(architect.length, admin.length);
+    const architectReconciliation = architect.filter((c) => /uzgadnianiu|uzgodnione z zamówieniem/.test(c.description));
+    assert.equal(architectReconciliation.length, 5);
+    for (const entry of architectReconciliation) {
+        assert.doesNotMatch(entry.description, /\d,\d{2}/, 'bez kwot faktur');
+        assert.doesNotMatch(entry.description, /FS 110/, 'bez numerów faktur');
+    }
+    assert.ok(architect.filter((c) => c.author !== null).every((c) => c.author === 'WallDecor'), 'bez nazwiska admina');
+
+    const closedProject = projectOf(500);
+    const closed = (await queries.getProjectZkChanges(closedProject)).find((c) => /zamknięte automatycznie/.test(c.description));
+    assert.ok(closed);
+    assert.match((await queries.getProjectZkChanges(closedProject, 'ARCHITECT')).find((c) => c.id === closed!.id)!.description, /faktury zgodne z zamówieniem/);
 });
