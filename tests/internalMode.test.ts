@@ -90,6 +90,13 @@ test('sendEmail in internal mode skips ARCHI and unknown addresses without sendi
     }
 });
 
+test('sendEmail in internal mode treats a missing address as unknown (skipped, no throw)', async () => {
+    setMode('1');
+    const { result, info } = await captureConsole(() => email.sendEmail('TEST_MAIL', undefined as unknown as string, { x: '1' }));
+    assert.deepEqual(result, { success: false, skipped: 'INTERNAL_MODE' });
+    assert.deepEqual(info, ['[internal-mode] pominięto mail TEST_MAIL do undefined']);
+});
+
 test('sendEmail in internal mode sends to STAFF and ADMIN', async () => {
     setMode('true');
     for (const to of ['staff@test.local', 'ADMIN@test.local']) {

@@ -41,7 +41,7 @@ async function skippedByInternalMode(slug: string, to: string): Promise<boolean>
     if (!isInternalMode()) return false;
     const users = await query<{ role: string }>(
         "SELECT role FROM users WHERE LOWER(email) = ?",
-        [to.trim().toLowerCase()]
+        [(to ?? '').trim().toLowerCase()]
     );
     if (users.some(u => u.role === 'ADMIN' || u.role === 'STAFF')) return false;
     console.info(`[internal-mode] pominięto mail ${slug} do ${to}`);
@@ -50,7 +50,8 @@ async function skippedByInternalMode(slug: string, to: string): Promise<boolean>
 
 export async function sendEmail(slug: string, to: string, placeholders: Record<string, string>) {
     try {
-        // 0. Tryb wewnętrzny: brak wysyłki poza zespół. Wywołujący traktują to jak nieudaną wysyłkę.
+        // 0. Tryb wewnętrzny: brak wysyłki poza zespół. Wynik { success: false, skipped } — wywołujący, których
+        //    wynik trafia do panelu, pokazują go jako pominięcie (isSkippedByInternalMode), nie jako błąd wysyłki.
         if (await skippedByInternalMode(slug, to)) {
             return { success: false, skipped: 'INTERNAL_MODE' as const };
         }
