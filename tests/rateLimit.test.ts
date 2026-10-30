@@ -50,7 +50,8 @@ test('getClientIp takes the first x-forwarded-for address, then x-real-ip, then 
 });
 
 test('auth login uses the shared rate limiter and case-insensitive email lookup', async () => {
-    const source = await readFile(new URL('../src/lib/auth.ts', import.meta.url), 'utf8');
+    // Logika authorize wydzielona z src/lib/auth.ts (Loop 4b), provider credentials ją wskazuje.
+    const source = await readFile(new URL('../src/lib/authorizeCredentials.ts', import.meta.url), 'utf8');
     assert.match(source, /createRateLimiter/);
     assert.match(source, /LOWER\(email\) = \?/);
 });

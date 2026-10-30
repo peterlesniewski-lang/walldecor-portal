@@ -6,6 +6,13 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Banner, Button } from '@/components/ui';
 import { AuthShell, AuthField, AUTH_INPUT } from '../AuthShell';
+import { INTERNAL_MODE_LOGIN_MESSAGE } from '@/lib/internalMode';
+
+// Komunikaty z authorize pokazywane dosłownie; każdy inny błąd → ogólne „Błędny email lub hasło”.
+const PASSTHROUGH_ERRORS = new Set([
+    'Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za 5 minut.',
+    INTERNAL_MODE_LOGIN_MESSAGE,
+]);
 
 function GoogleIcon() {
     return (
@@ -49,9 +56,7 @@ export default function SignIn() {
         });
 
         if (res?.error) {
-            setError(res.error === 'Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za 5 minut.'
-                ? res.error
-                : 'Błędny email lub hasło');
+            setError(PASSTHROUGH_ERRORS.has(res.error) ? res.error : 'Błędny email lub hasło');
             setLoading(false);
         } else {
             router.push('/dashboard');
