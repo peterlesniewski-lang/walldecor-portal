@@ -34,7 +34,15 @@ test('resolveArchitectCode: pole własne — token przed spacją, trim, uppercas
 test('resolveArchitectCode: znacznik z uwag', () => {
     assert.equal(resolveArchitectCode({ architect_code: null, remarks: 'Projekt salon #A-001 pilne' }), 'A-001');
     assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#a001' }), 'A-001');
-    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A_xy9' }), 'A-XY9');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A_9' }), 'A-009');
+});
+
+test('resolveArchitectCode: remarks marker is numeric only, like the agent (#Adam is not a code)', () => {
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A_xy9' }), null);
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: 'Pozdrawiam #Adam' }), null, '„#Adam” nie daje „A-DAM”');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#Adam poleca, kod #A-0002' }), 'A-002', 'pierwszy poprawny znacznik');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A-1234567' }), null, 'najwyżej 6 cyfr');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: 'kod #A-12.' }), 'A-012', 'znak interpunkcyjny kończy kod');
 });
 
 test('resolveArchitectCode: numeric remarks marker is zero-padded like generated codes (A-001)', () => {
@@ -43,7 +51,7 @@ test('resolveArchitectCode: numeric remarks marker is zero-padded like generated
     assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#a42' }), 'A-042');
     assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A-0001' }), 'A-001');
     assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A-1200' }), 'A-1200');
-    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A-12X' }), 'A-12X', 'niecyfrowy sufiks bez zmian');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A-12X' }), null, 'cyfry z literą to nie kod');
 });
 
 test('resolveArchitectCode: pole własne wygrywa, brak → null, pusty string = brak', () => {
