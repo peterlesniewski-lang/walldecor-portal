@@ -67,7 +67,7 @@ const requiredTables = [
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_invitations_email (email),
             INDEX idx_invitations_status (status)
-        )`,
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     },
     // 019: integracja Subiekt GT — tabele pośrednie (dokumenty, snapshoty, uruchomienia agenta).
     {
@@ -88,9 +88,9 @@ const requiredTables = [
             net_total DECIMAL(12,2) NOT NULL,
             gross_total DECIMAL(12,2) NOT NULL,
             is_paid INTEGER NOT NULL DEFAULT 0,
-            remarks TEXT NULL,
+            remarks VARCHAR(4000) NULL,
             content_hash CHAR(64) NOT NULL,
-            positions_json TEXT NOT NULL,
+            positions_json MEDIUMTEXT NOT NULL,
             assignment_status VARCHAR(16) NOT NULL DEFAULT 'UNASSIGNED',
             assignment_note TEXT NULL,
             first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -100,7 +100,7 @@ const requiredTables = [
             INDEX idx_subiekt_documents_project (project_id),
             INDEX idx_subiekt_documents_root (root_external_id),
             INDEX idx_subiekt_documents_assignment (assignment_status)
-        )`,
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     },
     {
         name: 'subiekt_document_snapshots',
@@ -109,11 +109,11 @@ const requiredTables = [
             document_id VARCHAR(36) NOT NULL,
             run_id VARCHAR(36) NOT NULL,
             content_hash CHAR(64) NOT NULL,
-            positions_json TEXT NOT NULL,
+            positions_json MEDIUMTEXT NOT NULL,
             net_total DECIMAL(12,2) NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_subiekt_snapshots_document (document_id, created_at)
-        )`,
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     },
     {
         name: 'subiekt_sync_run_pages',
@@ -122,7 +122,7 @@ const requiredTables = [
             page INTEGER NOT NULL,
             received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (run_id, page)
-        )`,
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     },
     {
         name: 'subiekt_sync_runs',
@@ -139,7 +139,7 @@ const requiredTables = [
             documents_unassigned INTEGER NOT NULL DEFAULT 0,
             status VARCHAR(16) NOT NULL DEFAULT 'RUNNING',
             error TEXT NULL
-        )`,
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     },
 ];
 

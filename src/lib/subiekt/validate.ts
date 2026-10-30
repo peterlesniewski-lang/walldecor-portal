@@ -120,7 +120,7 @@ function parseDocument(raw: unknown): SubiektDocumentPayload {
         net_total: finiteNumber(d.net_total, 'net_total'),
         gross_total: finiteNumber(d.gross_total, 'gross_total'),
         is_paid: d.is_paid,
-        remarks: d.remarks === null ? null : (typeof d.remarks === 'string' ? d.remarks : fail('remarks', 'string or null')),
+        remarks: d.remarks === null ? null : (typeof d.remarks === 'string' ? (d.remarks.length <= 4000 ? d.remarks : fail('remarks', 'max 4000 znaków')) : fail('remarks', 'string or null')),
         positions: d.positions.map((pos, i) => parsePosition(pos, `positions[${i}]`)),
     };
 }
