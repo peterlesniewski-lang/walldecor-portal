@@ -20,6 +20,7 @@ import {
     moveDocumentToProjectOp,
     nextStatusSteps,
     overrideItemTypeOp,
+    resolveReconciliationOp,
 } from "@/lib/subiekt/adminOps";
 import { computeSuggestedStatus } from "@/lib/subiekt/status";
 import { assignMissingSubiektCodesOp } from "@/lib/subiekt/codes";
@@ -164,11 +165,32 @@ export async function applySuggestedStatus(projectId: string): Promise<SubiektAc
 
         try {
             for (const step of nextStatusSteps(project.status, suggested)) {
-                await updateProjectStatus(projectId, step);
+                const result = await updateProjectStatus(projectId, step);
+                if (!result.success) throw new Error(result.error);
             }
         } finally {
             revalidateSubiekt([projectId]);
         }
+        return {};
+    });
+}
+
+/**
+ * Uzgodnienie faktur z zamówieniem (Loop 5b): admin lub zespół wpisuje kwoty pozycji ZK łańcucha, suma = kwota
+ * faktur. Przelicza prowizje (przez rdzeń), więc odświeża też portfel i widoki architekta.
+ */
+export async function resolveReconciliationAction(
+    projectId: string,
+    rootExternalId: number,
+    amounts: Array<{ itemId: string; amount_net: number }>,
+    note: string,
+): Promise<SubiektActionResult> {
+    const session = await getServerSession(authOptions);
+    if (!session || !canManageOperationalProjects(session.user.role)) throw new Error("Unauthorized");
+
+    return attempt(async () => {
+        const { affectedProjectIds } = await resolveReconciliationOp({ projectId, rootExternalId, amounts, note }, session.user.id);
+        revalidateSubiekt(affectedProjectIds);
         return {};
     });
 }

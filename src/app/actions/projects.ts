@@ -22,6 +22,7 @@ import { validatePasswordStrength } from "@/lib/passwordPolicy";
 import { addItemCore, deleteItemCore, getArchitectCommissionRate, updateItemAmountCore } from "@/lib/projectItems";
 import { nextSubiektCode, withSubiektCodeRetry } from "@/lib/subiekt/codes";
 import { INTERNAL_MODE_WELCOME_SKIPPED, isSkippedByInternalMode } from "@/lib/internalMode";
+import { RECONCILE_OPEN_STATUS_ERROR, hasOpenReconciliation } from "@/lib/subiekt/status";
 
 function generateTempPassword(): string {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -115,7 +116,10 @@ export async function createProject(data: {
     return { success: true, projectId };
 }
 
-export async function updateProjectStatus(projectId: string, status: string, completionNote?: string) {
+/** Wynik zmiany statusu: sukces (także bez zmiany) albo błąd domenowy do pokazania (otwarte uzgodnienie faktur). */
+export type ProjectStatusResult = { success: true; unchanged?: true } | { success: false; error: string };
+
+export async function updateProjectStatus(projectId: string, status: string, completionNote?: string): Promise<ProjectStatusResult> {
     const session = await getServerSession(authOptions);
     if (!session || !canManageOperationalProjects(session.user.role)) {
         throw new Error("Unauthorized");
@@ -133,11 +137,17 @@ export async function updateProjectStatus(projectId: string, status: string, com
     const previousStatus: string = currentStatusRes[0].status;
 
     if (previousStatus === status) {
-        return { success: true, unchanged: true };
+        return { success: true, unchanged: true as const };
     }
 
     if (!(ALLOWED_TRANSITIONS[previousStatus] ?? []).includes(status)) {
         throw new Error(`Niedozwolona zmiana statusu: ${previousStatus} → ${status}.`);
+    }
+
+    // Loop 5b: projekt z otwartym uzgodnieniem faktur Subiekta nie może zostać zakończony (prowizja liczyłaby się
+    // z nieuzgodnionych kwot). Błąd domenowy wraca w wyniku, nie jako wyjątek (produkcyjny Next.js ukrywa treść).
+    if (status === 'ZAKOŃCZONY' && await hasOpenReconciliation(projectId)) {
+        return { success: false, error: RECONCILE_OPEN_STATUS_ERROR };
     }
 
     // ZAKOŃCZONY: finalize commissions using progressive bracket system, credit wallet cashback
