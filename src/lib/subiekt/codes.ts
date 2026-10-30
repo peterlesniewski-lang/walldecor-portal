@@ -9,12 +9,9 @@
 // w TEJ SAMEJ transakcji (withTransaction jest re-entrant), inaczej blokada nic nie daje.
 import { query, withTransaction } from "@/lib/db";
 import { logActivity } from "@/lib/services";
+import { AUTO_CODE_PATTERN, formatSubiektCode } from "./codeFormat";
 
-const AUTO_CODE_PATTERN = /^A-(\d+)$/;
-
-export function formatSubiektCode(n: number): string {
-    return `A-${String(n).padStart(3, '0')}`;
-}
+export { formatSubiektCode };
 
 /** Największy numer kodu automatycznego w `users` (0, gdy brak) — w bieżącej transakcji, z blokadą. */
 async function maxAutoCodeNumber(): Promise<number> {
