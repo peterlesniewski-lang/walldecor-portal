@@ -9,7 +9,7 @@ import bcrypt from 'bcrypt';
 import { sendEmail } from '@/lib/email';
 import { buildArchitectRegisteredPlaceholders } from '@/lib/emailPlaceholders';
 import { getCommissionRateForTurnover } from '@/lib/partnerProgram';
-import { nextSubiektCode } from '@/lib/subiekt/codes';
+import { nextSubiektCode, withSubiektCodeRetry } from '@/lib/subiekt/codes';
 
 const HISTORICAL_COMPLETION_NOTE = 'Import historyczny — prowizja rozliczona poza portalem';
 const HISTORICAL_COMMISSION_NOTE = 'Import historyczny (rozliczona)';
@@ -117,7 +117,7 @@ export async function importProjectsFromCSV(rows: ImportRowInput[], importedAt?:
                 const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
                 // Kod architekta do Subiekta (A-xxx) nadawany w tej samej transakcji co konto.
-                await withTransaction(async (queryFn) => {
+                await withSubiektCodeRetry(async (queryFn) => {
                     const subiektCode = await nextSubiektCode();
                     await queryFn(
                         "INSERT INTO users (id, name, email, password, role, studio_name, nip, address, must_change_password, subiekt_code) VALUES (?, ?, ?, ?, 'ARCHI', ?, ?, ?, 1, ?)",

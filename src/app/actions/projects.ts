@@ -20,7 +20,7 @@ import { cashbackExpiresAt } from "@/lib/cashbackExpiry";
 import { getCommissionRateForTurnover, CASHBACK_RATE } from "@/lib/partnerProgram";
 import { validatePasswordStrength } from "@/lib/passwordPolicy";
 import { addItemCore, deleteItemCore, getArchitectCommissionRate, updateItemAmountCore } from "@/lib/projectItems";
-import { nextSubiektCode } from "@/lib/subiekt/codes";
+import { nextSubiektCode, withSubiektCodeRetry } from "@/lib/subiekt/codes";
 import { INTERNAL_MODE_WELCOME_SKIPPED, isSkippedByInternalMode } from "@/lib/internalMode";
 
 function generateTempPassword(): string {
@@ -377,7 +377,7 @@ export async function registerArchitect(data: {
     const hashedPassword = await bcrypt.hash(passwordToHash, 10);
 
     // Kod architekta do Subiekta (A-xxx) nadawany w tej samej transakcji co konto.
-    await withTransaction(async (queryFn) => {
+    await withSubiektCodeRetry(async (queryFn) => {
         const subiektCode = await nextSubiektCode();
         await queryFn(
             `INSERT INTO users (

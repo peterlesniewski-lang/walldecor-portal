@@ -12,6 +12,7 @@ type SubiektActionsModule = typeof import('../src/app/actions/subiekt');
 type ImportModule = typeof import('../src/app/actions/import');
 type ProjectsModule = typeof import('../src/app/actions/projects');
 type AcceptInvitationModule = typeof import('../src/app/api/auth/accept-invitation/route');
+type DbModule = typeof import('../src/lib/db');
 
 await import(new URL('./helpers/srcResolveHooks.ts', import.meta.url).href);
 const { setTestSession }: StubsModule = await import(new URL('./helpers/nextServerStubs.ts', import.meta.url).href);
@@ -23,6 +24,9 @@ const importActions: ImportModule = await import(new URL('../src/app/actions/imp
 const projectActions: ProjectsModule = await import(new URL('../src/app/actions/projects.ts', import.meta.url).href);
 const acceptInvitation: AcceptInvitationModule = await import(new URL('../src/app/api/auth/accept-invitation/route.ts', import.meta.url).href);
 const { NextRequest } = await import('next/server.js');
+const { withTransaction, inTransaction }: DbModule = await import(new URL('../src/lib/db.ts', import.meta.url).href);
+/** nextSubiektCode wymaga aktywnej transakcji (kod zapisuje się w tej samej). */
+const nextCode = () => withTransaction(() => codes.nextSubiektCode());
 const db = testDb.db;
 
 test.after(() => testDb.cleanup());
@@ -47,25 +51,25 @@ const resetArchitects = () => db.prepare("DELETE FROM users WHERE role = 'ARCHI'
 
 test('nextSubiektCode: empty database → A-001', async () => {
     resetArchitects();
-    assert.equal(await codes.nextSubiektCode(), 'A-001');
+    assert.equal(await nextCode(), 'A-001');
 });
 
 test('nextSubiektCode: existing A-001 and A-003 → A-004 (largest number + 1, gaps not reused)', async () => {
     resetArchitects();
     addArchi('A-001');
     addArchi('A-003');
-    assert.equal(await codes.nextSubiektCode(), 'A-004');
+    assert.equal(await nextCode(), 'A-004');
 });
 
 test('nextSubiektCode: manual A-1200 → A-1201; after A-999 comes A-1000', async () => {
     resetArchitects();
     addArchi('A-007');
     addArchi('A-1200');
-    assert.equal(await codes.nextSubiektCode(), 'A-1201');
+    assert.equal(await nextCode(), 'A-1201');
 
     resetArchitects();
     addArchi('A-999');
-    assert.equal(await codes.nextSubiektCode(), 'A-1000');
+    assert.equal(await nextCode(), 'A-1000');
 });
 
 test('nextSubiektCode: codes outside ^A-(\\d+)$ are ignored', async () => {
@@ -76,7 +80,87 @@ test('nextSubiektCode: codes outside ^A-(\\d+)$ are ignored', async () => {
     addArchi('AB-500');
     addArchi('A-');
     addArchi('XA-700');
-    assert.equal(await codes.nextSubiektCode(), 'A-003');
+    assert.equal(await nextCode(), 'A-003');
+});
+
+test('nextSubiektCode refuses to run outside a transaction; inTransaction() reflects the context', async () => {
+    assert.equal(inTransaction(), false);
+    await assert.rejects(() => codes.nextSubiektCode(), /poza transakcją/);
+    await withTransaction(async () => assert.equal(inTransaction(), true));
+    assert.equal(inTransaction(), false);
+});
+
+/** Błąd w kształcie mysql2 (errno + code + sqlMessage). */
+function mysqlError(errno: number, code: string, message: string): Error {
+    return Object.assign(new Error(message), { errno, code, sqlMessage: message });
+}
+const DUP_CODE = () => mysqlError(1062, 'ER_DUP_ENTRY', "Duplicate entry 'A-001' for key 'users.idx_users_subiekt_code'");
+const DEADLOCK = () => mysqlError(1213, 'ER_LOCK_DEADLOCK', 'Deadlock found when trying to get lock; try restarting transaction');
+
+test('withSubiektCodeRetry: one retry after a deadlock or a duplicate code, then success', async () => {
+    for (const make of [DEADLOCK, DUP_CODE]) {
+        let calls = 0;
+        const result = await codes.withSubiektCodeRetry(async () => {
+            calls++;
+            if (calls === 1) throw make();
+            return 'ok';
+        });
+        assert.equal(result, 'ok');
+        assert.equal(calls, 2);
+    }
+});
+
+test('withSubiektCodeRetry: a persisting duplicate code becomes a Polish message', async () => {
+    let calls = 0;
+    await assert.rejects(
+        () => codes.withSubiektCodeRetry(async () => { calls++; throw DUP_CODE(); }),
+        (err: Error) => err.message === codes.SUBIEKT_CODE_COLLISION_MESSAGE && !/Duplicate entry/.test(err.message),
+    );
+    assert.equal(calls, 2);
+    assert.match(codes.SUBIEKT_CODE_COLLISION_MESSAGE, /kod/i);
+    // SQLite: ten sam przypadek (UNIQUE na users.subiekt_code)
+    await assert.rejects(
+        () => codes.withSubiektCodeRetry(async () => {
+            throw Object.assign(new Error('UNIQUE constraint failed: users.subiekt_code'), { code: 'SQLITE_CONSTRAINT_UNIQUE' });
+        }),
+        (err: Error) => err.message === codes.SUBIEKT_CODE_COLLISION_MESSAGE,
+    );
+});
+
+test('withSubiektCodeRetry: other errors (incl. duplicate e-mail) pass through without retry', async () => {
+    let calls = 0;
+    const dupEmail = mysqlError(1062, 'ER_DUP_ENTRY', "Duplicate entry 'x@y.pl' for key 'users.email'");
+    await assert.rejects(() => codes.withSubiektCodeRetry(async () => { calls++; throw dupEmail; }), (err) => err === dupEmail);
+    assert.equal(calls, 1);
+    const plain = new Error('Projekt nie istnieje.');
+    await assert.rejects(() => codes.withSubiektCodeRetry(async () => { throw plain; }), (err) => err === plain);
+});
+
+test('withSubiektCodeRetry: inside an outer transaction no retry (the outer one decides)', async () => {
+    let calls = 0;
+    await assert.rejects(() => withTransaction(() => codes.withSubiektCodeRetry(async () => { calls++; throw DEADLOCK(); })), /Deadlock/);
+    assert.equal(calls, 1);
+});
+
+test('withSubiektCodeRetry: work runs in a transaction and is rolled back before the retry', async () => {
+    resetArchitects();
+    let calls = 0;
+    await codes.withSubiektCodeRetry(async (q) => {
+        calls++;
+        const code = await codes.nextSubiektCode();
+        await q("INSERT INTO users (id, name, email, role, subiekt_code) VALUES (?, 'Retry', ?, 'ARCHI', ?)", [`u_retry_${calls}`, `retry${calls}@test.local`, code]);
+        if (calls === 1) throw DEADLOCK();
+    });
+    assert.equal(codeOf('u_retry_1'), null, 'pierwsza próba wycofana');
+    assert.equal(codeOf('u_retry_2'), 'A-001');
+});
+
+test('the three creation paths and the bulk assignment go through withSubiektCodeRetry', async () => {
+    const files = ['../src/app/actions/import.ts', '../src/app/actions/projects.ts', '../src/app/api/auth/accept-invitation/route.ts', '../src/lib/subiekt/codes.ts'];
+    for (const file of files) {
+        const source = await readFile(new URL(file, import.meta.url), 'utf8');
+        assert.match(source, /withSubiektCodeRetry\(async/, file);
+    }
 });
 
 test('formatSubiektCode pads to 3 digits and generated codes pass the edit-modal format', () => {
