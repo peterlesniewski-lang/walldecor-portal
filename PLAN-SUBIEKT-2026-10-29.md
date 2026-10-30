@@ -572,6 +572,32 @@ Sidebar admina: link „Subiekt” z licznikiem nieprzypisanych (badge znika gdy
 
 ### Loop 5 — Agent na PC z bazą Subiekta GT
 
+**Schemat zweryfikowany w biurze 30.10.2026 (raport użytkownika; warunek wstępny spełniony):**
+
+- Serwer: `192.168.1.150\INSERTGT` (lokalnie `localhost\INSERTGT`), Microsoft SQL Server 2014 SP2 Express (12.0.5000), baza `WD_sp`, port dynamiczny (SQL Browser działa). Login `portal_reader` (db_datareader + DENY INSERT/UPDATE/DELETE/EXECUTE na dbo) utworzony i przetestowany: `SELECT COUNT(*) FROM dok__Dokument` = 28356, UPDATE odrzucony. Komputer `SERWER`, Windows 10 Pro x64 22H2, 24/7, konto `SERWER\Użytkownik` z hasłem; Node nie zainstalowany.
+- Pola własne wymagają PLUS → rezygnacja. Znacznik architekta: `dok_Uwagi` zawiera `#A-0002` (portal normalizuje do `A-002`), a kategoria dokumentu `dok_KatId = 14` (`sl_Kategoria.kat_Nazwa = 'Architekt'`) jest flagą. Kategorie nie są używane przez księgowość (biuro zewnętrzne, bez Rewizora/Rachmistrza). Uwagi drukują się na ZK i zostają (decyzja użytkownika).
+- `dok_Typ`: ZK = 16 (podtypy 0, 1), FS = 2 (podtypy 0, 1, 3, 4, 5 — znaczenie podtypów nieznane, zob. §6 pkt 13), KFS = 6 (podtypy 0, 2), WZ = 11, PA (paragon) = 21, FZ = 1, KFZ = 5. Dokumentów FP (proforma) w tej bazie nie ma.
+- Powiązanie dokumentu pochodnego: `dok__Dokument.dok_DoDokId` → `dok_Id` źródła (FS → ZK, KFS → FS, WZ → KFZ/ZK). Gdy FS powstała z kilku dokumentów, `dok_DoDokNrPelny = '+'` i pojedynczy `dok_DoDokId` nie opisuje wszystkich źródeł. **Test realizacji ZK 142/PUŁ/10/2026 → FS 234/PUŁ/10/2026: ani kategoria (14 → 1), ani Uwagi (`#A-0002` → puste) NIE przeszły na FS.** Architekta FS portal dziedziczy wyłącznie po łańcuchu `parent_external_id`.
+- Pozycje: `dok_Pozycja.ob_DokHanId` → `dok_Id`; `ob_TowId` → `tw__Towar.tw_Id` (NULL dla pozycji jednorazowej); `ob_TowRodzaj` (1 = towar, 2 = usługa; pozycje jednorazowe mają zawsze 2); `ob_Opis` (opis pozycji, może być wielowierszowy); `ob_Ilosc`, `ob_Jm`, `ob_CenaNetto`, `ob_WartNetto`, `ob_WartBrutto`, `ob_DokHanLp` (lp), `ob_DoId` (powiązanie pozycji — hipoteza: KFS → korygowana pozycja FS; w FS z ZK było NULL). **ZK 31280 „szyna z montażem”: obie pozycje jednorazowe (`ob_TowId` NULL, `ob_TowRodzaj` 2): „usługa montażu szyny” 300,00 netto i „szyna techno 15 / 484 cm” 536,59 netto. Wg użytkownika to przypadek nietypowy**: reguła „brak karty towaru = montaż” zostaje (uściślenie 5).
+- Kontrahent: `dok_PlatnikId` → `kh__Kontrahent.kh_Id` (`kh_Symbol`, `kh_EMail`; brak nazwy i NIP w tej tabeli). Nazwa i NIP z dokumentu: `adrh__Historia` po `dok_PlatnikAdreshId` (`adrh_Nazwa`, `adrh_NazwaPelna`, `adrh_NIP`) z zapasem `adr__Ewid` (`adr_IdObiektu = kh_Id`, `adr_TypAdresu = 1`) — nazwy kolumn do potwierdzenia sondą agenta.
+- Płatności: `dok_Rozliczony` NIE jest wiarygodne (0 przy w pełni opłaconej FS 60/MAG/10/2026). Źródło prawdy: `nz__Finanse` z `nzf_IdDokumentAuto = dok_Id`; wiersz należności (`nzf_Typ = 39`, przykład `nzf_Id` 24101) ma `nzf_WartoscPierwotna` = kwota brutto, `nzf_Wartosc` = pozostało do zapłaty, `nzf_Splata`; wpłata (`nzf_Typ = 19`) to osobny wiersz powiązany przez `nz_FinanseSplata` (`nzs_IdDlugu`, `nzs_IdSplaty`). `is_paid` = suma `nzf_Wartosc` (pozostało) dla należności dokumentu ≤ 0,005 i istnieje co najmniej jedna należność; brak należności → `is_paid = false`.
+- Korekty: KFS 6/PUŁ/10/2026 (31243) → FS 185/PUŁ/10/2026 (31242) przez `dok_DoDokId`, `dok_WartNetto` = −3741,50; KFS 5/MAG/10/2026 (31299) → FS 90/MAG/09/2026 (30374), −28,46.
+- Rozrachunki pomocnicze: `zd_Rozrachunek`, `zw_Rozrachunek` (wezwania/odsetki) — nieużywane.
+- Uwaga: FS 234/PUŁ/10/2026 powstała jako test w bazie produkcyjnej; jej los (wycofanie/korekta) ustala użytkownik z księgowością.
+
+**Uściślenia Loopa 5 wynikające z weryfikacji (nadpisują wcześniejsze założenia tej sekcji):**
+
+1. **Uruchamianie:** TypeScript kompilowany `tsc` do `agent-subiekt/dist/`, uruchamiany `node dist/main.js` (Node LTS 22 na Windows 10; bez `tsx` w produkcji). Testy agenta na Macu: `node --test agent-subiekt/tests/*.test.ts` (Node 25, type stripping), bez połączenia z SQL.
+2. **Połączenie:** `mssql` (tedious) z `server: SUBIEKT_DB_SERVER` (domyślnie `localhost`), `options.instanceName: SUBIEKT_DB_INSTANCE` (domyślnie `INSERTGT`; gdy ustawiony `SUBIEKT_DB_PORT`, port zamiast instancji), `options.trustServerCertificate: true`, `options.encrypt: false` (lokalny SQL 2014), `options.readOnlyIntent: true`, `requestTimeout` 120 s. `ARCHITECT_FIELD_MODE` zastąpione przez stałe: `ARCHITECT_CATEGORY_ID=14` i znacznik w Uwagach; konfigurowalne w `.env`, z domyślnymi wartościami.
+3. **Wybór dokumentów (chain.ts):** korzeń = dokument typu ZK (16) lub FS (2) z `dok_DataWyst ≥ dziś − LOOKBACK_MONTHS`, który ma `dok_KatId = ARCHITECT_CATEGORY_ID` **lub** `dok_Uwagi` pasujące do `/#A[-_]?[A-Za-z0-9]{1,16}/i`. Pochodne: wszystkie dokumenty typu WZ/FS/KFS, których `dok_DoDokId` wskazuje dokument już w zbiorze (iteracyjnie, do ustalenia się zbioru). Dokumenty poza tym zbiorem nigdy nie są wysyłane (zwykła sprzedaż). FS z `dok_DoDokNrPelny = '+'` (wiele źródeł): jeśli `dok_DoDokId` wskazuje dokument ze zbioru → traktuj normalnie; inaczej, jeśli dokładnie jeden korzeń ZK ze zbioru ma tego samego `dok_PlatnikId`, datę ≤ data FS i nie ma jeszcze żadnej FS w łańcuchu → przyjmij go za rodzica i zapisz ostrzeżenie `MULTI_SOURCE_HEURISTIC` w logu i podsumowaniu; inaczej pomiń i wypisz w podsumowaniu sekcję „FS wielodokumentowe bez jednoznacznego ZK” (numer, kontrahent, kwota) do ręcznej obsługi. `architect_code` w paczce zawsze `null` (portal czyta znacznik z `remarks`); `remarks` = `dok_Uwagi` przycięte do 4000 znaków.
+4. **Payload:** `type` z mapy `dok_Typ` (16→ZK, 2→FS, 6→KFS, 11→WZ; inne typy nigdy nie wchodzą do zbioru); `number` = `dok_NrPelny` (trim); `issued_at` = `dok_DataWyst` jako `YYYY-MM-DD` w czasie lokalnym serwera (bez konwersji UTC); `contractor_name` = `adrh_NazwaPelna` lub `adrh_Nazwa` lub `kh_Symbol`; `contractor_nip` = `adrh_NIP` znormalizowany (same cyfry) lub null; `parent_external_id` = `dok_DoDokId` (lub z heurystyki); `net_total`/`gross_total` = `dok_WartNetto`/`dok_WartBrutto` zaokrąglone do 2 miejsc (KFS ujemne); `is_paid` wg `nz__Finanse` (powyżej); pozycje: `external_id = ob_Id`, `ordinal = ob_DokHanLp`, `product_id = ob_TowId`, `name` = pierwsza niepusta linia `ob_Opis`, a gdy puste — `tw__Towar.tw_Nazwa`; wielowierszowy `ob_Opis` łączony spacją i przycięty do 255; `unit = ob_Jm` (max 16), `quantity = ob_Ilosc`, `unit_price_net = ob_CenaNetto`, `net_total = ob_WartNetto`; `corrects_position_external_id`: dla KFS `ob_DoId` jeśli wskazuje pozycję FS-rodzica, inaczej dopasowanie po (`product_id`, `name`) do pozycji FS-rodzica, inaczej null.
+5. **Reguła typu pozycji bez zmian** (decyzja użytkownika 30.10.2026): pozycja jednorazowa (`ob_TowId` NULL) = montaż/usługa zgodnie z procedurą firmy; przykład ZK 31280 był nietypowy.
+6. **Sonda `--probe`:** `node dist/main.js --probe` łączy się, sprawdza przez `INFORMATION_SCHEMA.COLUMNS` istnienie wszystkich używanych tabel i kolumn (lista w `queries.ts`), wypisuje brakujące z sugestią najbliższych nazw, pokazuje liczność dokumentów wg `dok_Typ`/`dok_Podtyp` z ostatnich `LOOKBACK_MONTHS`, liczbę korzeni (kategoria / znacznik / oba), 5 przykładów każdego podtypu FS w zbiorze, przykład `nz__Finanse` dla najnowszej FS ze zbioru oraz wynik `SELECT TOP 1` z `adrh__Historia`. Kończy się kodem 0 tylko gdy wszystkie kolumny istnieją. `--dry-run` zapisuje paczkę do `logs/dry-run-<data>.json` i podsumowanie `logs/dry-run-<data>.txt` (liczba dokumentów wg typu, lista korzeni z kodami, ostrzeżenia heurystyki, FS pominięte). `--since YYYY-MM-DD` nadpisuje `LOOKBACK_MONTHS`.
+7. **Harmonogram:** `install-task.ps1` rejestruje zadanie „Portal Archi – sync Subiekt” codziennie 20:00, `node.exe dist\main.js` w katalogu agenta, konto bieżącego użytkownika z hasłem (parametr), „Run whether user is logged on or not”, „Run with highest privileges” NIE; `uninstall-task.ps1` usuwa. README: instalacja Node 22 LTS (msi), `npm ci`, `npm run build`, `.env` z `.env.example`, `--probe`, `--dry-run`, `install-task.ps1`, gdzie są logi, jak odczytać kod wyjścia.
+8. **Testy agenta** (`agent-subiekt/tests/*.test.ts`, `node:test`, bez SQL): `chain.ts` — ZK z kategorią bez znacznika → korzeń; ZK ze znacznikiem bez kategorii → korzeń; zwykła FS bez łańcucha → poza zbiorem; FS → ZK przez `dok_DoDokId` → w zbiorze; ZK → WZ → FS → KFS → cały łańcuch; FS `'+'` z jednym kandydatem → rodzic z heurystyki i ostrzeżenie; FS `'+'` z dwoma kandydatami → pominięta i w raporcie; `payload.ts` — pozycja jednorazowa → `product_id: null`; wielowierszowy `ob_Opis` → `name` jedna linia ≤ 255; `issued_at` `YYYY-MM-DD`; kwoty 2 miejsca; KFS `corrects_position_external_id` z `ob_DoId` i z dopasowania; `paid.ts` — należność z `nzf_Wartosc` 0 → paid; częściowa → unpaid; brak należności → unpaid; `send.ts` — podpis zgodny z `verifySubiektRequest` z `src/lib/subiekt/auth.ts` (test importuje obie strony), podział po 200 i ten sam `run_id`, retry z backoffem (timer wstrzykiwany), log do pliku. Portal bez zmian: walidator portalu nadal przyjmuje paczki agenta (test agenta `contract.test.ts` przepuszcza paczkę przez `parseSyncRequest`).
+9. **DoD Loopa 5 (uzupełnienie):** na Macu zielone testy agenta i portalu, `tsc` agenta bez błędów, `npm run build` portalu; na PC `SERWER`: `--probe` kod 0, `--dry-run` z paczką zawierającą ZK 115/PUŁ/10/2026 (31280) i ZK 142/PUŁ/10/2026 (31482) z FS 234/PUŁ/10/2026 (31483) jako pochodną, bez żadnej FS zwykłej sprzedaży (ręczna kontrola listy korzeni w `dry-run-<data>.txt` przez użytkownika). Kroki 3–5 wykonuje użytkownik na PC według README; wynik (log, podsumowanie) wraca jako sekcja DOWÓD.
+
+
 **Warunek wstępny (weryfikacja w biurze, przed kodem):**
 
 1. W GT: czy ZK i FS mają zakładkę pól własnych (Parametry → Pola własne → Dokumenty). Jeśli tak, dodać pole słownikowe „Architekt” z wartościami w formacie `A-001 Nazwisko`. Jeśli nie, umówić znacznik `#A-001` w polu „Uwagi” ZK (uwagi kopiują się na FS, potwierdzone).
@@ -609,13 +635,76 @@ Tryb `--dry-run`: buduje paczkę, zapisuje ją do `logs/dry-run-<data>.json`, ni
 Testy agenta (`agent-subiekt/tests/*.test.ts`, `node:test`, bez połączenia z SQL): `chain.ts` na sztucznych wierszach (ZK z architektem + FS pochodna bez architekta → obie w paczce; FS zwykłej sprzedaży bez łańcucha do oznaczonego ZK → poza paczką); `payload.ts` (pozycja z `tw_Id = NULL` → `product_id: null`; kwoty zaokrąglone do 2 miejsc; `issued_at` jako `YYYY-MM-DD`); `send.ts` (podpis zgodny z `verifySubiektRequest` z portalu — test importuje obie funkcje i sprawdza `ok: true`).
 
 - [ ] Krok 1: weryfikacja w biurze (punkty 1–4 powyżej), wpis do README.
-- [ ] Krok 2: testy agenta → implementacja → `node --test agent-subiekt/tests/*.test.ts` zielone.
+- [x] Krok 2: testy agenta → implementacja → `node --test agent-subiekt/tests/*.test.ts` zielone (2026-10-30, dowód niżej).
 - [ ] Krok 3: na PC z bazą: `npm run sync -- --dry-run` → plik JSON z dokumentami; ręcznie sprawdzić, że są w nim tylko dokumenty z architektem i pochodne, a nie ma zwykłej sprzedaży; liczba dokumentów zgodna z ręcznym zliczeniem w GT (filtr po polu własnym).
 - [ ] Krok 4: `npm run sync` na portal dev wystawiony tunelem (np. `cloudflared tunnel --url http://localhost:3000`) lub bezpośrednio na produkcję po loopie 7 → odpowiedź 200, panel pokazuje uruchomienie.
 - [ ] Krok 5: `install-task.ps1` → zadanie widoczne w Harmonogramie; „Uruchom teraz” → log z sukcesem; następnego dnia o 20:00 nowy wpis w „Ostatnie uruchomienia”.
 - [ ] Krok 6: commit `feat(subiekt): read-only agent for Subiekt GT with scheduled daily sync`.
 
 **DoD:** pracownik w biurze wystawia ZK z polem „Architekt = A-001”, a następnego dnia rano architekt A-001 widzi w portalu nowy projekt z pozycjami i prowizją w toku, bez udziału admina. Wystawienie FS z tego ZK zmienia pozycje na fakturowe po kolejnej synchronizacji. Zwykła FS bez architekta nigdy nie pojawia się w portalu (sprawdzone: `SELECT COUNT(*) FROM subiekt_documents` równe liczbie dokumentów oznaczonych + pochodnych).
+
+#### DOWÓD — część na Macu (2026-10-30, gałąź `subiekt/loop-5-agent`)
+
+Kod: `agent-subiekt/` (commity `cb76d64` agent, `d37c83d` poprawka filtra daty). Portal bez zmian (decyzja użytkownika: reguła typu pozycji zostaje; `is_service` wycofane). Kroki 3–5 (PC `SERWER`) czekają na użytkownika według `agent-subiekt/README.md`.
+
+Odstępstwa od tekstu planu (świadome): typy paczki skopiowane do `agent-subiekt/src/contract.ts` (import spoza `rootDir` daje TS6059, a `dist/` ma działać bez kodu portalu) — zgodność pilnuje `tests/contract.test.ts` (paczka agenta przez prawdziwy `parseSyncRequest`, `deepEqual` po walidacji); `name` = niepuste linie `ob_Opis` połączone spacją (≤ 255); na KFS pomijane wiersze `ob_Znak = −1` (hipoteza „stan przed korektą”, §6 pkt 15); FS '+' płatnika bez żadnego oznaczonego ZK tylko liczona (§6 pkt 16); `.env` czytane wbudowanym `process.loadEnvFile` (bez `dotenv`).
+
+Bramka (Node 25.8.1):
+
+```
+npm run test:agent          → ℹ tests 28 · pass 28 · fail 0   (chain 9, payload 5, paid 4, send 6, contract 2, probe 2)
+npm test                    → ℹ tests 353 · pass 353 · fail 0
+npx tsc --noEmit            → 18 × error TS5097 (bez innych; agent-subiekt wyłączony z tsconfig portalu)
+cd agent-subiekt && npx tsc -p tsconfig.json --noEmit → exit 0
+cd agent-subiekt && npm run build → exit 0, dist/: chain config contract db main paid payload probe queries report send (.js)
+npm run build               → exit 0 (Compiled successfully, 23/23 stron)
+```
+
+Test integracyjny (poza wymaganiami planu): Azure SQL Edge 15.0 (ARM64, Docker) z syntetyczną bazą `WD_sp` — kolumny i typy z raportu 30.10.2026, przypadki ZK 115 (31280), ZK 142 → FS 234 (31482 → 31483), FS 60/MAG opłacona (31480, zwykła sprzedaż), ZK → FS 185 → KFS 6 (31200 → 31242 → 31243, wiersze `ob_Znak` −1/1), FS '+', ZK sprzed okresu, PA ze znacznikiem; login `portal_reader` z `db_datareader` + DENY. Skompilowany `node dist/main.js`:
+
+- `--probe` → `OK: 8 tabel, 46 kolumn — wszystkie istnieją`, liczności wg typu/podtypu, `kat_Id 14: „Architekt”`, `Korzenie: 3 (tylko kategoria 1, tylko znacznik 1, oba 1)`, przykłady FS wg podtypu, `nz__Finanse`, `adrh__Historia` TOP 1, pozycje KFS z `ob_Znak`/`ob_DoId`; `WYNIK: OK (kod 0)`. Po zmianie nazwy `adrh_NazwaPelna` → `BRAK KOLUMNY adrh__Historia.adrh_NazwaPelna — najbliższe nazwy: adrh_Nazwa`, `WYNIK: BŁĄD (kod 2)`, exit 2. Pierwszy przebieg wykrył błąd `CONVERT(datetime, @since, 23)` („Conversion failed…”) → styl 126 (`d37c83d`).
+- `--dry-run` → exit 0, `logs/dry-run-2026-10-30.{json,txt}`: 7 dokumentów (ZK 3, FS 3, KFS 1); korzenie ZK 100, ZK 115 („BRAK ZNACZNIKA … kategoria Architekt”, pod nim FS 240 „rodzic z heurystyki”), ZK 142 z FS 234; FS 60/MAG, PA i ZK sprzed okresu poza paczką; KFS wysyła tylko pozycję po korekcie (600, `corrects_position_external_id` 58101); `is_paid` FS 185 true, FS 234 false (pozostało 230); NIP „PL 716-000-11-22” → `7160001122`.
+- sync na `next dev -p 3605` (świeża baza z `seed-dev.mjs`, kody A-002/A-007 nadane w bazie testowej): `Strona 1/1: dokumentów 7, przyjęte 7, bez zmian 0, nieprzypisane 2, odrzucone 0`, exit 0; drugi raz `przyjęte 0, bez zmian 7`, exit 0; zły sekret → `HTTP 401: {"error":"BAD_SIGNATURE"}`, exit 3. W bazie: 31200/31242/31243 i 31482/31483 `AUTO`, 31280 i 31600 `UNASSIGNED NO_ARCHITECT`; projekty „Firma Sp. z o.o. — ZK 100/PUŁ/10/2026” (A-007) i „Nowak — ZK 142/PUŁ/10/2026” (A-002) PRZYJĘTY; pozycje FS 185: Tapeta 600 (po KFS 800 → 600), Montaż fototapety 500; FS 234: 1000; `subiekt_sync_runs` 2 × `DONE`.
+- `install-task.ps1` / `uninstall-task.ps1`: parser PowerShell 7.4 — 0 błędów; nazwa zadania „Portal Archi – sync Subiekt” odczytana poprawnie (UTF-8 z BOM, CRLF, `.gitattributes`). Rejestracji zadania nie da się sprawdzić poza Windows — krok 5.
+- Odczyt jako `portal_reader`: `UPDATE dbo.dok__Dokument …` → „The UPDATE permission was denied”.
+
+#### DOWÓD — poprawki po przeglądzie jakości (2026-10-30)
+
+Commity `8140a97` (przodkowie spoza okresu), `1dc1d20` (heurystyka '+' na całej historii płatnika), `351f642` (kod 4 przy dokumentach do ręcznej obsługi), `ae1a5fb` (kwoty / numer → PayloadError; znacznik korzenia tylko `#A` + 1–6 cyfr), `831a54e` (log przed konfiguracją, ścisłe `--since`, kod 5, BOM w `.env`), `a3e3a7e` (timeout 90 s, kontrola odpowiedzi, 429, kolejność stron rodzic → dziecko), `40ca984` (dzienny log bez nazw klientów, `logs/last-sync.txt`, retencja 90 dni), `2d84a35` (sonda: ZK/FS wg `dok_Status`), `928ed2a` (`install-task.ps1 -Force` + `ZeroFreeBSTR`, README). Portal `src/` i `tests/` bez zmian (`git diff 6fba483 -- src tests` pusty).
+
+Bramka (Node 25.8.1):
+
+```
+npm run test:agent          → ℹ tests 54 · pass 54 · fail 0   (chain 18, send 10, payload 6, config 6, paid 4, report 4, contract 2, probe 2, queries 2)
+npm test                    → ℹ tests 353 · pass 353 · fail 0
+npx tsc --noEmit            → 18 × error TS5097 (bez innych)
+cd agent-subiekt && npx tsc -p tsconfig.json --noEmit → exit 0
+cd agent-subiekt && npm run build → exit 0
+npm run build               → exit 0 (Compiled successfully, 23/23 stron)
+install-task.ps1            → parser PowerShell 7.4: 0 błędów
+```
+
+Ponowny test integracyjny (SQL Edge 15.0, baza z pierwszego testu + `dok_Status` + nowe przypadki: ZK 1/PUŁ/01/2024 → FS 2/PUŁ/02/2024 → KFS 9/PUŁ/10/2026; scenariusz z przeglądu — płatnik 900, ZK 5/PUŁ/01/2025 sprzed okresu, ZK 50/PUŁ/06/2025, FS 70/PUŁ/07/2025 '+'; ZK z „#Adam dzwonił”), `--since 2025-04-30`:
+
+- `--probe` → `OK: 8 tabel, 47 kolumn`, `Korzenie: 5`, `Heurystyka FS '+': 1, niejednoznaczne: 1`, `ZK dok_Status 1: 5`, `FS dok_Status 1: 4`, `WYNIK: OK (kod 0)`.
+- `--dry-run` → **exit 4**; `DO RĘCZNEJ OBSŁUGI: 1 … — kod wyjścia 4`; korzeń `ZK 1/PUŁ/01/2024` z `FS 2/PUŁ/02/2024` i `KFS 9/PUŁ/10/2026` (przodkowie spoza okresu); `FS 70/PUŁ/07/2025 … kandydaci: ZK 50/PUŁ/06/2025, ZK 5/PUŁ/01/2025` (nie przypięta do ZK z okresu); ZK z „#Adam” poza paczką; FS 240 nadal przypięta do ZK 115 (ZK 1/2024 ma już FS).
+- sync na `next dev` (świeża baza) → exit 4 dwa razy: `przyjęte 11, nieprzypisane 3`, potem `bez zmian 11`; `subiekt_documents` 1000/1001/31700 `AUTO` (łańcuch 1000), 31800 `UNASSIGNED NO_ARCHITECT`; dzienny log bez nazw kontrahentów (0 trafień), szczegóły i „WYNIK WYSYŁKI” w `logs/last-sync.txt`.
+- `env -i node dist/main.js --since 2026-02-30` → exit 1, w `logs/RRRR-MM-DD.log`: `ERROR Błąd konfiguracji: --since: „2026-02-30” nie jest poprawną datą …`.
+
+#### DOWÓD — poprawki przed merge (2026-10-30)
+
+Commit `8d6d65f`: `pruneLogsSafely` (plik logu, którego nie da się usunąć, i nieczytelny katalog → ostrzeżenie, uruchomienie trwa); logger nie rzuca przy błędzie zapisu pliku (wiersz na konsolę, jednorazowa informacja — wykryte przy teście zablokowanego pliku: ostrzeżenie o nim samo przerywało uruchomienie); każdy błąd fazy konfiguracji (nie tylko `ConfigError`) → dzienny log i kod 1; sonda pokazuje kolację bazy.
+
+```
+npm run test:agent          → ℹ tests 56 · pass 56 · fail 0   (send 12: + pruneLogsSafely z rm rzucającym EBUSY i readdir rzucającym EACCES, + logger przy EACCES)
+npm test                    → ℹ tests 353 · pass 353 · fail 0
+npx tsc --noEmit            → 18 × error TS5097 (bez innych)
+cd agent-subiekt && npx tsc -p tsconfig.json --noEmit → exit 0;  npm run build → exit 0
+npm run build               → exit 0 (Compiled successfully, 23/23 stron)
+```
+
+- `.env` z `chmod 000` → exit 1, w dziennym logu `ERROR Błąd konfiguracji (odczyt .env lub argumentów): EACCES: permission denied, open '…/agent-subiekt/.env'`.
+- SQL Edge, `logs/2026-01-01.log` z `chflags uchg` (nieusuwalny) + `logs/2026-01-02.log`: `--probe` → exit 0, w logu `WARN Nie udało się usunąć starego logu 2026-01-01.log: EPERM, Operation not permitted …`, `Usunięto logi starsze niż 90 dni: 1` (2026-01-02.log usunięty), sonda: `Kolacja: Polish_CI_AS — bez rozróżniania wielkości liter`, `WYNIK: OK (kod 0)`.
 
 ---
 
@@ -687,3 +776,9 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 10. (Loop 6) KFS w dół obniża „zafakturowane” (FS + KFS) poniżej ZK: zapłacony projekt dostaje sugestię `W_REALIZACJI` (na ZAKOŃCZONY baner ukryty), a karta pokazuje „do zafakturowania” = kwota korekty. Do decyzji: porównywać ZK z samą FS albo traktować KFS osobno.
 11. (Loop 6) Cashback `expires_at` zapisywany w czasie lokalnym procesu (`formatSqlDateTime`), `created_at` w UTC (SQLite/MySQL) — na dev przesunięcie 1 h. Sprawdzić przy strefie czasowej w Loopie 7.
 12. (Loop 6, istniejące wcześniej) Strona projektu architekta pokazuje „Wypłać środki” poniżej progu wypłaty 100 PLN (portfel poprawnie blokuje wypłatę).
+13. **Podtypy FS (2026-10-30).** W bazie są FS o `dok_Podtyp` 0, 1, 3, 4, 5; znaczenie nieznane (podejrzenie: faktury zaliczkowe i końcowe). Agent wysyła wszystkie podtypy, portal liczy je jednakowo, więc faktura zaliczkowa + końcowa może podwoić sprzedaż projektu. Do ustalenia po `--probe` (przykłady każdego podtypu): które podtypy pominąć lub jak je łączyć.
+14. **FS z wielu dokumentów (`dok_DoDokNrPelny = '+'`).** Heurystyka agenta (jeden kandydat ZK tego samego płatnika) jest przybliżeniem; do potwierdzenia na dry-runie, czy GT ma tabelę powiązań wielu źródeł, którą można czytać zamiast heurystyki.
+15. **Pozycje KFS (Loop 5, hipoteza do sprawdzenia sondą).** Agent pomija na KFS wiersze `ob_Znak = −1` (zakładany stan „przed korektą”) i wysyła wiersze po korekcie, zgodnie z konwencją portalu (pozycja KFS = stan po korekcie, `net_total` dokumentu = różnica). Struktura KFS w bazie biura nie była w raporcie 30.10.2026 — sekcja sondy „Pozycje najnowszej KFS …” pokazuje `ob_Znak`/`ob_DoId`; jeśli wiersze nie mają par −1/1, trzeba zmienić `payload.ts`.
+16. **FS '+' bez jednoznacznego ZK (Loop 5, po przeglądzie jakości).** Heurystyka liczy się na całej historii płatnika (ZK architektów i ich FS/WZ bez limitu daty; starsze FS '+' też „zajmują” swoje ZK), więc wynik nie zależy od początku okna. Do ręcznej obsługi (lista w podsumowaniu, kod wyjścia 4) idą FS '+', których płatnik ma ZK architekta, ale kandydatów jest 0 lub ≥ 2; FS '+' płatników bez żadnego ZK architekta jest tylko liczona jako zwykła sprzedaż. Do potwierdzenia na dry-runie.
+17. **Statusy dokumentów GT (Loop 5).** Agent nie filtruje po `dok_Status` (np. dokumenty anulowane / odłożone) — znaczenia wartości nie zweryfikowano. Sonda pokazuje liczność ZK i FS ze zbioru wg `dok_Status`; na tej podstawie zdecydować o filtrze.
+18. **Znacznik w Uwagach: agent węższy niż portal (Loop 5, po przeglądzie jakości).** Agent uznaje za korzeń tylko `#A` + 1–6 cyfr (`/#A[-_]?\d{1,6}(?![A-Za-z0-9])/i`), portal czyta kod szerszym `/#A[-_]?([A-Za-z0-9]{1,16})/i` i bierze pierwsze trafienie — Uwagi „#Adam … #A-0002” dadzą w portalu kod „A-DAM” (dokument w skrzynce „nieznany kod”). Do decyzji: zawęzić wzorzec w portalu.
