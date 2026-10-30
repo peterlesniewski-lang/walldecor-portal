@@ -520,3 +520,15 @@ migrations/
 - Poprawka (`bbb6de2`): prowizja w wierszu pozycji u architekta = suma rekordu i korekt (`src/lib/itemCommission.ts`); wcześniej pokazywała pierwszy rekord (80 zamiast 60).
 - Otwarte (plan §6 pkt 9–12): brak feedu aktywności w UI; sugestia statusu i „do zafakturowania” po KFS; `expires_at` lokalnie vs `created_at` UTC; „Wypłać środki” poniżej progu.
 - Bramka: `npm test` 303/303, tsc 19× TS5097, `next build` OK.
+
+## 2026-10-30 — Subiekt loop 4b: tryb wewnętrzny, kody architektów, ważność cashbacku (dowód: `docs/subiekt/LOOP4B-DOWOD-2026-10-30.md`)
+
+- `src/lib/subiekt/codes.ts`: `nextSubiektCode()` = największy `^A-(\d+)$` + 1, 3 cyfry (`A-001`…`A-999`, `A-1000`); odczyt z `FOR UPDATE` w transakcji wywołującego + unikalny indeks z migracji 019. Wołany w imporcie CSV, `registerArchitect` i akceptacji zaproszenia (tylko ARCHI) w tej samej transakcji co INSERT. Ręczny kod w modalu bez zmian.
+- `assignMissingSubiektCodesOp` (jedna transakcja, kolejność `created_at, name, id`, log `SUBIEKT_CODES_ASSIGNED` z liczbą i listą tylko gdy coś nadano) + akcja `assignMissingSubiektCodes` w `actions/subiekt.ts` (ADMIN, `{ ok, assigned } | { ok: false, error }`). Przycisk „Nadaj brakujące kody (n)” tylko dla ADMIN i tylko gdy są konta bez kodu (liczone bez filtra listy).
+- Lista architektów: kolumna „Kod” (desktop) / „Kod: …” (mobile), `q` szuka też po `u.subiekt_code`; STAFF widzi kody, bez przycisku.
+- `src/lib/internalMode.ts` (`isInternalMode()` = `1`/`true`, czytane przy każdym wywołaniu; `INTERNAL_MODE_LOGIN_MESSAGE`). `sendEmail` w trybie: tylko adresy ADMIN/STAFF, reszta `console.info('[internal-mode] pominięto mail …')` i `{ success: false, skipped: 'INTERNAL_MODE' }`; `forgot-password` dla ARCHI = odpowiedź jak dla nieistniejącego adresu.
+- Logowanie: `authorize` wydzielony do `src/lib/authorizeCredentials.ts`; ARCHI z dobrym hasłem → błąd z komunikatem, strona logowania przepuszcza go (lista `PASSTHROUGH_ERRORS`). Google `signIn` w trybie odmawia ARCHI. Istniejące sesje JWT nie są unieważniane.
+- Plakietka „Tryb wewnętrzny” w `dashboard/layout.tsx` (ADMIN/STAFF, `StatusPill tone="warning"` + opis).
+- `src/lib/cashbackExpiry.ts`: `cashbackExpiresAt()` (`CASHBACK_EXPIRY_MONTHS`, domyślnie 12, niecałkowita/≤0 → 12 z `console.warn`) zamiast `setFullYear(+1)` w `projectItems.ts` ×2 i `updateProjectStatus`.
+- Testy server actions bez Next.js: `tests/helpers/nextServerStubs.ts` (hook podmienia `next-auth`, `next/cache`, `@/lib/auth`, mapuje `next/server`). Nowe: `subiektCodes` (11), `internalMode` (9), `cashbackExpiry` (5).
+- Bramka: `npm test` 329/329, tsc 19× TS5097, `next build` OK, e2e (Playwright na `next start`) A 14/14, B 13/15 + B2 2/2 (2 FAIL to błąd skryptu — nie wypełniał wymaganego hasła w modalu), B3 3/3.

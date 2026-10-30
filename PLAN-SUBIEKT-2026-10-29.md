@@ -555,6 +555,19 @@ Sidebar admina: link „Subiekt” z licznikiem nieprzypisanych (badge znika gdy
 
 **DoD:** handlowiec (STAFF) wpisuje w szukajce nazwisko architekta i w tym samym wierszu widzi `A-xxx`; nowo zaimportowany architekt ma kod bez udziału admina; przy `PORTAL_INTERNAL_MODE=1` żaden mail nie wychodzi do architekta, architekt nie zaloguje się ani nie zresetuje hasła, a admin pracuje normalnie i widzi plakietkę; przy `CASHBACK_EXPIRY_MONTHS=24` cashback z zamkniętego projektu ma ważność 24 miesiące.
 
+**Stan (2026-10-30, gałąź `subiekt/loop-4b-internal-mode`):**
+
+- [x] 1. Kolumna „Kod” i szukanie po `u.subiekt_code` na liście architektów (`aafd8de`).
+- [x] 2. `nextSubiektCode()` w imporcie CSV, rejestracji (`registerArchitect`) i akceptacji zaproszenia (ARCHI); `assignMissingSubiektCodes()` + przycisk „Nadaj brakujące kody” (tylko ADMIN), log `SUBIEKT_CODES_ASSIGNED` (`aafd8de`).
+- [x] 3. `PORTAL_INTERNAL_MODE`: `sendEmail`, `forgot-password`, logowanie (credentials; także Google), plakietka w powłoce (`77e4521`).
+- [x] 4. `cashbackExpiresAt()` z `CASHBACK_EXPIRY_MONTHS` w trzech miejscach (`b9934e3`).
+- [x] 5. `.env.example`, Loop 7, `CLAUDE.md`, `progress.md`.
+- [x] Testy (329/329), tsc (19× TS5097), build, e2e, checklist §5.
+
+#### DOWÓD
+
+`docs/subiekt/LOOP4B-DOWOD-2026-10-30.md` — komendy bramki z wynikiem, przebiegi e2e (Playwright, `next start`, fazy bez i z `PORTAL_INTERNAL_MODE=1` / `CASHBACK_EXPIRY_MONTHS=24`), stan bazy, checklist §5 i uwagi (Google, istniejące sesje JWT architektów).
+
 ---
 
 ### Loop 5 — Agent na PC z bazą Subiekta GT
@@ -632,6 +645,7 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 ### Loop 7 — Wdrożenie na produkcję
 
 - [ ] Ustawić w Coolify `SUBIEKT_SYNC_TOKEN`, `SUBIEKT_SYNC_SECRET` (wygenerowane `openssl rand -hex 32`, dwa różne).
+- [ ] Ustawić w Coolify przy pierwszym wdrożeniu `PORTAL_INTERNAL_MODE=1` (start tylko dla zespołu — Loop 4b) i `CASHBACK_EXPIRY_MONTHS=24`; po wdrożeniu sprawdzić plakietkę „Tryb wewnętrzny” w panelu i odmowę logowania kontem architekta.
 - [ ] Merge do `main`, trigger deployu przez API Coolify (zob. pamięć `reference_coolify`), `ensure-production-schema.mjs` dodaje kolumny i tabele przy starcie — sprawdzić w logach startu kontenera komunikaty o dodanych tabelach.
 - [ ] Sprawdzić strefę czasową MySQL (`SELECT @@global.time_zone, NOW()`) i procesu Node w kontenerze (`date`, `echo $TZ`); mysql2 czyta DATETIME w czasie lokalnym Node, a `CURRENT_TIMESTAMP` zapisuje czas serwera MySQL — jeśli nie obie UTC, ustawić `TZ=UTC` w Coolify dla aplikacji (najprościej) albo `timezone: 'Z'` w poolu `src/lib/db.ts` + `SET time_zone='+00:00'`. Dotyczy `started_at/finished_at` przebiegów, historii ZK i `expires_at` cashbacku (§6 pkt 11).
 - [ ] Sprawdzić kolację bazy produkcyjnej: `SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE();` oraz `SHOW CREATE TABLE invitations;`. Nowe tabele Subiekta mają jawnie `utf8mb4_unicode_ci` (ensure-production-schema.mjs), tak jak stare z `deploy/schema.mysql.sql`; przy `utf8mb4_0900_ai_ci` na starych tabelach złączenia padłyby błędem 1267 (sprawdzone na MySQL 8.4 w Dockerze, 2026-10-30).
