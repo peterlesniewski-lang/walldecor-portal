@@ -7,10 +7,11 @@ import Link from 'next/link';
 import { Banner, Button } from '@/components/ui';
 import { AuthShell, AuthField, AUTH_INPUT } from '../AuthShell';
 import { INTERNAL_MODE_LOGIN_MESSAGE, signInErrorMessage } from '@/lib/internalMode';
+import { LOGIN_RATE_LIMIT_MESSAGE } from '@/lib/authMessages';
 
 // Komunikaty z authorize pokazywane dosłownie; każdy inny błąd → ogólne „Błędny email lub hasło”.
 const PASSTHROUGH_ERRORS = new Set([
-    'Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za 5 minut.',
+    LOGIN_RATE_LIMIT_MESSAGE,
     INTERNAL_MODE_LOGIN_MESSAGE,
 ]);
 

@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import { query } from './db';
 import { createRateLimiter } from './rateLimit';
 import { INTERNAL_MODE_LOGIN_MESSAGE, isInternalMode } from './internalMode';
+import { LOGIN_RATE_LIMIT_MESSAGE } from './authMessages';
 
 // In-memory rate limiter: max 5 login attempts per email per 5 minutes (per process)
 const loginLimiter = createRateLimiter({ max: 5, windowMs: 5 * 60 * 1000 });
@@ -41,7 +42,7 @@ export async function authorizeCredentials(
     if (!credentials?.email || !credentials?.password) return null;
 
     if (!checkRateLimit(credentials.email)) {
-        throw new Error("Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za 5 minut.");
+        throw new Error(LOGIN_RATE_LIMIT_MESSAGE);
     }
 
     if (process.env.DEMO_MODE === 'true') {

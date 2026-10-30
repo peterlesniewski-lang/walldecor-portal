@@ -208,6 +208,16 @@ test('Google sign-in refusal: ARCHI in internal mode → redirect to our sign-in
     assert.equal(internal.signInErrorMessage(null), null);
 });
 
+test('rate-limit login message is one shared constant (authorize + sign-in page)', async () => {
+    const { LOGIN_RATE_LIMIT_MESSAGE } = await import(new URL('../src/lib/authMessages.ts', import.meta.url).href);
+    assert.equal(LOGIN_RATE_LIMIT_MESSAGE, 'Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za 5 minut.');
+    for (const file of ['../src/lib/authorizeCredentials.ts', '../src/app/auth/signin/page.tsx']) {
+        const source = await readFile(new URL(file, import.meta.url), 'utf8');
+        assert.match(source, /LOGIN_RATE_LIMIT_MESSAGE/, file);
+        assert.doesNotMatch(source, /Zbyt wiele nieudanych prób logowania/, file);
+    }
+});
+
 test('sign-in page shows the preparation message; Google sign-in and shell badge follow the mode', async () => {
     const signin = await readFile(new URL('../src/app/auth/signin/page.tsx', import.meta.url), 'utf8');
     const authSource = await readFile(new URL('../src/lib/auth.ts', import.meta.url), 'utf8');
