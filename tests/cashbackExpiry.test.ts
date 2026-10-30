@@ -64,6 +64,37 @@ test('cashbackExpiresAt falls back to 12 months with a warning for garbage, zero
     }
 });
 
+test('CASHBACK_EXPIRY_MONTHS is capped at 120 (above → 12 with a warning)', async () => {
+    setMonths('120');
+    const ok = await captureWarn(() => expiry.cashbackExpiresAt(NOW));
+    assert.equal(ok.result.getTime(), new Date(2036, 9, 30, 14, 5, 0).getTime());
+    assert.deepEqual(ok.warnings, []);
+    setMonths('121');
+    const capped = await captureWarn(() => expiry.cashbackExpiresAt(NOW));
+    assert.equal(capped.result.getTime(), new Date(2027, 9, 30, 14, 5, 0).getTime());
+    assert.equal(capped.warnings.length, 1);
+    assert.match(capped.warnings[0], /120/);
+});
+
+test('invalid CASHBACK_EXPIRY_MONTHS warns only once per process (per value)', async () => {
+    setMonths('nonsens-raz');
+    const first = await captureWarn(() => { expiry.cashbackExpiresAt(NOW); expiry.cashbackExpiresAt(NOW); return expiry.cashbackExpiresAt(NOW); });
+    assert.equal(first.warnings.length, 1);
+    const again = await captureWarn(() => expiry.cashbackExpiresAt(NOW));
+    assert.deepEqual(again.warnings, []);
+});
+
+test('month-end overflow is clamped to the last day of the target month', () => {
+    setMonths('6');
+    assert.equal(expiry.cashbackExpiresAt(new Date(2026, 7, 31, 9, 30)).getTime(), new Date(2027, 1, 28, 9, 30).getTime(), '31.08.2026 + 6 → 28.02.2027');
+    assert.equal(expiry.cashbackExpiresAt(new Date(2027, 7, 31, 9, 30)).getTime(), new Date(2028, 1, 29, 9, 30).getTime(), '31.08.2027 + 6 → 29.02.2028 (przestępny)');
+    setMonths('12');
+    assert.equal(expiry.cashbackExpiresAt(new Date(2028, 1, 29, 12, 0)).getTime(), new Date(2029, 1, 28, 12, 0).getTime(), '29.02.2028 + 12 → 28.02.2029');
+    setMonths('1');
+    assert.equal(expiry.cashbackExpiresAt(new Date(2026, 9, 31, 8, 0)).getTime(), new Date(2026, 10, 30, 8, 0).getTime(), '31.10 + 1 → 30.11');
+    assert.equal(expiry.cashbackExpiresAt(new Date(2026, 11, 15, 8, 0)).getTime(), new Date(2027, 0, 15, 8, 0).getTime(), 'przejście roku');
+});
+
 test('new EARN row from a settled project item expires 24 months ahead with CASHBACK_EXPIRY_MONTHS=24', async () => {
     setMonths('24');
     db.prepare("INSERT INTO users (id, name, email, role) VALUES ('u_archi', 'Architekt', 'archi@test.local', 'ARCHI')").run();
