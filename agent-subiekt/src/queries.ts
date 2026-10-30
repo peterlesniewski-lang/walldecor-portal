@@ -22,8 +22,11 @@ export const REQUIRED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
 
 /** dok_Typ: ZK 16, FS 2, KFS 6, WZ 11 (zob. chain.ts GT_DOC_TYPE). */
 const CHAIN_TYPES = '16, 2, 6, 11';
-/** Parametr @since: 'YYYY-MM-DD' (VarChar), porównanie z datetime bez stref czasowych. */
-const SINCE = 'CONVERT(datetime, @since, 23)';
+/**
+ * Parametr @since: 'YYYY-MM-DD' (VarChar) → datetime stylem 126 (ISO 8601 z 'T'), niezależnie od DATEFORMAT
+ * i języka serwera; bez stref czasowych. (Styl 23 przy wejściu dawał błąd konwersji — test na SQL Edge 15.0.)
+ */
+const SINCE = "CONVERT(datetime, @since + 'T00:00:00', 126)";
 
 /**
  * Nagłówki kandydatów do łańcuchów z okresu: korzenie (ZK/FS) i możliwe dokumenty pochodne (WZ/FS/KFS).

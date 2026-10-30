@@ -75,7 +75,7 @@ async function dryRun(pool: Pool, config: AgentConfig, since: string, logger: Lo
     const lines = summaryLines('DRY-RUN — paczka NIE została wysłana', config, since, runId, data);
     writeFileSync(txtFile, `${lines.join('\r\n')}\r\n`, 'utf8');
     for (const warning of data.selection.heuristic) logger.warn(`MULTI_SOURCE_HEURISTIC ${warning.fs.dok_NrPelny.trim()} → ${warning.parent.dok_NrPelny.trim()}`);
-    logger.info(`Dry-run: ${data.build.documents.length} dokumentów na ${pages.length} stronach; paczka ${jsonFile}, podsumowanie ${txtFile}`);
+    logger.info(`Dry-run: ${data.build.documents.length} dokumentów, stron: ${pages.length}; paczka ${jsonFile}, podsumowanie ${txtFile}`);
     return data.build.errors.length > 0 ? EXIT.INCOMPLETE : EXIT.OK;
 }
 
