@@ -488,9 +488,11 @@ test('getProjectZkChanges: reconciliation entries for the admin (with amounts, a
     const resolvedEntries = admin.filter((c) => /faktury uzgodnione ręcznie/.test(c.description));
     assert.equal(opened.length, 3, 'otwarcie, ponowne otwarcie po KFS, po zmianie pozycji ZK');
     assert.equal(resolvedEntries.length, 2);
-    assert.match(opened[opened.length - 1].description, /zamówienie 836,59 zł, faktury 900,00 zł \(FS 110\/10\/2026\)/);
-    assert.match(resolvedEntries[resolvedEntries.length - 1].description, /Tapeta Floral 536,59 → 600,00 zł; Montaż 300,00 zł bez zmian; razem 900,00 zł\. Notatka: Zbiorcza FS/);
-    assert.equal(resolvedEntries[0].author, 'Admin Główny');
+    // Wpisy z tej samej sekundy nie mają ustalonej kolejności — szukamy po treści.
+    assert.ok(opened.some((c) => /zamówienie 836,59 zł, faktury 900,00 zł \(FS 110\/10\/2026\); różnica 63,41 zł/.test(c.description)));
+    assert.ok(opened.some((c) => /faktury 800,00 zł \(FS 110\/10\/2026, KFS 120\/10\/2026\)/.test(c.description)));
+    assert.ok(resolvedEntries.some((c) => /Tapeta Floral 536,59 → 600,00 zł; Montaż 300,00 zł bez zmian; razem 900,00 zł\. Notatka: Zbiorcza FS/.test(c.description)));
+    assert.ok(resolvedEntries.every((c) => c.author === 'Admin Główny'));
     assert.equal(opened[0].author, null, 'wpis synchronizacji');
 
     const architect = await queries.getProjectZkChanges(projectId, 'ARCHITECT');
