@@ -6,6 +6,7 @@ import { logActivity } from '@/lib/services';
 import { validatePasswordStrength } from '@/lib/passwordPolicy';
 import { createRateLimiter, getClientIp } from '@/lib/rateLimit';
 import { splitFullName } from '@/lib/invitations';
+import { nextSubiektCode } from '@/lib/subiekt/codes';
 
 // Publiczny endpoint (bez sesji): limit prób per IP, jak w forgot-password.
 const ipLimiter = createRateLimiter({ max: 20, windowMs: 15 * 60 * 1000 });
@@ -77,12 +78,14 @@ export async function POST(req: NextRequest) {
 
             const userId = uuidv4();
             const role = invitation.role === 'STAFF' || invitation.role === 'ADMIN' ? invitation.role : 'ARCHI';
+            // Architekt dostaje kod do Subiekta (A-xxx) w tej samej transakcji; ADMIN/STAFF bez kodu.
+            const subiektCode = role === 'ARCHI' ? await nextSubiektCode() : null;
             await queryFn(
                 `INSERT INTO users (
                     id, name, first_name, last_name, email, password, role, studio_name,
-                    must_change_password, password_changed_at, last_login_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-                [userId, fullName, first_name, last_name, invitation.email, hashedPassword, role, studio]
+                    must_change_password, password_changed_at, last_login_at, subiekt_code
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)`,
+                [userId, fullName, first_name, last_name, invitation.email, hashedPassword, role, studio, subiektCode]
             );
             await queryFn(
                 "UPDATE invitations SET status = 'ACCEPTED', accepted_at = NOW(), accepted_user_id = ? WHERE id = ?",

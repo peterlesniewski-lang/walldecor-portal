@@ -98,7 +98,7 @@ test('accept-invitation endpoint is rate limited, transactional and creates a no
     assert.match(source, /withTransaction/);
     assert.match(source, /FOR UPDATE/);
     assert.match(source, /status = 'PENDING'[\s\S]*expires_at > NOW\(\)/);
-    assert.match(source, /must_change_password, password_changed_at, last_login_at\s*\) VALUES \([\s\S]*0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP\)/);
+    assert.match(source, /must_change_password, password_changed_at, last_login_at, subiekt_code\s*\) VALUES \([\s\S]*0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, \?\)/);
     assert.match(source, /SET status = 'ACCEPTED'/);
     assert.match(source, /validatePasswordStrength/);
     assert.match(source, /acceptTerms !== true/);

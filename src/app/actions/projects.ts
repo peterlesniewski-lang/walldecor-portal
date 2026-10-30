@@ -20,6 +20,7 @@ import { cashbackExpiresAt } from "@/lib/cashbackExpiry";
 import { getCommissionRateForTurnover, CASHBACK_RATE } from "@/lib/partnerProgram";
 import { validatePasswordStrength } from "@/lib/passwordPolicy";
 import { addItemCore, deleteItemCore, getArchitectCommissionRate, updateItemAmountCore } from "@/lib/projectItems";
+import { nextSubiektCode } from "@/lib/subiekt/codes";
 
 function generateTempPassword(): string {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -374,26 +375,31 @@ export async function registerArchitect(data: {
     const passwordToHash = data.password || generatedPassword!;
     const hashedPassword = await bcrypt.hash(passwordToHash, 10);
 
-    await query(
-        `INSERT INTO users (
-            id, name, first_name, last_name, email, password,
-            role, studio_name, nip, address, bank_account, is_vat_payer, must_change_password
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [
-            userId,
-            fullName,
-            firstName,
-            lastName,
-            email,
-            hashedPassword,
-            'ARCHI',
-            data.studio_name || null,
-            data.nip || null,
-            data.address || null,
-            data.bank_account || null,
-            data.is_vat_payer ? 1 : 0
-        ]
-    );
+    // Kod architekta do Subiekta (A-xxx) nadawany w tej samej transakcji co konto.
+    await withTransaction(async (queryFn) => {
+        const subiektCode = await nextSubiektCode();
+        await queryFn(
+            `INSERT INTO users (
+                id, name, first_name, last_name, email, password,
+                role, studio_name, nip, address, bank_account, is_vat_payer, must_change_password, subiekt_code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+            [
+                userId,
+                fullName,
+                firstName,
+                lastName,
+                email,
+                hashedPassword,
+                'ARCHI',
+                data.studio_name || null,
+                data.nip || null,
+                data.address || null,
+                data.bank_account || null,
+                data.is_vat_payer ? 1 : 0,
+                subiektCode
+            ]
+        );
+    });
 
     // --- Email Notification ---
     let emailSent = false;

@@ -9,6 +9,7 @@ import bcrypt from 'bcrypt';
 import { sendEmail } from '@/lib/email';
 import { buildArchitectRegisteredPlaceholders } from '@/lib/emailPlaceholders';
 import { getCommissionRateForTurnover } from '@/lib/partnerProgram';
+import { nextSubiektCode } from '@/lib/subiekt/codes';
 
 const HISTORICAL_COMPLETION_NOTE = 'Import historyczny — prowizja rozliczona poza portalem';
 const HISTORICAL_COMMISSION_NOTE = 'Import historyczny (rozliczona)';
@@ -115,13 +116,18 @@ export async function importProjectsFromCSV(rows: ImportRowInput[], importedAt?:
                 const tempPassword = generateTempPassword();
                 const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
-                await query(
-                    "INSERT INTO users (id, name, email, password, role, studio_name, nip, address, must_change_password) VALUES (?, ?, ?, ?, 'ARCHI', ?, ?, ?, 1)",
-                    [newArchitectId, row.architectName.trim(), email, hashedPassword,
-                     row.architectStudio?.trim() || null,
-                     row.architectNip?.trim() || null,
-                     row.architectAddress?.trim() || null]
-                );
+                // Kod architekta do Subiekta (A-xxx) nadawany w tej samej transakcji co konto.
+                await withTransaction(async (queryFn) => {
+                    const subiektCode = await nextSubiektCode();
+                    await queryFn(
+                        "INSERT INTO users (id, name, email, password, role, studio_name, nip, address, must_change_password, subiekt_code) VALUES (?, ?, ?, ?, 'ARCHI', ?, ?, ?, 1, ?)",
+                        [newArchitectId, row.architectName.trim(), email, hashedPassword,
+                         row.architectStudio?.trim() || null,
+                         row.architectNip?.trim() || null,
+                         row.architectAddress?.trim() || null,
+                         subiektCode]
+                    );
+                });
 
                 // Send welcome email (non-blocking — failure doesn't abort import)
                 await sendEmail('ARCHITECT_REGISTERED', email, buildArchitectRegisteredPlaceholders({

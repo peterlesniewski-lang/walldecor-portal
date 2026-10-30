@@ -15,6 +15,7 @@ interface ArchitectListItem {
     name: string;
     email?: string | null;
     studio_name?: string | null;
+    subiekt_code?: string | null;
     projects_count: number;
     turnover?: number | string;
     balance: number | string;
@@ -164,10 +165,11 @@ export default function ArchitectList({ architects, isAdmin }: ArchitectListProp
 
             {/* Desktop: tabela */}
             <div className="relative hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[860px] text-left text-sm">
+                <table className="w-full min-w-[940px] text-left text-sm">
                     <thead>
                         <tr className="border-b border-border">
                             <th scope="col" className="label-caps px-5 py-3">Architekt</th>
+                            <th scope="col" className="label-caps px-3 py-3">Kod</th>
                             <th scope="col" className="label-caps px-3 py-3">Email</th>
                             <th scope="col" className="label-caps px-3 py-3">Status</th>
                             <th scope="col" className="label-caps px-3 py-3 text-right">Projekty</th>
@@ -197,6 +199,7 @@ export default function ArchitectList({ architects, isAdmin }: ArchitectListProp
                                             </div>
                                         </div>
                                     </td>
+                                    <td className="tnum whitespace-nowrap px-3 py-3 text-[13px] text-ink">{archi.subiekt_code || '—'}</td>
                                     <td className="max-w-[240px] truncate px-3 py-3 text-ink-2">{archi.email || '—'}</td>
                                     <td className="px-3 py-3">{tierPill(archi)}</td>
                                     <td className="tnum px-3 py-3 text-right text-ink">{formatNumber(archi.projects_count)}</td>
@@ -206,7 +209,7 @@ export default function ArchitectList({ architects, isAdmin }: ArchitectListProp
                                 </tr>
                                 {confirmingId === archi.id && (
                                     <tr className="bg-surface-2">
-                                        <td colSpan={7} className="px-5 py-3">{renderConfirm(archi)}</td>
+                                        <td colSpan={8} className="px-5 py-3">{renderConfirm(archi)}</td>
                                     </tr>
                                 )}
                             </React.Fragment>
@@ -230,6 +233,7 @@ export default function ArchitectList({ architects, isAdmin }: ArchitectListProp
                                 </Link>
                                 {archi.studio_name && <div className="text-[13px] text-ink-2">{archi.studio_name}</div>}
                                 {archi.email && <div className="break-all text-[13px] text-ink-2">{archi.email}</div>}
+                                <div className="tnum text-[13px] text-ink-2">Kod: {archi.subiekt_code || '—'}</div>
                             </div>
                             {tierPill(archi)}
                         </div>
