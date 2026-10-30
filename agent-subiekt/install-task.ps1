@@ -19,20 +19,24 @@ if (-not (Test-Path (Join-Path $AgentDir '.env'))) { throw 'Brak pliku .env w ka
 
 $User = "$env:USERDOMAIN\$env:USERNAME"
 if (-not $Password) { $Password = Read-Host -AsSecureString "Hasło konta Windows $User (potrzebne, żeby zadanie działało bez zalogowania)" }
-$Plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password))
 
 $Action = New-ScheduledTaskAction -Execute $Node.Source -Argument "`"$MainJs`"" -WorkingDirectory $AgentDir
 $Trigger = New-ScheduledTaskTrigger -Daily -At $Time
 $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 
-if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+# Hasło jawnym tekstem tylko na czas rejestracji; kopia w pamięci niezarządzanej jest zerowana w finally.
+$Bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
+try {
+    $Plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($Bstr)
+    # -Force zastępuje istniejące zadanie w jednym kroku (bez okna, w którym zadania nie ma).
+    Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings `
+        -User $User -Password $Plain -RunLevel Limited -Force `
+        -Description 'Codzienna synchronizacja dokumentów architektów z Subiekta GT do Portalu Architekta (agent-subiekt).' | Out-Null
+} finally {
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Bstr)
+    $Plain = $null
 }
-Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings `
-    -User $User -Password $Plain -RunLevel Limited `
-    -Description 'Codzienna synchronizacja dokumentów architektów z Subiekta GT do Portalu Architekta (agent-subiekt).' | Out-Null
-$Plain = $null
 
 Write-Host "Zarejestrowano zadanie „$TaskName”: codziennie o $Time, konto $User."
 Write-Host "Test: Harmonogram zadań → Biblioteka Harmonogramu zadań → „$TaskName” → Uruchom; log w $AgentDir\logs."

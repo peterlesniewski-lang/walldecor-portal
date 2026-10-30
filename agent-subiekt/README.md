@@ -21,7 +21,7 @@ Poniższe kroki wykonuje się raz. Wpisuj polecenia dokładnie tak, jak są poda
    node -v
    ```
 
-   Ma się pokazać `v22.` i dalsze cyfry. Jeśli pojawia się „nie jest rozpoznawane jako polecenie”, zamknij okno,
+   Ma się pokazać `v22.` i dalsze cyfry (v22 lub nowsza). Jeśli pojawia się „nie jest rozpoznawane jako polecenie”, zamknij okno,
    otwórz nowe i spróbuj jeszcze raz (a w razie potrzeby uruchom komputer ponownie).
 
 ## 2. Skopiowanie agenta
@@ -130,11 +130,12 @@ Katalog `C:\PortalArchi\agent-subiekt\logs`:
 
 | Plik | Zawartość |
 |---|---|
-| `RRRR-MM-DD.log` | przebieg każdego uruchomienia danego dnia (start, liczby dokumentów, odpowiedzi portalu, błędy) |
+| `RRRR-MM-DD.log` | przebieg każdego uruchomienia danego dnia: start, liczby dokumentów, ostrzeżenia, odpowiedzi portalu, błędy (bez nazw klientów); pliki starsze niż 90 dni agent usuwa sam |
+| `last-sync.txt` | szczegóły ostatniej synchronizacji (lista korzeni z kontrahentami, dokumenty do ręcznej obsługi, wynik wysyłki); nadpisywany przy każdej synchronizacji |
 | `probe-RRRR-MM-DD.txt` | raport sondy |
 | `dry-run-RRRR-MM-DD.txt` / `.json` | podsumowanie i paczka z próby bez wysyłania |
 
-Stare pliki można usuwać ręcznie; agent ich nie potrzebuje.
+Pliki sondy i dry-run można usuwać ręcznie; agent ich nie potrzebuje.
 
 ## 9. Kody wyjścia
 
@@ -144,15 +145,16 @@ Kod widać w Harmonogramie („Wynik ostatniego uruchomienia”) i po ręcznym u
 |---|---|---|---|
 | 0 | `(0x0)` | wszystko w porządku | — |
 | 1 | `(0x1)` | błąd konfiguracji: brak wartości w `.env`, zły parametr | popraw `.env` (komunikat mówi, czego brakuje) |
-| 2 | `(0x2)` | baza Subiekta: brak połączenia, błąd zapytania, sonda znalazła brakujące kolumny | odeślij log / raport sondy |
+| 2 | `(0x2)` | baza Subiekta: brak połączenia, błąd zapytania, sonda znalazła brakujące kolumny lub inne sprawdzenie się nie powiodło | odeślij log / raport sondy |
 | 3 | `(0x3)` | portal nie przyjął paczki (sieć, token, podpis) mimo ponowień | sprawdź internet i zegar, odeślij log |
 | 4 | `(0x4)` | są dokumenty do ręcznej obsługi: faktury z wielu dokumentów bez jednoznacznego ZK, dokumenty z błędnymi danymi albo odrzucone przez portal (reszta paczki przeszła) | sprawdź plik podsumowania (`logs\last-sync.txt` albo `logs\dry-run-RRRR-MM-DD.txt`, linia „DO RĘCZNEJ OBSŁUGI”) — tam jest lista dokumentów; odeślij go |
+| 5 | `(0x5)` | nieoczekiwany błąd programu agenta | odeślij log z dnia (jest w nim opis błędu) |
 
 ## 10. Co odesłać
 
 - po kroku 4: `logs\probe-RRRR-MM-DD.txt`,
 - po kroku 5: `logs\dry-run-RRRR-MM-DD.txt`,
-- po krokach 6–7: `logs\RRRR-MM-DD.log` z dnia uruchomienia i zrzut ekranu zadania w Harmonogramie
+- po krokach 6–7: `logs\RRRR-MM-DD.log` z dnia uruchomienia, `logs\last-sync.txt` i zrzut ekranu zadania w Harmonogramie
   (kolumny „Następne uruchomienie” i „Wynik ostatniego uruchomienia”).
 
 ## 11. Gdy coś nie działa
@@ -160,8 +162,9 @@ Kod widać w Harmonogramie („Wynik ostatniego uruchomienia”) i po ręcznym u
 | Objaw | Przyczyna / rozwiązanie |
 |---|---|
 | `Login failed for user 'portal_reader'` | złe hasło w `.env` |
+| `Failed to connect to localhost…` mimo działającej bazy | `localhost` może wskazywać adres IPv6 (`::1`), na którym SQL nie słucha — wpisz w `.env` `SUBIEKT_DB_SERVER=127.0.0.1` |
 | `Failed to connect to localhost\INSERTGT` | usługa „SQL Server Browser” nie działa — uruchom ją w `services.msc` albo wpisz w `.env` `SUBIEKT_DB_PORT=` z portem instancji (SQL Server Configuration Manager → Protokoły dla INSERTGT → TCP/IP → Adresy IP → IPAll) |
-| komunikat o SSL / TLS przy łączeniu z bazą | odeślij log — trzeba będzie zmienić ustawienia szyfrowania połączenia |
+| komunikat o SSL / TLS przy łączeniu z bazą | najpewniej SQL Server 2014 ma stary certyfikat albo nie ma włączonego TLS 1.2 (Node.js wymaga TLS 1.2) — odeślij log; poprawka to aktualizacja SQL Server 2014 / włączenie TLS 1.2 w Windows, nie zmiana w agencie |
 | `HTTP 401` w logu | zły token lub sekret w `.env` albo zegar komputera spieszy się / spóźnia o ponad 5 minut |
 | zadanie w Harmonogramie nie startuje, gdy nikt nie jest zalogowany | konto musi mieć hasło i prawo „Logowanie w trybie wsadowym”; uruchom `install-task.ps1` jako administrator |
 | `npm` nie jest rozpoznawane | zamknij i otwórz okno `cmd` po instalacji Node.js |
@@ -189,7 +192,9 @@ używane przez agenta są w `src/queries.ts` (`REQUIRED_COLUMNS`) i sprawdza je 
 
 - `dok__Dokument`: `dok_Typ` ZK = 16, FS = 2, KFS = 6, WZ = 11 (inne typy nigdy nie są wysyłane). Pochodny dokument
   wskazuje źródło przez `dok_DoDokId`; `dok_DoDokNrPelny = '+'` = FS z wielu dokumentów. Znacznik architekta:
-  `dok_KatId = 14` (`sl_Kategoria` „Architekt”) lub `#A-…` w `dok_Uwagi`. Kategoria i Uwagi **nie** przechodzą z ZK na FS.
+  `dok_KatId = 14` (`sl_Kategoria` „Architekt”) lub `#A` + 1–6 cyfr w `dok_Uwagi` (np. `#A-0002`; „#Adam” się nie liczy).
+  Kategoria i Uwagi **nie** przechodzą z ZK na FS. Przodkowie dokumentów z okresu (np. FS sprzed okresu dla KFS) są
+  doczytywani bez limitu daty; heurystyka FS '+' liczy się na całej historii płatnika.
 - `dok_Pozycja`: `ob_DokHanId` → `dok_Id`, `ob_TowId` → `tw__Towar.tw_Id` (NULL = pozycja jednorazowa),
   `ob_TowRodzaj` 1 towar / 2 usługa, `ob_Opis` (wielowierszowy), `ob_DokHanLp`, `ob_DoId`, `ob_Znak`.
 - Kontrahent: `adrh__Historia` po `dok_PlatnikAdreshId`, zapasowo `adr__Ewid` (`adr_IdObiektu = dok_PlatnikId`,
