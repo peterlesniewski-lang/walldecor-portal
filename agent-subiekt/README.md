@@ -146,7 +146,7 @@ Kod widać w Harmonogramie („Wynik ostatniego uruchomienia”) i po ręcznym u
 | 1 | `(0x1)` | błąd konfiguracji: brak wartości w `.env`, zły parametr | popraw `.env` (komunikat mówi, czego brakuje) |
 | 2 | `(0x2)` | baza Subiekta: brak połączenia, błąd zapytania, sonda znalazła brakujące kolumny | odeślij log / raport sondy |
 | 3 | `(0x3)` | portal nie przyjął paczki (sieć, token, podpis) mimo ponowień | sprawdź internet i zegar, odeślij log |
-| 4 | `(0x4)` | paczka wysłana, ale portal odrzucił część dokumentów albo agent pominął dokumenty z błędnymi danymi | odeślij log (lista dokumentów jest w logu) |
+| 4 | `(0x4)` | są dokumenty do ręcznej obsługi: faktury z wielu dokumentów bez jednoznacznego ZK, dokumenty z błędnymi danymi albo odrzucone przez portal (reszta paczki przeszła) | sprawdź plik podsumowania (`logs\last-sync.txt` albo `logs\dry-run-RRRR-MM-DD.txt`, linia „DO RĘCZNEJ OBSŁUGI”) — tam jest lista dokumentów; odeślij go |
 
 ## 10. Co odesłać
 

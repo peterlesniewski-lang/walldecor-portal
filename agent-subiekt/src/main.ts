@@ -13,7 +13,7 @@ import {
     REQUIRED_COLUMNS, SQL_ADDRESS_HISTORY_SAMPLE, SQL_CATEGORY, SQL_CHAIN_HEADERS, SQL_TABLES, SQL_TYPE_COUNTS,
     sqlArchitectZkOfPayers, sqlColumns, sqlContractors, sqlFinance, sqlHeadersByIds, sqlInvoicesOfPayers, sqlPositions,
 } from './queries.ts';
-import { formatSummary, money, typeLabel } from './report.ts';
+import { docNumber, formatSummary, manualReviewCount, money, typeLabel } from './report.ts';
 import { buildPages, createFileLogger, localDate, sendAll, type Logger } from './send.ts';
 
 export const EXIT = {
@@ -80,9 +80,11 @@ async function dryRun(pool: Pool, config: AgentConfig, since: string, logger: Lo
     writeFileSync(jsonFile, `${JSON.stringify(pages, null, 2)}\n`, 'utf8');
     const lines = summaryLines('DRY-RUN — paczka NIE została wysłana', config, since, runId, data);
     writeFileSync(txtFile, `${lines.join('\r\n')}\r\n`, 'utf8');
-    for (const warning of data.selection.heuristic) logger.warn(`MULTI_SOURCE_HEURISTIC ${warning.fs.dok_NrPelny.trim()} → ${warning.parent.dok_NrPelny.trim()}`);
+    for (const warning of data.selection.heuristic) logger.warn(`MULTI_SOURCE_HEURISTIC ${docNumber(warning.fs)} → ${docNumber(warning.parent)}`);
     logger.info(`Dry-run: ${data.build.documents.length} dokumentów, stron: ${pages.length}; paczka ${jsonFile}, podsumowanie ${txtFile}`);
-    return data.build.errors.length > 0 ? EXIT.INCOMPLETE : EXIT.OK;
+    const manual = manualReviewCount(data.selection, data.build);
+    if (manual > 0) logger.warn(`Do ręcznej obsługi: ${manual} dokumentów — szczegóły w ${txtFile}`);
+    return manual > 0 ? EXIT.INCOMPLETE : EXIT.OK;
 }
 
 async function sync(pool: Pool, config: AgentConfig, since: string, logger: Logger): Promise<number> {
@@ -93,7 +95,7 @@ async function sync(pool: Pool, config: AgentConfig, since: string, logger: Logg
     const runId = randomUUID();
     const data = await collect(pool, config, since);
     for (const line of summaryLines('SYNCHRONIZACJA', config, since, runId, data)) logger.info(line);
-    for (const warning of data.selection.heuristic) logger.warn(`MULTI_SOURCE_HEURISTIC ${warning.fs.dok_NrPelny.trim()} → ${warning.parent.dok_NrPelny.trim()}`);
+    for (const warning of data.selection.heuristic) logger.warn(`MULTI_SOURCE_HEURISTIC ${docNumber(warning.fs)} → ${docNumber(warning.parent)}`);
 
     const pages = buildPages(data.build.documents, runId, AGENT_VERSION);
     logger.info(`Wysyłka do ${config.portal.endpoint}: ${data.build.documents.length} dokumentów, stron ${pages.length}, run_id ${runId}`);
@@ -106,7 +108,9 @@ async function sync(pool: Pool, config: AgentConfig, since: string, logger: Logg
         });
         logger.info(`Portal: przyjęte ${summary.accepted}, bez zmian ${summary.unchanged}, nieprzypisane ${summary.unassigned}, odrzucone ${summary.rejected.length}`);
         for (const rejected of summary.rejected) logger.warn(`Odrzucony dokument ${rejected.external_id}: ${rejected.reason}`);
-        return summary.rejected.length > 0 || data.build.errors.length > 0 ? EXIT.INCOMPLETE : EXIT.OK;
+        const manual = manualReviewCount(data.selection, data.build);
+        if (manual > 0) logger.warn(`Do ręcznej obsługi: ${manual} dokumentów (FS wielodokumentowe bez jednoznacznego ZK, błędy danych)`);
+        return summary.rejected.length > 0 || manual > 0 ? EXIT.INCOMPLETE : EXIT.OK;
     } catch (error) {
         logger.error(error instanceof Error ? error.message : String(error));
         return EXIT.PORTAL;
@@ -185,8 +189,8 @@ async function probe(pool: Pool, config: AgentConfig, since: string, logger: Log
         for (const subtype of [...new Set(fs.map((d) => d.header.dok_Podtyp))].sort((a, b) => a - b)) {
             print(`Podtyp ${subtype}:`);
             for (const d of fs.filter((x) => x.header.dok_Podtyp === subtype).slice(-5)) {
-                const parent = d.parentId === null ? 'bez rodzica' : `rodzic ${collected.selection.documents.find((x) => x.header.dok_Id === d.parentId)?.header.dok_NrPelny.trim()}`;
-                print(`  ${d.header.dok_NrPelny.trim()} (${d.header.dok_Id}) ${d.header.dok_DataWyst} netto ${money(d.header.dok_WartNetto)} brutto ${money(d.header.dok_WartBrutto)} · ${parent}`);
+                const parent = d.parentId === null ? 'bez rodzica' : `rodzic ${(() => { const p = collected.selection.documents.find((x) => x.header.dok_Id === d.parentId); return p ? docNumber(p.header) : '?'; })()}`;
+                print(`  ${docNumber(d.header)} (${d.header.dok_Id}) ${d.header.dok_DataWyst} netto ${money(d.header.dok_WartNetto)} brutto ${money(d.header.dok_WartBrutto)} · ${parent}`);
             }
         }
     });
@@ -197,7 +201,7 @@ async function probe(pool: Pool, config: AgentConfig, since: string, logger: Log
         const newest = collected.selection.documents.filter((d) => d.header.dok_Typ === GT_DOC_TYPE.FS).at(-1);
         if (!newest) { print('Brak FS w zbiorze.'); return; }
         const rows = collected.finance.filter((row) => row.nzf_IdDokumentAuto === newest.header.dok_Id);
-        print(`${newest.header.dok_NrPelny.trim()} (${newest.header.dok_Id}) brutto ${money(newest.header.dok_WartBrutto)}: wierszy ${rows.length}, is_paid = ${isPaid(rows)}`);
+        print(`${docNumber(newest.header)} (${newest.header.dok_Id}) brutto ${money(newest.header.dok_WartBrutto)}: wierszy ${rows.length}, is_paid = ${isPaid(rows)}`);
         for (const row of rows) print(`  ${Object.entries(row).map(([k, v]) => `${k}=${describeValue(v)}`).join(' ')}`);
     });
 
@@ -214,7 +218,7 @@ async function probe(pool: Pool, config: AgentConfig, since: string, logger: Log
         if (!kfs) { print('Brak KFS w zbiorze.'); return; }
         for (const id of [kfs.header.dok_Id, kfs.parentId].filter((x): x is number => x !== null)) {
             const doc = collected.selection.documents.find((d) => d.header.dok_Id === id)?.header;
-            print(`${doc?.dok_NrPelny.trim()} (${id}) netto ${money(doc?.dok_WartNetto ?? 0)}:`);
+            print(`${doc ? docNumber(doc) : '?'} (${id}) netto ${money(doc?.dok_WartNetto ?? 0)}:`);
             for (const p of collected.positions.get(id) ?? []) {
                 print(`  ob_Id ${p.ob_Id} lp ${p.ob_DokHanLp} ob_Znak ${p.ob_Znak} ob_DoId ${p.ob_DoId ?? 'NULL'} ob_TowId ${p.ob_TowId ?? 'NULL'} rodzaj ${p.ob_TowRodzaj} ilość ${p.ob_Ilosc} netto ${money(p.ob_WartNetto)} · ${describeValue(p.ob_Opis ?? p.tw_Nazwa)}`);
             }

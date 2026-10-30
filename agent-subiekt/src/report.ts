@@ -10,7 +10,17 @@ export const GT_TYPE_LABEL: Readonly<Record<number, string>> = {
 export const typeLabel = (dokTyp: number) => GT_TYPE_LABEL[dokTyp] ?? `typ ${dokTyp}`;
 
 export const money = (n: number) => Number(n).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const nr = (h: HeaderRow) => `${h.dok_NrPelny.trim()} (dok_Id ${h.dok_Id})`;
+/** Numer dokumentu do wyświetlenia (odporny na NULL w dok_NrPelny). */
+export const docNumber = (h: Pick<HeaderRow, 'dok_NrPelny'>) => (h.dok_NrPelny ?? '').trim() || '(bez numeru)';
+const nr = (h: HeaderRow) => `${docNumber(h)} (dok_Id ${h.dok_Id})`;
+
+/**
+ * Dokumenty do ręcznej obsługi: FS wielodokumentowe bez jednoznacznego ZK i dokumenty pominięte z powodu błędu
+ * danych. > 0 → agent kończy się kodem 4 (także gdy portal przyjął resztę paczki).
+ */
+export function manualReviewCount(selection: Pick<ChainSelection, 'ambiguous'>, build: Pick<BuildResult, 'errors'>): number {
+    return selection.ambiguous.length + build.errors.length;
+}
 
 function contractorName(id: number, build: BuildResult, contractors: Map<number, ContractorRow>): string {
     const built = build.documents.find((d) => d.external_id === id);
@@ -40,6 +50,10 @@ export function formatSummary(input: SummaryInput): string[] {
     push(input.title);
     push(`Wygenerowano: ${input.generatedAt} · agent ${input.agentVersion} · run_id ${input.runId}`);
     push(`Dokumenty od: ${input.since} · kategoria architekta: kat_Id ${input.architectCategoryId} · znacznik w Uwagach: ${ARCHITECT_MARKER}`);
+    const manual = manualReviewCount(selection, build);
+    push(manual > 0
+        ? `DO RĘCZNEJ OBSŁUGI: ${manual} (sekcje „FS WIELODOKUMENTOWE BEZ JEDNOZNACZNEGO ZK” i „DOKUMENTY POMINIĘTE” niżej) — kod wyjścia 4`
+        : 'DO RĘCZNEJ OBSŁUGI: 0');
     push();
 
     const sent = new Set(build.documents.map((d) => d.external_id));
@@ -100,7 +114,7 @@ export function formatSummary(input: SummaryInput): string[] {
 
     push(`FS WIELODOKUMENTOWE BEZ JEDNOZNACZNEGO ZK (pominięte, do ręcznej obsługi): ${selection.ambiguous.length}`);
     for (const { fs, candidates } of selection.ambiguous) {
-        const who = candidates.length > 0 ? `kandydaci: ${candidates.map((c) => c.dok_NrPelny.trim()).join(', ')}` : 'ZK architekta tego płatnika ma już fakturę albo późniejszą datę';
+        const who = candidates.length > 0 ? `kandydaci: ${candidates.map(docNumber).join(', ')}` : 'ZK architekta tego płatnika ma już fakturę albo późniejszą datę';
         push(`- ${nr(fs)} · ${fs.dok_DataWyst} · ${contractorName(fs.dok_Id, build, contractors)} · brutto ${money(fs.dok_WartBrutto)} · ${who}`);
     }
     push(`FS wielodokumentowe płatników bez oznaczonego ZK (zwykła sprzedaż, nie wysyłane): ${selection.unlinkedMultiSource}`);
