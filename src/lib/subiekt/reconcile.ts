@@ -8,13 +8,13 @@ import type { SubiektPositionPayload } from './types';
 
 export type ChainMode = 'ORDER_ONLY' | 'INVOICE_ONLY' | 'MIRROR' | 'ORDER_BREAKDOWN' | 'RECONCILE';
 
-/** Pozycja w porównaniu rozbicia: klucz (product_id / nazwa) i kwota netto (dla FS — po korekcie KFS). */
+/** Pozycja w porównaniu rozbicia: klucz (product_id / nazwa) i kwota netto z dokumentu (FS — przed korektą KFS). */
 export type BreakdownPosition = Pick<SubiektPositionPayload, 'product_id' | 'name' | 'net_total'>;
 
 export interface ChainInput {
     /** ZK łańcucha (w praktyce jedno — korzeń). */
     orders: Array<{ net_total: number; positions: BreakdownPosition[] }>;
-    /** FS łańcucha; `positions` z kwotami PO korektach KFS. */
+    /** FS łańcucha; `positions` jak na fakturze — PRZED korektami KFS (korekty liczą się tylko do sumy `corrections`). */
     invoices: Array<{ net_total: number; positions: BreakdownPosition[] }>;
     /** Przypisane KFS łańcucha — `net_total` to różnica korekty (zwykle ujemna). */
     corrections: Array<{ net_total: number }>;
@@ -39,9 +39,9 @@ export function sameBreakdownKey(a: BreakdownPosition, b: BreakdownPosition): bo
  * i każda pozycja FS ma jedną niewykorzystaną pozycję ZK o tym samym kluczu i kwocie (± AMOUNT_EPSILON).
  * Pusta lista pozycji nie jest odzwierciedleniem.
  */
-export function mirrors(zkPositions: BreakdownPosition[], fsPositionsAfterKfs: BreakdownPosition[]): boolean {
+export function mirrors(zkPositions: BreakdownPosition[], fsPositions: BreakdownPosition[]): boolean {
     const zk = zkPositions.filter((p) => Number(p.net_total) > 0);
-    const fs = fsPositionsAfterKfs.filter((p) => Number(p.net_total) > 0);
+    const fs = fsPositions.filter((p) => Number(p.net_total) > 0);
     if (zk.length === 0 || zk.length !== fs.length) return false;
     const used = new Set<number>();
     for (const invoicePosition of fs) {
@@ -64,8 +64,8 @@ export function chainTotals(input: ChainInput): { zkNet: number; invoicedNet: nu
 }
 
 /**
- * Brak FS → ORDER_ONLY; brak ZK → INVOICE_ONLY; FS odzwierciedlają ZK → MIRROR; sumy równe → ORDER_BREAKDOWN;
- * inaczej RECONCILE (ręczne uzgodnienie przez admina).
+ * Brak FS → ORDER_ONLY; brak ZK → INVOICE_ONLY; FS (przed KFS) odzwierciedlają ZK → MIRROR (korekty KFS na pozycjach FS);
+ * inaczej reguła sum z KFS: równe → ORDER_BREAKDOWN, różne → RECONCILE (ręczne uzgodnienie przez admina).
  */
 export function chainMode(input: ChainInput): ChainMode {
     if (input.invoices.length === 0) return 'ORDER_ONLY';

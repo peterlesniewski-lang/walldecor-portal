@@ -357,8 +357,12 @@ async function loadChainDocuments(rootExternalId: number, projectId: string, inc
     return rows.map(normalizeDocument);
 }
 
-/** Tryb i sumy łańcucha; pozycje FS po korektach KFS (`corrections` — mapa projektu z loadCorrections). */
-function describeChain(chain: StoredDoc[], corrections: Map<number, number>): ChainState {
+/**
+ * Tryb i sumy łańcucha. Odzwierciedlenie ZK sprawdzamy na pozycjach FS PRZED korektami KFS (KFS wskazuje konkretną
+ * pozycję FS, więc rozbicie pozostaje znane — w MIRROR korekty trafiają w pozycje FS jak przed Loop 5b); KFS liczą
+ * się do kwoty faktur (reguła sum) i odcisku.
+ */
+function describeChain(chain: StoredDoc[]): ChainState {
     const orders = chain.filter((d) => d.type === 'ZK');
     const invoices = chain.filter((d) => d.type === 'FS');
     const kfs = chain.filter((d) => d.type === 'KFS');
@@ -366,7 +370,7 @@ function describeChain(chain: StoredDoc[], corrections: Map<number, number>): Ch
         orders: orders.map((d) => ({ net_total: Number(d.net_total), positions: positionsOf(d) })),
         invoices: invoices.map((d) => ({
             net_total: Number(d.net_total),
-            positions: positionsOf(d).map((p) => ({ ...p, net_total: corrections.get(p.external_id) ?? round2(p.net_total) })),
+            positions: positionsOf(d),
         })),
         corrections: kfs.map((d) => ({ net_total: Number(d.net_total) })),
     };
@@ -380,7 +384,7 @@ function describeChain(chain: StoredDoc[], corrections: Map<number, number>): Ch
 
 /** Stan łańcucha (dokumenty przypisane do projektu) — dla operacji admina (resolveReconciliationOp). Wołać w transakcji. */
 export async function loadChainState(projectId: string, rootExternalId: number): Promise<ChainState> {
-    return describeChain(await loadChainDocuments(rootExternalId, projectId), await loadCorrections(projectId));
+    return describeChain(await loadChainDocuments(rootExternalId, projectId));
 }
 
 async function findReconciliation(projectId: string, rootExternalId: number): Promise<ReconciliationRow | undefined> {
@@ -448,14 +452,26 @@ async function closeReconciliation(projectId: string, rootExternalId: number, st
     if (row.status === 'OPEN') await logReconciliation('SUBIEKT_RECONCILIATION_CLOSED', projectId, rootExternalId, state);
 }
 
-async function openReconciliation(projectId: string, rootExternalId: number, state: ChainState, row: ReconciliationRow | undefined, keepAmounts: boolean): Promise<void> {
+/**
+ * Przejście do OPEN. `previousAmounts` (ponowne otwarcie RESOLVED) = decyzja admina bez kwot 0 — te pozycje wracają
+ * z kwotą z ZK, żeby admin mógł zdecydować o nich ponownie; notatka zostaje. Bez niej (nowe / z AUTO_CLOSED)
+ * decyzja i notatka są czyszczone.
+ */
+async function openReconciliation(
+    projectId: string,
+    rootExternalId: number,
+    state: ChainState,
+    row: ReconciliationRow | undefined,
+    previousAmounts?: Map<number, number>,
+): Promise<void> {
     if (row) {
+        const amountsJson = previousAmounts && previousAmounts.size > 0 ? JSON.stringify(Object.fromEntries(previousAmounts)) : null;
         await query(
             `UPDATE subiekt_reconciliations SET status = 'OPEN', zk_net = ?, invoiced_net = ?, fingerprint = ?,
-                opened_at = CURRENT_TIMESTAMP, resolved_at = NULL, resolved_by = NULL
-                ${keepAmounts ? '' : ', amounts_json = NULL, note = NULL'}
+                opened_at = CURRENT_TIMESTAMP, resolved_at = NULL, resolved_by = NULL, amounts_json = ?
+                ${previousAmounts ? '' : ', note = NULL'}
              WHERE id = ?`,
-            [state.zkNet, state.invoicedNet, state.fingerprint, row.id]
+            [state.zkNet, state.invoicedNet, state.fingerprint, amountsJson, row.id]
         );
     } else {
         await query(
@@ -478,7 +494,8 @@ async function refreshTotals(row: ReconciliationRow, state: ChainState): Promise
  * - RESOLVED z tym samym odciskiem i decyzją pokrywającą pozycje ZK → kwoty admina, status bez zmian;
  * - ORDER_BREAKDOWN poza tym → OPEN / RESOLVED zamykane (AUTO_CLOSED), kwoty z ZK;
  * - RECONCILE: brak wiersza / AUTO_CLOSED → nowe OPEN (kwoty z ZK); RESOLVED z innym odciskiem albo innymi
- *   pozycjami ZK → OPEN z dotychczasowymi kwotami admina (do nowej decyzji); OPEN → aktualizacja sum.
+ *   pozycjami ZK → OPEN z dotychczasowymi kwotami admina > 0 (pozycje uzgodnione na 0 wracają z kwotą z ZK);
+ *   OPEN → aktualizacja sum.
  * Wpis SUBIEKT_RECONCILIATION_OPENED tylko przy przejściu do OPEN.
  */
 async function settleReconciliation(projectId: string, rootExternalId: number, state: ChainState): Promise<Map<number, number> | null> {
@@ -495,12 +512,14 @@ async function settleReconciliation(projectId: string, rootExternalId: number, s
         return null;
     }
     if (!row || row.status === 'AUTO_CLOSED') {
-        await openReconciliation(projectId, rootExternalId, state, row, false);
+        await openReconciliation(projectId, rootExternalId, state, row);
         return null;
     }
     if (row.status === 'RESOLVED') {
-        await openReconciliation(projectId, rootExternalId, state, row, true);
-        return saved;
+        // Pozycje uzgodnione na 0 wracają z kwotą z ZK (addItemCore / korekta w górę w ZAKOŃCZONY) — admin decyduje znowu.
+        const kept = new Map([...(saved ?? new Map<number, number>())].filter(([, amount]) => amount > 0));
+        await openReconciliation(projectId, rootExternalId, state, row, kept);
+        return kept;
     }
     await refreshTotals(row, state);
     return saved;
@@ -532,7 +551,7 @@ async function syncChainOf(doc: StoredDoc, actor: ItemActor): Promise<void> {
         : chain.find((d) => Number(d.external_id) === rootKey) ?? await loadDocByExternalId(rootKey);
     const rootZkNumber = root?.type === 'ZK' ? root.number : null;
     const corrections = await loadCorrections(project.id);
-    const state = describeChain(chain, corrections);
+    const state = describeChain(chain);
 
     const removeItemsOf = async (docs: StoredDoc[]) => {
         for (const d of docs) {
@@ -573,7 +592,7 @@ async function refreshReconciliationsOf(projectId: string, actor: ItemActor): Pr
         const chain = await loadChainDocuments(Number(row.root_external_id), projectId);
         const lead = chain.find((d) => d.type === 'ZK') ?? chain.find((d) => d.type === 'FS');
         if (lead) await syncChainOf(lead, actor);
-        else await closeReconciliation(projectId, Number(row.root_external_id), describeChain(chain, new Map()));
+        else await closeReconciliation(projectId, Number(row.root_external_id), describeChain(chain));
     }
 }
 
