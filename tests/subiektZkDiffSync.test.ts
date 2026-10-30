@@ -130,7 +130,10 @@ test('7. getProjectZkChanges → by subject_id: documents of this project only, 
     db.prepare("UPDATE activity_logs SET created_at = '2026-10-20 18:00:00' WHERE id = ?").run(first.id);
     db.prepare("UPDATE activity_logs SET created_at = '2026-10-21 18:00:00' WHERE id = ?").run(second.id);
 
-    const changes = await getProjectZkChanges(projectId);
+    // FS 101 (test 5) ma inną kwotę niż ZK → projekt ma też wpisy uzgodnienia faktur (Loop 5b) — tu liczą się zmiany ZK.
+    const reconciliationIds = () => new Set((db.prepare("SELECT id FROM activity_logs WHERE event_type LIKE 'SUBIEKT_RECONCILIATION_%'").all() as any[]).map((r) => r.id));
+    const zkOnly = (list: Array<{ id: string }>) => list.filter((c) => !reconciliationIds().has(c.id));
+    const changes = zkOnly(await getProjectZkChanges(projectId));
     assert.deepEqual(changes.map((c) => c.id), [second.id, first.id], 'bez wpisu FP 200 z innego projektu');
     assert.equal(changes[1].created_at, '2026-10-20T18:00:00.000Z');
     assert.equal(changes[1].description, first.description);
@@ -142,7 +145,7 @@ test('7. getProjectZkChanges → by subject_id: documents of this project only, 
     assert.equal(JSON.parse(unassignedLog.metadata).projectId, null);
     db.prepare("UPDATE activity_logs SET created_at = '2026-10-22 18:00:00' WHERE id = ?").run(unassignedLog.id);
     db.prepare('UPDATE subiekt_documents SET project_id = ? WHERE id = ?').run(projectId, docRow(300).id);
-    assert.deepEqual((await getProjectZkChanges(projectId)).map((c) => c.id), [unassignedLog.id, second.id, first.id]);
+    assert.deepEqual(zkOnly(await getProjectZkChanges(projectId)).map((c) => c.id), [unassignedLog.id, second.id, first.id]);
 });
 
 test('8. corrupted positions_json of the previous version → no change entry (no fake "dodano"), warning', async () => {

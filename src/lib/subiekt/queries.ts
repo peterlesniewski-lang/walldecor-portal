@@ -2,6 +2,7 @@
 import { cache } from 'react';
 import { query } from '@/lib/db';
 import { toDateOnly, toIsoString } from './dates';
+import { formatReconciliationForArchitect } from './diff';
 
 /** Wiersz subiekt_sync_runs po normalizacji: daty ISO 8601 (UTC), liczniki jako number. */
 export interface SubiektSyncRunRow {
@@ -57,28 +58,204 @@ export interface ProjectZkChange {
     /** ISO 8601 UTC. */
     created_at: string;
     description: string;
+    /** Kto zapisał wpis: null = synchronizacja; admin (imię i nazwisko) albo „WallDecor” w widoku architekta. */
+    author: string | null;
+}
+
+/** Kto czyta historię: admin widzi kwoty uzgodnienia i autora, architekt — neutralny opis bez kwot faktur. */
+export type ZkChangesAudience = 'ADMIN' | 'ARCHITECT';
+
+const ZK_CHANGE_EVENTS = [
+    'SUBIEKT_ZK_CHANGED', 'SUBIEKT_CORRECTION',
+    'SUBIEKT_RECONCILIATION_OPENED', 'SUBIEKT_RECONCILIATION_RESOLVED', 'SUBIEKT_RECONCILIATION_CLOSED',
+];
+const isReconciliationEvent = (eventType: string) => eventType.startsWith('SUBIEKT_RECONCILIATION_');
+
+function metadataZkNumber(metadata: unknown): string | null {
+    try {
+        const parsed = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+        return parsed && typeof parsed === 'object' && typeof (parsed as { zkNumber?: unknown }).zkNumber === 'string'
+            ? (parsed as { zkNumber: string }).zkNumber : null;
+    } catch {
+        return null;
+    }
 }
 
 /**
- * Wpisy SUBIEKT_ZK_CHANGED i SUBIEKT_CORRECTION (korekty KFS) dokumentów, które TERAZ należą do projektu (activity_logs.subject_id =
- * subiekt_documents.id), od najnowszego. Wpis zapisany, gdy dokument był nieprzypisany, pokazuje się po
- * przypisaniu, a po przeniesieniu dokumentu do innego projektu idzie razem z nim. Najwyżej 100 wpisów.
+ * Wpisy SUBIEKT_ZK_CHANGED, SUBIEKT_CORRECTION (korekty KFS) i SUBIEKT_RECONCILIATION_* (uzgodnienie faktur, Loop 5b)
+ * dokumentów, które TERAZ należą do projektu (activity_logs.subject_id = subiekt_documents.id), od najnowszego.
+ * Wpis zapisany, gdy dokument był nieprzypisany, pokazuje się po przypisaniu, a po przeniesieniu dokumentu do
+ * innego projektu idzie razem z nim. Najwyżej 100 wpisów. `ARCHITECT`: wpisy uzgodnienia bez kwot i numerów faktur,
+ * autor-admin jako „WallDecor”.
  */
-export async function getProjectZkChanges(projectId: string): Promise<ProjectZkChange[]> {
-    const rows = await query<{ id: string; created_at: unknown; description: string | null }>(
-        `SELECT a.id, a.created_at, a.description
+export async function getProjectZkChanges(projectId: string, audience: ZkChangesAudience = 'ADMIN'): Promise<ProjectZkChange[]> {
+    const rows = await query<{ id: string; created_at: unknown; description: string | null; event_type: string; metadata: unknown; user_id: string | null; user_name: string | null }>(
+        `SELECT a.id, a.created_at, a.description, a.event_type, a.metadata, a.user_id, u.name AS user_name
          FROM activity_logs a
-         WHERE a.event_type IN ('SUBIEKT_ZK_CHANGED', 'SUBIEKT_CORRECTION')
+         LEFT JOIN users u ON u.id = a.user_id
+         WHERE a.event_type IN (${ZK_CHANGE_EVENTS.map(() => '?').join(', ')})
            AND a.subject_id IN (SELECT id FROM subiekt_documents WHERE project_id = ?)
          ORDER BY a.created_at DESC, a.id DESC
          LIMIT 100`,
+        [...ZK_CHANGE_EVENTS, projectId]
+    );
+    return rows.map((row) => {
+        const eventType = String(row.event_type);
+        const hasUser = row.user_id !== null && row.user_id !== undefined && row.user_id !== '';
+        const forArchitect = audience === 'ARCHITECT';
+        return {
+            id: String(row.id),
+            created_at: toIsoString(row.created_at) ?? '',
+            description: forArchitect && isReconciliationEvent(eventType)
+                ? formatReconciliationForArchitect(eventType, metadataZkNumber(row.metadata))
+                : String(row.description ?? ''),
+            author: !hasUser ? null : forArchitect ? 'WallDecor' : String(row.user_name || 'Administrator'),
+        };
+    });
+}
+
+// --- Uzgodnienie faktur z zamówieniem (Loop 5b) -------------------------------------------------
+
+const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
+
+/** Wiersz sekcji „Do uzgodnienia” na stronie integracji. */
+export interface OpenReconciliationRow {
+    projectId: string;
+    projectName: string;
+    rootExternalId: number;
+    architectName: string | null;
+    zkNumber: string | null;
+    zkNet: number;
+    invoicedNet: number;
+    /** Faktury − ZK. */
+    difference: number;
+    /** ISO 8601 UTC. */
+    openedAt: string;
+}
+
+const OPEN_RECONCILIATIONS_SQL = `FROM subiekt_reconciliations r
+    JOIN projects p ON p.id = r.project_id
+    WHERE r.status = 'OPEN' AND p.status <> 'NIEZREALIZOWANY'`;
+
+/** Otwarte uzgodnienia projektów poza NIEZREALIZOWANY, od najdawniej otwartego. */
+export async function getOpenReconciliations(): Promise<OpenReconciliationRow[]> {
+    const rows = await query<Record<string, unknown>>(
+        `SELECT r.project_id, r.root_external_id, r.zk_net, r.invoiced_net, r.opened_at, p.name AS project_name,
+                u.name AS architect_name, d.number AS zk_number
+         FROM subiekt_reconciliations r
+         JOIN projects p ON p.id = r.project_id
+         LEFT JOIN users u ON u.id = p.owner_id
+         LEFT JOIN subiekt_documents d ON d.external_id = r.root_external_id
+         WHERE r.status = 'OPEN' AND p.status <> 'NIEZREALIZOWANY'
+         ORDER BY r.opened_at, r.project_id`
+    );
+    return rows.map((r) => ({
+        projectId: String(r.project_id),
+        projectName: String(r.project_name ?? ''),
+        rootExternalId: Number(r.root_external_id),
+        architectName: nullableString(r.architect_name),
+        zkNumber: nullableString(r.zk_number),
+        zkNet: round2(Number(r.zk_net)),
+        invoicedNet: round2(Number(r.invoiced_net)),
+        difference: round2(Number(r.invoiced_net) - Number(r.zk_net)),
+        openedAt: toIsoString(r.opened_at) ?? '',
+    }));
+}
+
+/** Liczba otwartych uzgodnień (plakietka „Subiekt” w menu i nagłówek sekcji). React `cache` jak getUnassignedCount. */
+export const getOpenReconciliationCount = cache(async (): Promise<number> => {
+    const [row] = await query<{ count: number }>(`SELECT COUNT(*) AS count ${OPEN_RECONCILIATIONS_SQL}`);
+    return Number(row?.count ?? 0);
+});
+
+/** Pozycja łańcucha w karcie uzgodnienia: bieżąca kwota i kwota z ZK (pozycja positions_json o tym ob_Id). */
+export interface ReconciliationItem {
+    id: string;
+    description: string | null;
+    type: string;
+    amount_net: number;
+    zk_amount: number | null;
+}
+
+export interface ProjectReconciliation {
+    rootExternalId: number;
+    status: 'OPEN' | 'RESOLVED';
+    zkNumber: string | null;
+    zkNet: number;
+    invoicedNet: number;
+    difference: number;
+    /** ISO 8601 UTC. */
+    openedAt: string;
+    resolvedAt: string | null;
+    resolvedByName: string | null;
+    note: string | null;
+    /** FS i KFS łańcucha w projekcie (przypisane), po dacie wystawienia. */
+    invoices: Array<{ number: string; type: string; issued_at: string; net_total: number }>;
+    /** Pozycje Subiekta z ZK łańcucha w projekcie (także wyzerowane w projekcie zakończonym). */
+    items: ReconciliationItem[];
+}
+
+/** Uzgodnienia OPEN i RESOLVED projektu (AUTO_CLOSED pomijane), po korzeniu. */
+export async function getProjectReconciliations(projectId: string): Promise<ProjectReconciliation[]> {
+    const rows = await query<Record<string, unknown>>(
+        `SELECT r.*, u.name AS resolved_by_name FROM subiekt_reconciliations r
+         LEFT JOIN users u ON u.id = r.resolved_by
+         WHERE r.project_id = ? AND r.status IN ('OPEN', 'RESOLVED')
+         ORDER BY r.root_external_id`,
         [projectId]
     );
-    return rows.map((row) => ({
-        id: String(row.id),
-        created_at: toIsoString(row.created_at) ?? '',
-        description: String(row.description ?? ''),
-    }));
+    const result: ProjectReconciliation[] = [];
+    for (const r of rows) {
+        const root = Number(r.root_external_id);
+        const docs = await query<Record<string, unknown>>(
+            `SELECT id, external_id, type, number, issued_at, net_total, positions_json FROM subiekt_documents
+             WHERE project_id = ? AND root_external_id = ? AND assignment_status IN ('AUTO', 'MANUAL')
+             ORDER BY issued_at, external_id`,
+            [projectId, root]
+        );
+        const orders = docs.filter((d) => d.type === 'ZK');
+        const zkAmounts = new Map<number, number>();
+        for (const order of orders) {
+            try {
+                for (const pos of JSON.parse(String(order.positions_json)) as Array<{ external_id: number; net_total: number }>) {
+                    zkAmounts.set(Number(pos.external_id), round2(pos.net_total));
+                }
+            } catch {
+                // Uszkodzone pozycje dokumentu: karta pokaże „—” zamiast kwoty z ZK.
+            }
+        }
+        const orderIds = orders.map((d) => String(d.id));
+        const items = orderIds.length === 0 ? [] : await query<Record<string, unknown>>(
+            `SELECT id, description, type, amount_net, subiekt_position_id FROM project_items
+             WHERE project_id = ? AND source = 'SUBIEKT' AND subiekt_position_id IS NOT NULL
+               AND subiekt_document_id IN (${orderIds.map(() => '?').join(', ')})
+             ORDER BY subiekt_position_id, id`,
+            [projectId, ...orderIds]
+        );
+        result.push({
+            rootExternalId: root,
+            status: String(r.status) as 'OPEN' | 'RESOLVED',
+            zkNumber: orders.length > 0 ? String(orders[0].number) : null,
+            zkNet: round2(Number(r.zk_net)),
+            invoicedNet: round2(Number(r.invoiced_net)),
+            difference: round2(Number(r.invoiced_net) - Number(r.zk_net)),
+            openedAt: toIsoString(r.opened_at) ?? '',
+            resolvedAt: toIsoString(r.resolved_at),
+            resolvedByName: nullableString(r.resolved_by_name),
+            note: nullableString(r.note),
+            invoices: docs.filter((d) => d.type === 'FS' || d.type === 'KFS').map((d) => ({
+                number: String(d.number), type: String(d.type), issued_at: toDateOnly(d.issued_at), net_total: round2(Number(d.net_total)),
+            })),
+            items: items.map((i) => ({
+                id: String(i.id),
+                description: nullableString(i.description),
+                type: String(i.type),
+                amount_net: round2(Number(i.amount_net)),
+                zk_amount: zkAmounts.get(Number(i.subiekt_position_id)) ?? null,
+            })),
+        });
+    }
+    return result;
 }
 
 // --- Widoki panelu admina (Loop 4) ---------------------------------------------------------------
