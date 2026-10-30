@@ -228,6 +228,9 @@ test('sign-in page shows the preparation message; Google sign-in and shell badge
     assert.match(authSource, /internalModeSignInRefusal\(dbUser\.role\)/);
     assert.match(signin, /new URLSearchParams\(window\.location\.search\)\.get\('error'\)/);
     assert.match(signin, /signInErrorMessage\(urlErrorCode\)/);
+    // Bez jawnego callbackUrl next-auth bierze bieżący adres (z ?error=InternalMode) i zwraca ten kod jako
+    // res.error także przy poprawnym logowaniu admina — logowanie z tej strony by nie działało.
+    assert.match(signin, /redirect: false,[^}]*callbackUrl: '\/dashboard',/);
     assert.match(layout, /isInternalMode\(\) && canManageOperationalProjects\(session\.user\.role\)/);
     assert.match(layout, /Tryb wewnętrzny/);
 });

@@ -65,6 +65,9 @@ export default function SignIn() {
             email,
             password,
             redirect: false,
+            // Jawny cel: domyślny callbackUrl to bieżący adres, a next-auth czyta res.error z parametru `error`
+            // zwróconego adresu — po przekierowaniu z ?error=InternalMode każde logowanie wyglądałoby na błąd.
+            callbackUrl: '/dashboard',
         });
 
         if (res?.error) {
