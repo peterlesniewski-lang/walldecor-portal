@@ -100,22 +100,55 @@ const byDateThenId = (a: HeaderRow, b: HeaderRow) =>
     a.dok_DataWyst === b.dok_DataWyst ? a.dok_Id - b.dok_Id : a.dok_DataWyst < b.dok_DataWyst ? -1 : 1;
 
 /**
+ * Historia płatników FS '+' z okresu dla heurystyki, bez limitu daty: ZK architektów tych płatników (wstępny
+ * filtr w SQL, tu dokładny rootReason), a dla płatników, którzy je mają — ich FS i WZ (czy ZK ma już fakturę).
+ * Dzięki temu wynik heurystyki nie zależy od tego, gdzie akurat zaczyna się okno LOOKBACK_MONTHS.
+ */
+export async function fetchPayerHistory(
+    period: HeaderRow[],
+    options: { architectCategoryId: number },
+    deps: {
+        architectZkOfPayers: (payerIds: number[]) => Promise<HeaderRow[]>;
+        invoicesOfPayers: (payerIds: number[]) => Promise<HeaderRow[]>;
+    },
+): Promise<HeaderRow[]> {
+    const payers = [...new Set(period
+        .filter((h) => h.dok_Typ === GT_DOC_TYPE.FS && isMultiSource(h) && h.dok_PlatnikId !== null)
+        .map((h) => h.dok_PlatnikId as number))];
+    if (payers.length === 0) return [];
+    const zks = (await deps.architectZkOfPayers(payers))
+        .filter((h) => h.dok_Typ === GT_DOC_TYPE.ZK && rootReason(h, options.architectCategoryId) !== null);
+    const zkPayers = [...new Set(zks.map((h) => h.dok_PlatnikId).filter((id): id is number => id !== null))];
+    if (zkPayers.length === 0) return zks;
+    return [...zks, ...await deps.invoicesOfPayers(zkPayers)];
+}
+
+/**
  * Korzenie: ZK/FS z kategorią Architekt lub znacznikiem w Uwagach — z okresu albo wśród przodków (`ancestors`,
  * fetchAncestors) dokumentów okresu. Pochodne: WZ/FS/KFS, których dok_DoDokId wskazuje dokument ze zbioru — do
- * ustalenia się zbioru; spoza okresu wchodzą tylko przodkowie dokumentów okresu. FS z
- * dok_DoDokNrPelny = '+' spoza zbioru: dokładnie jeden korzeń ZK tego samego płatnika z datą ≤ data FS i
- * bez FS w łańcuchu → rodzic z heurystyki; inaczej pominięta (raport `ambiguous` / licznik).
+ * ustalenia się zbioru; spoza okresu wchodzą tylko przodkowie dokumentów okresu.
+ *
+ * FS z dok_DoDokNrPelny = '+' bez zwykłego powiązania: heurystyka liczona na całej historii płatnika
+ * (`payerHistory`, fetchPayerHistory) w kolejności dat — FS '+' sprzed okresu też „zajmują” swoje ZK. Dokładnie
+ * jeden ZK architekta tego płatnika z datą ≤ data FS i bez FS w łańcuchu → rodzic (ZK trafia do paczki, także
+ * sprzed okresu); inaczej FS z okresu jest pominięta (`ambiguous`, gdy płatnik ma ZK architekta, albo licznik).
  */
 export function selectChains(
     period: HeaderRow[],
     options: { architectCategoryId: number },
-    extra: { ancestors?: HeaderRow[] } = {},
+    extra: { ancestors?: HeaderRow[]; payerHistory?: HeaderRow[] } = {},
 ): ChainSelection {
+    const periodIds = new Set(period.map((h) => h.dok_Id));
     const byId = new Map(period.map((h) => [h.dok_Id, h]));
     for (const h of extra.ancestors ?? []) if (!byId.has(h.dok_Id)) byId.set(h.dok_Id, h);
-    const headers = [...byId.values()];
+    /** Okres + przodkowie: tylko z nich powstają łańcuchy. */
+    const known = [...byId.values()];
+    for (const h of extra.payerHistory ?? []) if (!byId.has(h.dok_Id)) byId.set(h.dok_Id, h);
+    /** Dodatkowo historia płatników — tylko do heurystyki FS '+'. */
+    const all = [...byId.values()];
+
     const children = new Map<number, HeaderRow[]>();
-    for (const h of headers) {
+    for (const h of known) {
         const parent = linkedParentId(h);
         if (parent === null || !DERIVED_TYPES.has(h.dok_Typ)) continue;
         const list = children.get(parent) ?? [];
@@ -124,7 +157,7 @@ export function selectChains(
     }
 
     const reasons = new Map<number, RootReason>();
-    for (const h of headers) {
+    for (const h of all) {
         const reason = rootReason(h, options.architectCategoryId);
         if (reason) reasons.set(h.dok_Id, reason);
     }
@@ -143,7 +176,7 @@ export function selectChains(
             }
         }
     };
-    for (const id of reasons.keys()) if (!inSet.has(id)) addWithDescendants(id);
+    for (const h of known) if (reasons.has(h.dok_Id) && !inSet.has(h.dok_Id)) addWithDescendants(h.dok_Id);
 
     const parentOf = (id: number): number | null => {
         const viaHeuristic = heuristicParent.get(id);
@@ -152,34 +185,46 @@ export function selectChains(
         const parent = header ? linkedParentId(header) : null;
         return parent !== null && inSet.has(parent) ? parent : null;
     };
-    const rootOf = (id: number): number => {
-        let current = id;
-        for (let step = 0; step < 32; step++) {
-            const parent = parentOf(current);
-            if (parent === null) return current;
-            current = parent;
+    /** Dokumenty na ścieżce dok_DoDokId w górę (z samym dokumentem), po wszystkich znanych wierszach. */
+    const pathUp = (start: HeaderRow): HeaderRow[] => {
+        const path: HeaderRow[] = [];
+        for (let current: HeaderRow | undefined = start; current && path.length < MAX_CHAIN_DEPTH;) {
+            path.push(current);
+            const parent = linkedParentId(current);
+            current = parent === null ? undefined : byId.get(parent);
         }
-        return current;
+        return path;
     };
+    const isArchitectZk = (h: HeaderRow) => h.dok_Typ === GT_DOC_TYPE.ZK && reasons.has(h.dok_Id);
 
-    const zkRoots = headers.filter((h) => h.dok_Typ === GT_DOC_TYPE.ZK && reasons.has(h.dok_Id));
-    const chainsWithInvoice = new Set<number>();
-    for (const id of inSet) if (byId.get(id)?.dok_Typ === GT_DOC_TYPE.FS) chainsWithInvoice.add(rootOf(id));
+    const invoiced = new Set<number>();
+    for (const h of all) {
+        if (h.dok_Typ !== GT_DOC_TYPE.FS) continue;
+        const zk = pathUp(h).find(isArchitectZk);
+        if (zk) invoiced.add(zk.dok_Id);
+    }
+    const architectZks = all.filter(isArchitectZk);
 
     const heuristic: ChainSelection['heuristic'] = [];
     const ambiguous: ChainSelection['ambiguous'] = [];
     let unlinkedMultiSource = 0;
-    const multiSource = headers.filter((h) => h.dok_Typ === GT_DOC_TYPE.FS && isMultiSource(h)).sort(byDateThenId);
+    const multiSource = all.filter((h) => h.dok_Typ === GT_DOC_TYPE.FS && isMultiSource(h)).sort(byDateThenId);
     for (const fs of multiSource) {
-        if (inSet.has(fs.dok_Id)) continue;
-        const samePayer = fs.dok_PlatnikId === null ? [] : zkRoots.filter((zk) => zk.dok_PlatnikId === fs.dok_PlatnikId);
-        const candidates = samePayer.filter((zk) => zk.dok_DataWyst <= fs.dok_DataWyst && !chainsWithInvoice.has(zk.dok_Id));
+        // Zwykłe powiązanie z łańcuchem architekta (w okresie: już w zbiorze; w historii: liczy się jako faktura ZK).
+        if (inSet.has(fs.dok_Id) || pathUp(fs).some((h) => reasons.has(h.dok_Id))) continue;
+        const inPeriod = periodIds.has(fs.dok_Id);
+        const samePayer = fs.dok_PlatnikId === null ? [] : architectZks.filter((zk) => zk.dok_PlatnikId === fs.dok_PlatnikId);
+        const candidates = samePayer.filter((zk) => zk.dok_DataWyst <= fs.dok_DataWyst && !invoiced.has(zk.dok_Id));
         if (candidates.length === 1) {
             const parent = candidates[0] as HeaderRow;
+            invoiced.add(parent.dok_Id);
+            if (!inPeriod) continue;
             heuristicParent.set(fs.dok_Id, parent.dok_Id);
+            inSet.add(parent.dok_Id);
             addWithDescendants(fs.dok_Id);
-            chainsWithInvoice.add(parent.dok_Id);
             heuristic.push({ fs, parent });
+        } else if (!inPeriod) {
+            continue;
         } else if (samePayer.length > 0) {
             ambiguous.push({ fs, candidates });
         } else {

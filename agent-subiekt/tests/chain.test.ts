@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchAncestors, selectChains, GT_DOC_TYPE, type HeaderRow } from '../src/chain.ts';
+import { fetchAncestors, fetchPayerHistory, selectChains, GT_DOC_TYPE, type HeaderRow } from '../src/chain.ts';
 
 const CATEGORY = 14;
 const OPTIONS = { architectCategoryId: CATEGORY };
@@ -154,4 +154,68 @@ test('dok_DoDokId wskazujący sam dokument = brak rodzica', () => {
     ], OPTIONS);
     assert.deepEqual(ids(selection), [1, 3]);
     assert.equal(parentOf(selection, 3), null);
+});
+
+// --- Heurystyka FS '+' na całej historii płatnika (przegląd jakości Loopa 5, pkt 2) ---
+
+const plus = (id: number, date: string, payer = 700, overrides: Partial<HeaderRow> = {}) =>
+    h(id, 'FS', { dok_DoDokId: 9000 + id, dok_DoDokNrPelny: '+', dok_PlatnikId: payer, dok_DataWyst: date, ...overrides });
+
+test("scenariusz z przeglądu: ZK X sprzed okresu i ZK Y w okresie, ten sam płatnik → FS '+' niejednoznaczna, nie przypięta do Y", () => {
+    const x = h(1, 'ZK', { dok_KatId: CATEGORY, dok_PlatnikId: 700, dok_DataWyst: '2025-01-10' });
+    const y = h(2, 'ZK', { dok_KatId: CATEGORY, dok_PlatnikId: 700, dok_DataWyst: '2025-02-01' });
+    const fs1 = plus(10, '2025-03-01');
+    const withoutHistory = selectChains([y, fs1], OPTIONS);
+    assert.equal(parentOf(withoutHistory, 10), 2, 'bez historii heurystyka zgadywała Y');
+
+    const selection = selectChains([y, fs1], OPTIONS, { payerHistory: [x, y] });
+    assert.deepEqual(ids(selection), [2]);
+    assert.deepEqual(selection.heuristic, []);
+    assert.deepEqual(selection.ambiguous.map((a) => [a.fs.dok_Id, a.candidates.map((c) => c.dok_Id).sort()]), [[10, [1, 2]]]);
+});
+
+test("jedyny kandydat sprzed okresu → FS '+' przypięta, ZK w paczce jako korzeń (bez jego innych pochodnych)", () => {
+    const x = h(1, 'ZK', { dok_Uwagi: '#A-0002', dok_PlatnikId: 700, dok_DataWyst: '2025-01-10' });
+    const selection = selectChains([plus(10, '2025-03-01')], OPTIONS, { payerHistory: [x] });
+    assert.deepEqual(ids(selection), [1, 10]);
+    assert.deepEqual([parentOf(selection, 1), parentOf(selection, 10)], [null, 1]);
+    assert.deepEqual(selection.heuristic.map((w) => [w.fs.dok_Id, w.parent.dok_Id]), [[10, 1]]);
+});
+
+test("historia płatnika: FS sprzed okresu (zwykłe powiązanie lub '+') zajmuje ZK — kolejna FS '+' nie jest do niego przypinana", () => {
+    const x = h(1, 'ZK', { dok_KatId: CATEGORY, dok_PlatnikId: 700, dok_DataWyst: '2025-01-10' });
+    const y = h(2, 'ZK', { dok_KatId: CATEGORY, dok_PlatnikId: 700, dok_DataWyst: '2025-02-01' });
+    const linkedToX = h(5, 'FS', { dok_DoDokId: 1, dok_PlatnikId: 700, dok_DataWyst: '2025-01-20' });
+    // X ma FS → jedynym kandydatem jest Y
+    const a = selectChains([plus(10, '2025-03-01')], OPTIONS, { payerHistory: [x, y, linkedToX] });
+    assert.equal(parentOf(a, 10), 2);
+    assert.equal(ids(a).includes(5), false, 'FS sprzed okresu nie trafia do paczki');
+
+    // FS '+' sprzed okresu przypina się do Y (jedyny kandydat) → FS '+' z okresu nie ma już kandydata
+    const b = selectChains([plus(10, '2025-03-01')], OPTIONS, { payerHistory: [y, plus(6, '2025-02-15')] });
+    assert.deepEqual(ids(b), []);
+    assert.deepEqual(b.ambiguous.map((m) => [m.fs.dok_Id, m.candidates.length]), [[10, 0]]);
+});
+
+test('fetchPayerHistory: ZK architektów płatników FS \'+\' z okresu (bez limitu daty), potem ich FS/WZ', async () => {
+    const calls: string[] = [];
+    const history = await fetchPayerHistory([plus(10, '2026-10-01', 700), plus(11, '2026-10-02', 800), h(12, 'FS', { dok_PlatnikId: 900 })], OPTIONS, {
+        architectZkOfPayers: async (payers) => {
+            calls.push(`zk:${payers.join(',')}`);
+            return [
+                h(1, 'ZK', { dok_KatId: CATEGORY, dok_PlatnikId: 700, dok_DataWyst: '2024-01-01' }),
+                h(2, 'ZK', { dok_Uwagi: 'kontakt #A brak', dok_PlatnikId: 800 }), // wstępny filtr SQL (LIKE '%#A%') przepuścił, regex nie
+            ];
+        },
+        invoicesOfPayers: async (payers) => {
+            calls.push(`fs:${payers.join(',')}`);
+            return [h(5, 'FS', { dok_DoDokId: 1, dok_PlatnikId: 700, dok_DataWyst: '2024-02-01' })];
+        },
+    });
+    assert.deepEqual(calls, ['zk:700,800', 'fs:700']);
+    assert.deepEqual(history.map((x) => x.dok_Id), [1, 5]);
+    assert.deepEqual(await fetchPayerHistory([h(1, 'ZK')], OPTIONS, {
+        architectZkOfPayers: async () => { throw new Error('nie powinno pytać'); },
+        invoicesOfPayers: async () => { throw new Error('nie powinno pytać'); },
+    }), []);
 });

@@ -28,26 +28,42 @@ const CHAIN_TYPES = '16, 2, 6, 11';
  */
 const SINCE = "CONVERT(datetime, @since + 'T00:00:00', 126)";
 
+/** Kolumny nagłówka (chain.ts HeaderRow); dok_DataWyst jako 'YYYY-MM-DD' (styl 23), bez konwersji stref. */
+const HEADER_COLUMNS = `d.dok_Id, d.dok_Typ, d.dok_Podtyp, d.dok_NrPelny,
+       CONVERT(char(10), d.dok_DataWyst, 23) AS dok_DataWyst,
+       d.dok_DoDokId, d.dok_DoDokNrPelny, d.dok_PlatnikId, d.dok_KatId, d.dok_Uwagi,
+       d.dok_WartNetto, d.dok_WartBrutto`;
+
 /**
  * Nagłówki kandydatów do łańcuchów z okresu: korzenie (ZK/FS) i możliwe dokumenty pochodne (WZ/FS/KFS).
  * Wybór zbioru robi chain.ts; dok_DataWyst jako 'YYYY-MM-DD' (styl 23), bez konwersji stref.
  */
 export const SQL_CHAIN_HEADERS = `
-SELECT d.dok_Id, d.dok_Typ, d.dok_Podtyp, d.dok_NrPelny,
-       CONVERT(char(10), d.dok_DataWyst, 23) AS dok_DataWyst,
-       d.dok_DoDokId, d.dok_DoDokNrPelny, d.dok_PlatnikId, d.dok_KatId, d.dok_Uwagi,
-       d.dok_WartNetto, d.dok_WartBrutto
+SELECT ${HEADER_COLUMNS}
 FROM dbo.dok__Dokument d
 WHERE d.dok_Typ IN (${CHAIN_TYPES}) AND d.dok_DataWyst >= ${SINCE}`;
 
 /** Nagłówki przodków spoza okresu (chain.ts fetchAncestors) — bez limitu daty, tylko typy łańcucha. */
 export const sqlHeadersByIds = (inList: string) => `
-SELECT d.dok_Id, d.dok_Typ, d.dok_Podtyp, d.dok_NrPelny,
-       CONVERT(char(10), d.dok_DataWyst, 23) AS dok_DataWyst,
-       d.dok_DoDokId, d.dok_DoDokNrPelny, d.dok_PlatnikId, d.dok_KatId, d.dok_Uwagi,
-       d.dok_WartNetto, d.dok_WartBrutto
+SELECT ${HEADER_COLUMNS}
 FROM dbo.dok__Dokument d
 WHERE d.dok_Typ IN (${CHAIN_TYPES}) AND d.dok_Id IN (${inList})`;
+
+/**
+ * ZK architektów płatników FS '+' (chain.ts fetchPayerHistory), bez limitu daty. LIKE to tylko wstępny filtr —
+ * dokładny znacznik sprawdza chain.ts. Parametr @categoryId = ARCHITECT_CATEGORY_ID.
+ */
+export const sqlArchitectZkOfPayers = (inList: string) => `
+SELECT ${HEADER_COLUMNS}
+FROM dbo.dok__Dokument d
+WHERE d.dok_Typ = 16 AND d.dok_PlatnikId IN (${inList})
+  AND (d.dok_KatId = @categoryId OR d.dok_Uwagi LIKE '%#A%')`;
+
+/** FS i WZ płatników mających ZK architekta (czy ZK ma już fakturę), bez limitu daty. */
+export const sqlInvoicesOfPayers = (inList: string) => `
+SELECT ${HEADER_COLUMNS}
+FROM dbo.dok__Dokument d
+WHERE d.dok_Typ IN (2, 11) AND d.dok_PlatnikId IN (${inList})`;
 
 /** Kontrahent dokumentu: historia adresu z dokumentu, zapasowo adres główny z ewidencji, symbol z kartoteki. */
 export const sqlContractors = (inList: string) => `

@@ -42,12 +42,14 @@ export async function queryRows<T>(pool: Pool, text: string, params: Params = {}
 export const sinceParam = (since: string): Params => ({ since: { type: sql.VarChar(10), value: since } });
 
 /** Zapytanie z listą identyfikatorów `IN (@id0, …)` w partiach (limit SQL Server: 2100 parametrów). */
-export async function queryByIds<T>(pool: Pool, template: (inList: string) => string, ids: number[], batchSize = 500): Promise<T[]> {
+export async function queryByIds<T>(
+    pool: Pool, template: (inList: string) => string, ids: number[], extra: Params = {}, batchSize = 500,
+): Promise<T[]> {
     const unique = [...new Set(ids)];
     const rows: T[] = [];
     for (let start = 0; start < unique.length; start += batchSize) {
         const batch = unique.slice(start, start + batchSize);
-        const params: Params = {};
+        const params: Params = { ...extra };
         batch.forEach((id, i) => { params[`id${i}`] = { type: sql.Int, value: id }; });
         rows.push(...await queryRows<T>(pool, template(batch.map((_, i) => `@id${i}`).join(', ')), params));
     }
