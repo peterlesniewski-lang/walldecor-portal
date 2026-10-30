@@ -5,7 +5,7 @@ import { buildDocument, buildPayloads, PayloadError, type ContractorRow, type Po
 
 function header(id: number, type: keyof typeof GT_DOC_TYPE, overrides: Partial<HeaderRow> = {}): HeaderRow {
     return {
-        dok_Id: id, dok_Typ: GT_DOC_TYPE[type], dok_Podtyp: 0, dok_NrPelny: `  ${type} 115/PUŁ/10/2026 `,
+        dok_Id: id, dok_Typ: GT_DOC_TYPE[type], dok_Podtyp: 0, dok_Status: null, dok_NrPelny: `  ${type} 115/PUŁ/10/2026 `,
         dok_DataWyst: '2026-10-05', dok_DoDokId: null, dok_DoDokNrPelny: null, dok_PlatnikId: 500,
         dok_KatId: 14, dok_Uwagi: '#A-0002', dok_WartNetto: 836.59, dok_WartBrutto: 1029.01, ...overrides,
     };

@@ -14,7 +14,7 @@ await import(new URL('../../tests/helpers/srcResolveHooks.ts', import.meta.url).
 const { parseSyncRequest } = await import('../../src/lib/subiekt/validate.ts');
 
 const header = (id: number, type: keyof typeof GT_DOC_TYPE, parent: number | null): HeaderRow => ({
-    dok_Id: id, dok_Typ: GT_DOC_TYPE[type], dok_Podtyp: 0, dok_NrPelny: `${type} ${id}/PUŁ/10/2026`, dok_DataWyst: '2026-10-05',
+    dok_Id: id, dok_Typ: GT_DOC_TYPE[type], dok_Podtyp: 0, dok_Status: null, dok_NrPelny: `${type} ${id}/PUŁ/10/2026`, dok_DataWyst: '2026-10-05',
     dok_DoDokId: parent, dok_DoDokNrPelny: null, dok_PlatnikId: 1, dok_KatId: 14, dok_Uwagi: type === 'ZK' ? '#A-0002' : null,
     dok_WartNetto: type === 'KFS' ? -100 : 836.59, dok_WartBrutto: type === 'KFS' ? -123 : 1029.01,
 });

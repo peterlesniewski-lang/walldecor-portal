@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GT_DOC_TYPE, type HeaderRow } from '../src/chain.ts';
-import { countsLine, formatSummary, manualReviewCount } from '../src/report.ts';
+import { countsLine, formatSummary, manualReviewCount, statusCounts } from '../src/report.ts';
 
 const h = (id: number, type: keyof typeof GT_DOC_TYPE, overrides: Partial<HeaderRow> = {}): HeaderRow => ({
-    dok_Id: id, dok_Typ: GT_DOC_TYPE[type], dok_Podtyp: 0, dok_NrPelny: `${type} ${id}/10/2026`, dok_DataWyst: '2026-10-10',
+    dok_Id: id, dok_Typ: GT_DOC_TYPE[type], dok_Podtyp: 0, dok_Status: null, dok_NrPelny: `${type} ${id}/10/2026`, dok_DataWyst: '2026-10-10',
     dok_DoDokId: null, dok_DoDokNrPelny: null, dok_PlatnikId: 700, dok_KatId: 14, dok_Uwagi: null, dok_WartNetto: 100,
     dok_WartBrutto: 123, ...overrides,
 });
@@ -37,4 +37,12 @@ test('countsLine (dziennik synchronizacji): same liczby, bez nazw kontrahentów 
     );
     assert.equal(line, 'Dokumenty w paczce: 1 (ZK 1, WZ 0, FS 0, KFS 0); korzenie 1; heurystyka FS \'+\': 0; do ręcznej obsługi: 0; FS \'+\' zwykłej sprzedaży: 2');
     assert.doesNotMatch(line, /Kowalski|ZK 7\/PUŁ|1234563218/);
+});
+
+test('statusCounts (sonda): liczność ZK i FS ze zbioru wg dok_Status', () => {
+    const doc = (id: number, type: keyof typeof GT_DOC_TYPE, status: number | null) =>
+        ({ header: h(id, type, { dok_Status: status }), parentId: null, rootReason: null, viaHeuristic: false });
+    assert.deepEqual(statusCounts({ documents: [doc(1, 'ZK', 1), doc(2, 'ZK', 1), doc(3, 'ZK', 6), doc(4, 'FS', null), doc(5, 'KFS', 1), doc(6, 'FS', 2)] }), [
+        'ZK dok_Status 1: 2', 'ZK dok_Status 6: 1', 'FS dok_Status 2: 1', 'FS dok_Status NULL: 1',
+    ]);
 });

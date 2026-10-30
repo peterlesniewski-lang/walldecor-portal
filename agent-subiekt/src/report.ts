@@ -30,6 +30,20 @@ function contractorName(id: number, build: BuildResult, contractors: Map<number,
         .map((v) => (v ?? '').trim()).find(Boolean) ?? '(brak nazwy)';
 }
 
+/** Sonda: liczność ZK i FS ze zbioru wg dok_Status (do decyzji o filtrze dokumentów anulowanych). */
+export function statusCounts(selection: Pick<ChainSelection, 'documents'>): string[] {
+    const lines: string[] = [];
+    for (const type of [GT_DOC_TYPE.ZK, GT_DOC_TYPE.FS]) {
+        const counts = new Map<number | null, number>();
+        for (const d of selection.documents) {
+            if (d.header.dok_Typ === type) counts.set(d.header.dok_Status ?? null, (counts.get(d.header.dok_Status ?? null) ?? 0) + 1);
+        }
+        const keys = [...counts.keys()].sort((a, b) => (a ?? Number.MAX_SAFE_INTEGER) - (b ?? Number.MAX_SAFE_INTEGER));
+        for (const key of keys) lines.push(`${typeLabel(type)} dok_Status ${key ?? 'NULL'}: ${counts.get(key)}`);
+    }
+    return lines;
+}
+
 /** Jedna linia liczb do dziennego logu synchronizacji — bez nazw kontrahentów i numerów dokumentów. */
 export function countsLine(selection: ChainSelection, build: BuildResult): string {
     const counts = new Map<string, number>();

@@ -13,7 +13,7 @@ import {
     REQUIRED_COLUMNS, SQL_ADDRESS_HISTORY_SAMPLE, SQL_CATEGORY, SQL_CHAIN_HEADERS, SQL_TABLES, SQL_TYPE_COUNTS,
     sqlArchitectZkOfPayers, sqlColumns, sqlContractors, sqlFinance, sqlHeadersByIds, sqlInvoicesOfPayers, sqlPositions,
 } from './queries.ts';
-import { countsLine, docNumber, formatSummary, manualReviewCount, money, typeLabel } from './report.ts';
+import { countsLine, docNumber, formatSummary, manualReviewCount, money, statusCounts, typeLabel } from './report.ts';
 import { buildPages, createFileLogger, localDate, pruneLogs, sendAll, type Logger } from './send.ts';
 
 export const EXIT = {
@@ -192,6 +192,14 @@ async function probe(pool: Pool, config: AgentConfig, since: string, logger: Log
         print(`Dokumenty w zbiorze: ${data.selection.documents.length} (${[...byType].map(([t, n]) => `${typeLabel(t)} ${n}`).join(', ')})`);
         print(`Heurystyka FS '+': ${data.selection.heuristic.length}, niejednoznaczne: ${data.selection.ambiguous.length}, '+' bez ZK architekta: ${data.selection.unlinkedMultiSource}`);
         print(`Błędy budowy paczki: ${data.build.errors.length}${data.build.errors.slice(0, 5).map((e) => `\n  ${e.number}: ${e.message}`).join('')}`);
+    });
+
+    await section('ZK i FS w zbiorze wg dok_Status (decyzja o pomijaniu anulowanych — plan §6 pkt 17)', async () => {
+        if (!data) throw new Error('brak danych łańcuchów (poprzednia sekcja nie powiodła się)');
+        const collected: Collected = data;
+        const lines = statusCounts(collected.selection);
+        if (lines.length === 0) print('Brak ZK i FS w zbiorze.');
+        for (const line of lines) print(line);
     });
 
     await section('Przykłady FS w zbiorze wg dok_Podtyp (do 5 na podtyp)', async () => {

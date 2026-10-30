@@ -5,7 +5,7 @@
 /** Każda kolumna użyta w zapytaniach poniżej. Sonda kończy się kodem ≠ 0, gdy którejś brakuje. */
 export const REQUIRED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
     dok__Dokument: [
-        'dok_Id', 'dok_Typ', 'dok_Podtyp', 'dok_NrPelny', 'dok_DataWyst', 'dok_DoDokId', 'dok_DoDokNrPelny',
+        'dok_Id', 'dok_Typ', 'dok_Podtyp', 'dok_Status', 'dok_NrPelny', 'dok_DataWyst', 'dok_DoDokId', 'dok_DoDokNrPelny',
         'dok_PlatnikId', 'dok_PlatnikAdreshId', 'dok_KatId', 'dok_Uwagi', 'dok_WartNetto', 'dok_WartBrutto',
     ],
     dok_Pozycja: [
@@ -29,7 +29,7 @@ const CHAIN_TYPES = '16, 2, 6, 11';
 const SINCE = "CONVERT(datetime, @since + 'T00:00:00', 126)";
 
 /** Kolumny nagłówka (chain.ts HeaderRow); dok_DataWyst jako 'YYYY-MM-DD' (styl 23), bez konwersji stref. */
-const HEADER_COLUMNS = `d.dok_Id, d.dok_Typ, d.dok_Podtyp, d.dok_NrPelny,
+const HEADER_COLUMNS = `d.dok_Id, d.dok_Typ, d.dok_Podtyp, d.dok_Status, d.dok_NrPelny,
        CONVERT(char(10), d.dok_DataWyst, 23) AS dok_DataWyst,
        d.dok_DoDokId, d.dok_DoDokNrPelny, d.dok_PlatnikId, d.dok_KatId, d.dok_Uwagi,
        d.dok_WartNetto, d.dok_WartBrutto`;

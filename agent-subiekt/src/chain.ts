@@ -17,6 +17,8 @@ export interface HeaderRow {
     dok_Id: number;
     dok_Typ: number;
     dok_Podtyp: number;
+    /** Status dokumentu GT (znaczenie wartości niezweryfikowane — sonda pokazuje liczności, plan §6 pkt 17). */
+    dok_Status: number | null;
     dok_NrPelny: string;
     dok_DataWyst: string;
     dok_DoDokId: number | null;
