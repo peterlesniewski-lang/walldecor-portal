@@ -17,6 +17,7 @@ import {
     Banner, Button, Card, CardBody, CardHeader, EmptyState, InlineConfirm, KpiTile, StatusPill, cx, formatDate, formatNumber,
 } from '@/components/ui';
 import type { Tone } from '@/components/ui';
+import { INTERNAL_MODE_INVITATION_NOTE } from '@/lib/internalMode';
 
 export interface InvitationListItem {
     id: string;
@@ -70,11 +71,13 @@ interface SendProgress {
     done: number;
     sent: number;
     failed: number;
+    /** Niewysłane w trybie wewnętrznym — osobno, nie jako „Nieudane”. */
+    skippedInternal: number;
     running: boolean;
     errors: { email: string; error: string }[];
 }
 
-const EMPTY_PROGRESS: SendProgress = { total: 0, done: 0, sent: 0, failed: 0, running: false, errors: [] };
+const EMPTY_PROGRESS: SendProgress = { total: 0, done: 0, sent: 0, failed: 0, skippedInternal: 0, running: false, errors: [] };
 
 function ProgressBar({ progress }: { progress: SendProgress }) {
     const pct = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);
@@ -90,6 +93,7 @@ function ProgressBar({ progress }: { progress: SendProgress }) {
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
                 <span className="text-success">Wysłane: <strong className="tnum">{formatNumber(progress.sent)}</strong></span>
                 {progress.failed > 0 && <span className="text-danger">Nieudane: <strong className="tnum">{formatNumber(progress.failed)}</strong></span>}
+                {progress.skippedInternal > 0 && <span className="text-ink-2">Pominięte (tryb wewnętrzny): <strong className="tnum">{formatNumber(progress.skippedInternal)}</strong></span>}
             </div>
         </div>
     );
@@ -136,7 +140,7 @@ export default function InvitationsClient({ invitations }: { invitations: Invita
     const [rowBusy, setRowBusy] = useState<string | null>(null);
     const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
     const [copiedId, setCopiedId] = useState<string | null>(null);
-    const [listFeedback, setListFeedback] = useState<{ tone: 'success' | 'danger'; msg: string } | null>(null);
+    const [listFeedback, setListFeedback] = useState<{ tone: 'success' | 'danger' | 'info'; msg: string } | null>(null);
 
     const withStatus = useMemo(
         () => invitations.map((inv) => ({ ...inv, display: deriveInvitationStatus(inv) })),
@@ -161,23 +165,24 @@ export default function InvitationsClient({ invitations }: { invitations: Invita
     // ── Wysyłka partiami: kolejne wywołania server action z postępem ──
     const runSend = async (ids: string[]) => {
         if (ids.length === 0) return;
-        setProgress({ total: ids.length, done: 0, sent: 0, failed: 0, running: true, errors: [] });
-        let sent = 0, failed = 0, done = 0;
+        setProgress({ total: ids.length, done: 0, sent: 0, failed: 0, skippedInternal: 0, running: true, errors: [] });
+        let sent = 0, failed = 0, skippedInternal = 0, done = 0;
         const errors: { email: string; error: string }[] = [];
         for (const part of chunk(ids, INVITATION_SEND_BATCH)) {
             try {
                 const res = await sendInvitations(part);
                 sent += res.sent;
                 failed += res.failed;
-                res.rows.filter(r => !r.ok).forEach(r => errors.push({ email: r.email, error: r.error || 'Błąd wysyłki' }));
+                skippedInternal += res.skippedInternalMode;
+                res.rows.filter(r => !r.ok && !r.skippedInternalMode).forEach(r => errors.push({ email: r.email, error: r.error || 'Błąd wysyłki' }));
             } catch (e: unknown) {
                 failed += part.length;
                 errors.push({ email: `${part.length} adresów`, error: errMsg(e, 'Błąd wysyłki') });
             }
             done += part.length;
-            setProgress({ total: ids.length, done, sent, failed, running: true, errors: [...errors] });
+            setProgress({ total: ids.length, done, sent, failed, skippedInternal, running: true, errors: [...errors] });
         }
-        setProgress({ total: ids.length, done, sent, failed, running: false, errors });
+        setProgress({ total: ids.length, done, sent, failed, skippedInternal, running: false, errors });
         router.refresh();
     };
 
@@ -250,6 +255,7 @@ export default function InvitationsClient({ invitations }: { invitations: Invita
         try {
             const res = await resendInvitation(id);
             if (res.sent === 1) setListFeedback({ tone: 'success', msg: 'Zaproszenie wysłane ponownie.' });
+            else if (res.skippedInternalMode === 1) setListFeedback({ tone: 'info', msg: 'Zaproszenie nie zostało wysłane: portal działa w trybie wewnętrznym (maile tylko do zespołu).' });
             else setListFeedback({ tone: 'danger', msg: res.rows[0]?.error || 'Nie udało się wysłać zaproszenia. Sprawdź konfigurację SMTP i szablon ARCHITECT_INVITED.' });
             router.refresh();
         } catch (e: unknown) {
@@ -583,7 +589,9 @@ export default function InvitationsClient({ invitations }: { invitations: Invita
                                                             <span className="tnum text-xs text-ink-2">{formatDate(inv.accepted_at)}</span>
                                                         )}
                                                         {inv.last_error && inv.display !== 'ACCEPTED' && (
-                                                            <span className="text-xs text-danger" title={inv.last_error}>Błąd wysyłki</span>
+                                                            inv.last_error === INTERNAL_MODE_INVITATION_NOTE
+                                                                ? <span className="text-xs text-ink-2">Pominięto (tryb wewnętrzny)</span>
+                                                                : <span className="text-xs text-danger" title={inv.last_error}>Błąd wysyłki</span>
                                                         )}
                                                     </div>
                                                 </td>

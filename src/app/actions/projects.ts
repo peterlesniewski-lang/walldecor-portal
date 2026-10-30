@@ -21,6 +21,7 @@ import { getCommissionRateForTurnover, CASHBACK_RATE } from "@/lib/partnerProgra
 import { validatePasswordStrength } from "@/lib/passwordPolicy";
 import { addItemCore, deleteItemCore, getArchitectCommissionRate, updateItemAmountCore } from "@/lib/projectItems";
 import { nextSubiektCode } from "@/lib/subiekt/codes";
+import { INTERNAL_MODE_WELCOME_SKIPPED, isSkippedByInternalMode } from "@/lib/internalMode";
 
 function generateTempPassword(): string {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -404,6 +405,8 @@ export async function registerArchitect(data: {
     // --- Email Notification ---
     let emailSent = false;
     let emailError: string | null = null;
+    // Tryb wewnętrzny: mail pominięty celowo — informacja, nie błąd wysyłki.
+    let emailSkipped: string | null = null;
     try {
         const portalUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
         const result = await sendEmail(
@@ -418,7 +421,9 @@ export async function registerArchitect(data: {
         );
 
         emailSent = result?.success === true;
-        if (!emailSent) {
+        if (isSkippedByInternalMode(result)) {
+            emailSkipped = INTERNAL_MODE_WELCOME_SKIPPED;
+        } else if (!emailSent) {
             emailError = "Konto zostało utworzone, ale nie udało się wysłać maila powitalnego. Sprawdź konfigurację SMTP i aktywność szablonu ARCHITECT_REGISTERED.";
         }
 
@@ -428,7 +433,7 @@ export async function registerArchitect(data: {
     }
 
     revalidatePath('/dashboard/admin');
-    return { success: true, userId, generatedPassword, emailSent, emailError };
+    return { success: true, userId, generatedPassword, emailSent, emailError, emailSkipped };
 }
 
 

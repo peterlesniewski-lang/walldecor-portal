@@ -6,6 +6,7 @@ import { query, withTransaction } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { v4 as uuidv4 } from "uuid";
 import { sendEmail } from "@/lib/email";
+import { INTERNAL_MODE_INVITATION_NOTE, isSkippedByInternalMode } from "@/lib/internalMode";
 import { logActivity } from "@/lib/services";
 import { canRegisterArchitects } from "@/lib/rbac";
 import { buildArchitectInvitedPlaceholders } from "@/lib/emailPlaceholders";
@@ -229,7 +230,9 @@ export interface SendInvitationsResult {
     failed: number;
     /** Pominięte: zaakceptowane / anulowane / nieznane id. */
     skipped: number;
-    rows: { id: string; email: string; ok: boolean; error?: string }[];
+    /** Niewysłane celowo w trybie wewnętrznym (PORTAL_INTERNAL_MODE) — nie są błędem wysyłki. */
+    skippedInternalMode: number;
+    rows: { id: string; email: string; ok: boolean; error?: string; skippedInternalMode?: boolean }[];
 }
 
 /**
@@ -239,7 +242,7 @@ export interface SendInvitationsResult {
  */
 export async function sendInvitations(ids: string[]): Promise<SendInvitationsResult> {
     const session = await requireInviter();
-    const result: SendInvitationsResult = { sent: 0, failed: 0, skipped: 0, rows: [] };
+    const result: SendInvitationsResult = { sent: 0, failed: 0, skipped: 0, skippedInternalMode: 0, rows: [] };
     const batch = Array.from(new Set((ids || []).filter(Boolean))).slice(0, INVITATION_SEND_BATCH);
     if (batch.length === 0) return result;
 
@@ -288,6 +291,11 @@ export async function sendInvitations(ids: string[]): Promise<SendInvitationsRes
             );
             result.sent++;
             result.rows.push({ id, email: inv.email, ok: true });
+        } else if (isSkippedByInternalMode(emailResult)) {
+            // Tryb wewnętrzny: zaproszenie czeka na otwarcie portalu; osobny stan, nie błąd wysyłki.
+            await query("UPDATE invitations SET last_error = ? WHERE id = ?", [INTERNAL_MODE_INVITATION_NOTE, id]);
+            result.skippedInternalMode++;
+            result.rows.push({ id, email: inv.email, ok: false, skippedInternalMode: true, error: INTERNAL_MODE_INVITATION_NOTE });
         } else {
             const message = errorMessage(emailResult.error, 'Wysyłka nie powiodła się');
             await query("UPDATE invitations SET last_error = ? WHERE id = ?", [String(message).slice(0, 500), id]);

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Edit2, Send } from 'lucide-react';
 import { updateEmailTemplate, testEmailTemplate } from '@/app/actions/emailTemplates';
 import { Banner, Button, Card, CardBody, CardHeader, StatusPill } from '@/components/ui';
+import { isSkippedByInternalMode } from '@/lib/internalMode';
 
 const FIELD_LABEL = 'text-[13px] font-semibold text-ink-2';
 const FIELD_INPUT =
@@ -26,7 +27,7 @@ export default function EmailsClient({ initialTemplates }: { initialTemplates: E
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState({ subject: '', content: '', is_active: true });
     const [testEmail, setTestEmail] = useState('');
-    const [msg, setMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [msg, setMsg] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
     const startEditing = (template: EmailTemplate) => {
@@ -65,6 +66,8 @@ export default function EmailsClient({ initialTemplates }: { initialTemplates: E
             const res = await testEmailTemplate(id, testEmail);
             if (res && res.success) {
                 setMsg({ type: 'success', text: res.logged ? 'Email zalogowany w konsoli serwera (DEV).' : 'Email testowy został wysłany.' });
+            } else if (isSkippedByInternalMode(res)) {
+                setMsg({ type: 'info', text: 'Email testowy pominięty: tryb wewnętrzny — maile wychodzą tylko na adresy administratorów i zespołu.' });
             } else {
                 setMsg({ type: 'error', text: 'Błąd wysyłki: ' + ((res?.error as any)?.message || 'Unknown error') });
             }
@@ -81,7 +84,7 @@ export default function EmailsClient({ initialTemplates }: { initialTemplates: E
             {/* Feedback Message (komunikat pływający: float) */}
             {msg && (
                 <div className="fixed inset-x-4 bottom-4 z-50 sm:inset-x-auto sm:bottom-8 sm:right-8 sm:w-[380px]">
-                    <Banner tone={msg.type === 'success' ? 'success' : 'danger'} className="shadow-float">
+                    <Banner tone={msg.type === 'success' ? 'success' : msg.type === 'info' ? 'info' : 'danger'} className="shadow-float">
                         {msg.text}
                     </Banner>
                 </div>

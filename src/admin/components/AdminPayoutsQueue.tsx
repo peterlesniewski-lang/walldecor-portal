@@ -175,6 +175,8 @@ export default function AdminPayoutsQueue({
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [notifyingId, setNotifyingId] = useState<string | null>(null);
     const [notifiedIds, setNotifiedIds] = useState<string[]>([]);
+    // Tryb wewnętrzny: mail do architekta pominięty — przycisk mówi „Pominięto”, nie „Wysłano”.
+    const [skippedNotifyIds, setSkippedNotifyIds] = useState<string[]>([]);
     const router = useRouter();
 
     const busy = phase === 'loading' || phase === 'confirming';
@@ -525,7 +527,8 @@ export default function AdminPayoutsQueue({
                                                         onClick={async () => {
                                                             setNotifyingId(p.id);
                                                             try {
-                                                                await notifyArchitectProfileIncomplete(p.architect_id);
+                                                                const res = await notifyArchitectProfileIncomplete(p.architect_id);
+                                                                if (res.skipped === 'INTERNAL_MODE') setSkippedNotifyIds((prev) => [...prev, p.id]);
                                                                 setNotifiedIds((prev) => [...prev, p.id]);
                                                             } catch {
                                                                 // brak potwierdzenia wysyłki, przycisk pozostaje aktywny
@@ -534,7 +537,7 @@ export default function AdminPayoutsQueue({
                                                             }
                                                         }}
                                                     >
-                                                        {notifiedIds.includes(p.id) ? 'Wysłano' : 'Wyślij email'}
+                                                        {skippedNotifyIds.includes(p.id) ? 'Pominięto (tryb wewnętrzny)' : notifiedIds.includes(p.id) ? 'Wysłano' : 'Wyślij email'}
                                                     </Button>
                                                 </div>
                                             }
