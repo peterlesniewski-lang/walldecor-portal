@@ -2,9 +2,29 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
 
 /** Katalog agenta: rodzic `dist/` (po kompilacji) albo `src/` (testy). */
 export const AGENT_DIR = fileURLToPath(new URL('..', import.meta.url));
+
+/** Katalog logów — znany przed wczytaniem konfiguracji, żeby błędy konfiguracji też trafiały do logu. */
+export const LOGS_DIR = join(AGENT_DIR, 'logs');
+
+/**
+ * Treść pliku `.env` → zmienne. Usuwa BOM (Notatnik „UTF-8 z BOM”), którego wbudowany parser nie zdejmuje —
+ * inaczej pierwszy klucz miałby niewidoczny znak na początku i „znikał”.
+ */
+export function parseEnvFile(text: string): Record<string, string> {
+    const parsed = parseEnv(text.replace(/^\uFEFF/, ''));
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => entry[1] !== undefined));
+}
+
+/** Wczytuje `.env` do `env`, nie nadpisując zmiennych już ustawionych w środowisku. */
+export function applyEnvFile(path: string, env: Record<string, string | undefined>): void {
+    for (const [key, value] of Object.entries(parseEnvFile(readFileSync(path, 'utf8')))) {
+        if (env[key] === undefined) env[key] = value;
+    }
+}
 
 export const AGENT_VERSION: string = (JSON.parse(readFileSync(join(AGENT_DIR, 'package.json'), 'utf8')) as { version: string }).version;
 
@@ -111,8 +131,10 @@ export function parseArgs(argv: string[]): { mode: Mode; since: string | null } 
         else if (arg === '--help' || arg === '-h') return { mode: 'help', since: null };
         else if (arg === '--since' || arg.startsWith('--since=')) {
             const raw = arg === '--since' ? argv[++i] : arg.slice('--since='.length);
-            if (!raw || !DATE_RE.test(raw) || Number.isNaN(new Date(`${raw}T00:00:00Z`).getTime())) {
-                throw new ConfigError('--since wymaga daty w formacie RRRR-MM-DD, np. --since 2026-01-01');
+            if (!raw) throw new ConfigError('--since wymaga daty w formacie RRRR-MM-DD, np. --since 2026-01-01');
+            const parsed = new Date(`${raw}T00:00:00Z`);
+            if (!DATE_RE.test(raw) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== raw) {
+                throw new ConfigError(`--since: „${raw}” nie jest poprawną datą — podaj istniejący dzień w formacie RRRR-MM-DD, np. --since 2026-01-01`);
             }
             since = raw;
         } else throw new ConfigError(`Nieznany argument: ${arg}`);

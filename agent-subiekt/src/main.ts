@@ -4,8 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fetchAncestors, fetchPayerHistory, selectChains, GT_DOC_TYPE, type ChainSelection, type HeaderRow } from './chain.ts';
-import { AGENT_DIR, AGENT_VERSION, ConfigError, loadConfig, lookbackStart, parseArgs, type AgentConfig } from './config.ts';
-import { categoryParam, openPool, queryByIds, queryByNames, queryRows, sinceParam, type Pool } from './db.ts';
+import { AGENT_DIR, AGENT_VERSION, applyEnvFile, ConfigError, LOGS_DIR, loadConfig, lookbackStart, parseArgs, type AgentConfig } from './config.ts';
+import { categoryParam, isDatabaseError, openPool, queryByIds, queryByNames, queryRows, sinceParam, type Pool } from './db.ts';
 import { isPaid, paidByDocument, type FinanceRow } from './paid.ts';
 import { buildPayloads, type BuildResult, type ContractorRow, type PositionRow } from './payload.ts';
 import { findMissingColumns, type ColumnRow } from './probe.ts';
@@ -22,6 +22,7 @@ export const EXIT = {
     DATABASE: 2,
     PORTAL: 3,
     INCOMPLETE: 4,
+    UNEXPECTED: 5,
 } as const;
 
 const HELP = `Agent Subiekt GT → Portal Architekta ${AGENT_VERSION}
@@ -31,7 +32,7 @@ const HELP = `Agent Subiekt GT → Portal Architekta ${AGENT_VERSION}
   node dist/main.js --probe       sprawdza połączenie i schemat bazy GT (tabele, kolumny, przykłady)
   --since RRRR-MM-DD              dokumenty od tej daty zamiast LOOKBACK_MONTHS
 
-Kody wyjścia: 0 OK · 1 konfiguracja · 2 baza GT / brak kolumn · 3 portal · 4 część dokumentów odrzucona lub pominięta`;
+Kody wyjścia: 0 OK · 1 konfiguracja · 2 baza GT / brak kolumn · 3 portal · 4 dokumenty do ręcznej obsługi · 5 nieoczekiwany błąd agenta`;
 
 interface Collected {
     headers: HeaderRow[];
@@ -234,22 +235,26 @@ async function probe(pool: Pool, config: AgentConfig, since: string, logger: Log
     return code;
 }
 
+const describeError = (error: unknown) => (error instanceof Error ? error.stack ?? error.message : String(error));
+
 export async function main(argv: string[]): Promise<number> {
+    // Logger przed konfiguracją: błąd `.env` też ląduje w logs/ (zadanie z Harmonogramu nie ma konsoli).
+    const logger = createFileLogger(LOGS_DIR);
     let args: ReturnType<typeof parseArgs>;
     let config: AgentConfig;
     try {
         args = parseArgs(argv);
         if (args.mode === 'help') { console.log(HELP); return EXIT.OK; }
         const envFile = join(AGENT_DIR, '.env');
-        if (existsSync(envFile)) process.loadEnvFile(envFile);
+        if (existsSync(envFile)) applyEnvFile(envFile, process.env);
         config = loadConfig(process.env);
     } catch (error) {
         if (!(error instanceof ConfigError)) throw error;
-        console.error(`Błąd konfiguracji: ${error.message}\n\n${HELP}`);
+        logger.error(`Błąd konfiguracji: ${error.message}`);
+        console.error(`\n${HELP}`);
         return EXIT.CONFIG;
     }
 
-    const logger = createFileLogger(config.logsDir);
     const since = args.since ?? lookbackStart(new Date(), config.lookbackMonths);
     logger.info(`Start ${args.mode} · agent ${AGENT_VERSION} · dokumenty od ${since}`);
 
@@ -265,14 +270,22 @@ export async function main(argv: string[]): Promise<number> {
         if (args.mode === 'dry-run') return await dryRun(pool, config, since, logger);
         return await sync(pool, config, since, logger);
     } catch (error) {
-        logger.error(`Błąd odczytu bazy GT: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-        return EXIT.DATABASE;
+        if (isDatabaseError(error)) {
+            logger.error(`Błąd odczytu bazy GT: ${describeError(error)}`);
+            return EXIT.DATABASE;
+        }
+        logger.error(`Nieoczekiwany błąd agenta: ${describeError(error)}`);
+        return EXIT.UNEXPECTED;
     } finally {
-        await pool.close();
+        try {
+            await pool.close();
+        } catch (error) {
+            logger.warn(`Nie udało się zamknąć połączenia z bazą: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 }
 
 main(process.argv.slice(2)).then(
     (code) => { process.exitCode = code; },
-    (error) => { console.error(error); process.exitCode = EXIT.CONFIG; },
+    (error) => { console.error(error); process.exitCode = EXIT.UNEXPECTED; },
 );

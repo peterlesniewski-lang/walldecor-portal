@@ -4,6 +4,9 @@ import type { DbConfig } from './config.ts';
 
 export type Pool = sql.ConnectionPool;
 
+/** Błąd połączenia lub zapytania SQL (kod wyjścia 2) — w odróżnieniu od błędu programu (kod 5). */
+export const isDatabaseError = (error: unknown): boolean => error instanceof sql.MSSQLError;
+
 export function connectionConfig(db: DbConfig): sql.config {
     return {
         server: db.server,
