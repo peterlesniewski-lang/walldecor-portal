@@ -562,7 +562,7 @@ Sidebar admina: link „Subiekt” z licznikiem nieprzypisanych (badge znika gdy
 - [x] 3. `PORTAL_INTERNAL_MODE`: `sendEmail`, `forgot-password`, logowanie (credentials; także Google), plakietka w powłoce (`77e4521`).
 - [x] 4. `cashbackExpiresAt()` z `CASHBACK_EXPIRY_MONTHS` w trzech miejscach (`b9934e3`).
 - [x] 5. `.env.example`, Loop 7, `CLAUDE.md`, `progress.md`.
-- [x] Testy (329/329), tsc (19× TS5097), build, e2e, checklist §5.
+- [x] Testy (353/353 po poprawkach z przeglądów), tsc (18× TS5097 — o jeden mniej, `subiektMapping.test.ts` ładuje `mapping.ts` przez hook), build, e2e, checklist §5.
 
 #### DOWÓD
 
@@ -652,6 +652,8 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 - [ ] `positions_json` jest `MEDIUMTEXT` (16 MB), `remarks` `VARCHAR(4000)` z walidacją po stronie API; baza nie ma obsługi `DB_PORT` — jeśli MySQL produkcyjny nie słucha na 3306, dopisać w `db.ts`.
 - [ ] Smoke test: `curl` z pustą paczką (`documents: []`) → 200, run DONE w panelu. `curl` ze złym tokenem → 401.
 - [ ] Nadać kody wszystkim aktywnym architektom w panelu (lista z `/dashboard/admin/architects`).
+- [ ] Po wdrożeniu kliknąć „Nadaj brakujące kody” na liście architektów (Loop 4b; przycisk widzi tylko ADMIN, znika, gdy wszyscy mają kod) i sprawdzić kolumnę „Kod”.
+- [ ] Import CSV w trybie wewnętrznym zakłada konta architektów z kodem, ale pomija mail powitalny z hasłem tymczasowym (`[internal-mode] pominięto mail ARCHITECT_REGISTERED …` w logu). Onboarding tych architektów idzie później, przy otwarciu portalu, mailem „ustaw hasło” (zob. pamięć „Mail startowy do architektów”).
 - [ ] Na PC z bazą: `.env` agenta z adresem `https://archi.walldecor.pl`, `npm run sync -- --dry-run`, przegląd pliku, potem `npm run sync`. Przegląd skrzynki nieprzypisanych i ręczne przypisanie historycznych dokumentów.
 - [ ] Po pierwszym pełnym imporcie: porównać dla 3 architektów sumę pozycji SUBIEKT w portalu z sumą netto ich FS w GT (raport w GT filtrowany po polu własnym). Różnice wyjaśnić przed ogłoszeniem architektom.
 - [ ] Aktualizacja `PROGRESS.md` (max 10 punktów) i `CLAUDE.md` (sekcja „Current task”).

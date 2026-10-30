@@ -2,7 +2,7 @@
 
 Plan: `PLAN-SUBIEKT-2026-10-29.md`, sekcja „Loop 4b”. Gałąź `subiekt/loop-4b-internal-mode`.
 
-**Wynik:** zakres 1–5 zrobiony; testy, tsc i build zielone. E2E zielone **po poprawkach skryptu i powtórzonych przebiegach** (faza A: pierwszy przebieg 11/14 przez błędny selektor, po poprawce i ponownym zasianiu bazy 14/14; faza B: 13/15, dwa kroki rejestracji powtórzone osobno 2/2 po dopisaniu wymaganego hasła w skrypcie) — szczegóły przy fazach. Po przeglądzie spec dodane poprawki i faza C (sekcja „Poprawki po przeglądzie” na końcu). Odstępstwa i uwagi przed nią.
+**Wynik:** zakres 1–5 zrobiony; testy, tsc i build zielone. E2E zielone **po poprawkach skryptu i powtórzonych przebiegach** (faza A: pierwszy przebieg 11/14 przez błędny selektor, po poprawce i ponownym zasianiu bazy 14/14; faza B: 13/15, dwa kroki rejestracji powtórzone osobno 2/2 po dopisaniu wymaganego hasła w skrypcie) — szczegóły przy fazach. Po przeglądzie spec dodane poprawki i faza C, po przeglądzie jakości kolejne poprawki i faza D (sekcje „Poprawki po przeglądzie …” na końcu). Odstępstwa i uwagi przed nią.
 
 ## Commity
 
@@ -268,3 +268,54 @@ RESULT phase C: 6/6 passed
 ```
 
 Log serwera: `[internal-mode] pominięto mail ARCHITECT_REGISTERED do ewa.pominieta@dev.local`, 3× `ARCHITECT_INVITED` (2 przy „Wyślij niewysłane”, 1 przy „Wyślij” w wierszu). Zrzuty: `C1-register-skipped-info`, `C2-invitations-skipped`, `C3-invitation-resend-info` (`<scratchpad>/loop4b/shots/`). Skrypt: `<scratchpad>/loop4b/e2e-c.mjs`.
+
+## Poprawki po przeglądzie jakości (2026-10-30)
+
+| SHA | Temat |
+|---|---|
+| `31963c2` | fix(subiekt): zero-pad numeric remarks markers (#A-1 → A-001) |
+| `1e7e262` | fix(subiekt): retry code-assigning transactions once on MySQL conflicts |
+| `3b674c6` | fix(cashback): cap expiry at 120 months, clamp month end, warn once |
+| `b45b409` | fix(mail): tolerate a missing address in the internal-mode gate; update comment |
+| `1a8e091` | fix(auth): Google refusal in internal mode lands on our sign-in page |
+| `04c3d1a` | refactor(auth): one shared constant for the login rate-limit message |
+| `1e06b37` | fix(auth): explicit callbackUrl for credentials sign-in |
+
+1. **Znacznik w uwagach:** sufiks czysto liczbowy przez `formatSubiektCode` (`#A-1`, `#A-01`, `#A-0001` → `A-001`, `#a42` → `A-042`, `#A-1200` → `A-1200`; `#A-12X` bez zmian). `formatSubiektCode` w czystym `src/lib/subiekt/codeFormat.ts` (mapping.ts nie ciągnie bazy); `codes.ts` go re-eksportuje. `normalizeSubiektCode` zostaje w `actions/architects.ts` — duplikatu nie było, a plik `'use server'` nie może eksportować funkcji synchronicznej. `subiektMapping.test.ts` ładuje teraz `mapping.ts` przez hook rozwiązywania (stąd 18 zamiast 19 TS5097).
+2. **Współbieżność kodów:** `withSubiektCodeRetry(work)` = `withTransaction` z jedną powtórką przy 1213 (deadlock) lub 1062 / `SQLITE_CONSTRAINT_UNIQUE` na `subiekt_code` (duplikat e-maila nie jest powtarzany); utrzymujący się konflikt → „Nie udało się nadać kodu architekta — w tej samej chwili zapisano inne konto. Spróbuj ponownie.” (tak samo dla utrzymującego się deadlocku). Wewnątrz cudzej transakcji bez powtórki. Używają go import CSV, `registerArchitect`, `accept-invitation` (cała transakcja zaproszenia, stan wyniku zerowany na początku próby) i `assignMissingSubiektCodesOp`. `nextSubiektCode` rzuca poza transakcją (`inTransaction()` w `db.ts`). Komentarz w nagłówku `codes.ts` opisuje teraz faktyczne zachowanie MySQL (blokady luki nie serializują).
+3. **Cashback:** `CASHBACK_EXPIRY_MONTHS` 1–120 (121 → 12 z ostrzeżeniem); koniec miesiąca przycinany (31.08.2026 + 6 → 28.02.2027, 31.08.2027 + 6 → 29.02.2028, 29.02.2028 + 12 → 28.02.2029); ostrzeżenie raz na proces dla danej wartości (zmienna stała w procesie, funkcja wołana per pozycja).
+4. **sendEmail:** `(to ?? '').trim()` — brak adresu w trybie wewnętrznym = pominięcie, nie wyjątek; komentarz o wywołujących poprawiony.
+5. **Google:** `internalModeSignInRefusal(role)` (czysta, testowana na rolach ADMIN/STAFF/ARCHI/null/'' z i bez zmiennej) → `/auth/signin?error=InternalMode`; strona logowania mapuje kod przez `signInErrorMessage` (`useSyncExternalStore`, bez rozjazdu hydratacji). **Znalezione w przeglądarce (faza D, pierwszy przebieg):** po wejściu na `?error=InternalMode` poprawne logowanie admina dawało „Błędny email lub hasło”, bo next-auth bez `callbackUrl` bierze bieżący adres i czyta `res.error` z jego parametru `error` → `1e06b37` dodaje `callbackUrl: '/dashboard'` (test źródłowy był czerwony przed poprawką).
+6. **Stała** `LOGIN_RATE_LIMIT_MESSAGE` w `src/lib/authMessages.ts` (authorize + strona logowania).
+7. Plan: licznik testów poprawiony, Loop 7 — „Nadaj brakujące kody” po wdrożeniu i uwaga o imporcie CSV w trybie wewnętrznym.
+
+### E2E faza D (strona logowania po przekierowaniu z odmowy Google; `next start`, `PORTAL_INTERNAL_MODE=1`)
+
+Pierwszy przebieg: `D1 PASS`, `D2 FAIL` (skrypt liczył `#__next-route-announcer__` jako alert), `D3` timeout — prawdziwy błąd opisany w pkt 5. Po poprawce `1e06b37`, przebudowie i poprawce selektora:
+
+```
+PASS D1 ?error=InternalMode → komunikat o przygotowaniu
+PASS D2 nieznany kod → brak komunikatu
+PASS D3 admin loguje się z tej strony (komunikat z adresu nie blokuje) — http://localhost:3601/dashboard/admin
+PASS D4 brak błędów konsoli / hydratacji
+RESULT phase D: 4/4 passed
+```
+
+### Bramka po poprawkach jakości
+
+```
+$ npm test
+ℹ tests 353
+ℹ pass 353
+ℹ fail 0
+(339 → 353: subiektMapping +1, subiektCodes +7, cashbackExpiry +3, internalMode +3)
+
+$ npx tsc --noEmit | grep -oE "error TS[0-9]+" | sort | uniq -c
+  18 error TS5097
+
+$ npm run build      (po ostatniej zmianie kodu, 1e06b37)
+✓ Compiled successfully in 2.4s
+  Finished TypeScript in 2.0s ...
+✓ Generating static pages using 14 workers (23/23) in 173ms
+(exit 0)
+```
