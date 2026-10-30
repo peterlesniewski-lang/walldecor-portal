@@ -219,3 +219,14 @@ test('fetchPayerHistory: ZK architektów płatników FS \'+\' z okresu (bez limi
         invoicesOfPayers: async () => { throw new Error('nie powinno pytać'); },
     }), []);
 });
+
+test('znacznik korzenia tylko z kodem liczbowym: „#Adam” w Uwagach nie robi ze zwykłej sprzedaży dokumentu architekta', () => {
+    const reasonFor = (uwagi: string) => selectChains([h(1, 'ZK', { dok_Uwagi: uwagi })], OPTIONS).documents[0]?.rootReason ?? null;
+    assert.equal(reasonFor('Zamówił #Adam z działu'), null);
+    assert.equal(reasonFor('#A-0002x'), null);
+    assert.equal(reasonFor('#AB12'), null);
+    assert.equal(reasonFor('pilne #A-0002, dzwonić'), 'MARKER');
+    assert.equal(reasonFor('#a_7'), 'MARKER');
+    assert.equal(reasonFor('#A123456'), 'MARKER');
+    assert.equal(reasonFor('#A1234567'), null, 'najwyżej 6 cyfr');
+});

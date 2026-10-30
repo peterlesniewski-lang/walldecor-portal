@@ -5,8 +5,12 @@
 /** dok_Typ w bazie GT (zweryfikowane 30.10.2026). */
 export const GT_DOC_TYPE = { ZK: 16, FS: 2, KFS: 6, WZ: 11 } as const;
 
-/** Znacznik architekta w Uwagach; ten sam wzorzec co w portalu (src/lib/subiekt/mapping.ts). */
-export const ARCHITECT_MARKER = /#A[-_]?[A-Za-z0-9]{1,16}/i;
+/**
+ * Znacznik architekta w Uwagach: `#A` + opcjonalnie `-`/`_` + 1–6 cyfr, bez litery/cyfry zaraz po nim („#A-0002”,
+ * „#a_7”). Węższy niż w portalu (src/lib/subiekt/mapping.ts, `[A-Za-z0-9]{1,16}`), żeby słowo w Uwagach
+ * (np. „#Adam”) nie zrobiło ze zwykłej sprzedaży dokumentu architekta; portal i tak czyta kod z `remarks`.
+ */
+export const ARCHITECT_MARKER = /#A[-_]?\d{1,6}(?![A-Za-z0-9])/i;
 
 /** Nagłówek dokumentu z queries.ts (SQL_CHAIN_HEADERS). Daty jako 'YYYY-MM-DD' (CONVERT … 23 w SQL). */
 export interface HeaderRow {

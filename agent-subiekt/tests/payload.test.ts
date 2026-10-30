@@ -114,3 +114,20 @@ test('buildPayloads: dokument, którego nie da się zbudować, trafia do errors,
     assert.equal(result.errors[0].externalId, 2);
     assert.match(result.errors[0].message, /kontrahent/i);
 });
+
+test('brak lub niepoprawna kwota / ilość → PayloadError (nie 0 ani NaN); pusty lub zbyt długi numer → PayloadError', () => {
+    const build = (h: Partial<HeaderRow>, p: Partial<PositionRow> = {}) => () =>
+        buildDocument({ selected: selected(header(1, 'ZK', h)), contractor, isPaid: false, parentPositions: null, positions: [row(10, 1, p)] });
+    for (const [label, fn] of [
+        ['dok_WartNetto null', build({ dok_WartNetto: null as unknown as number })],
+        ['dok_WartBrutto NaN', build({ dok_WartBrutto: Number.NaN })],
+        ['ob_WartNetto null', build({}, { ob_WartNetto: null as unknown as number })],
+        ['ob_CenaNetto Infinity', build({}, { ob_CenaNetto: Number.POSITIVE_INFINITY })],
+        ['ob_Ilosc null', build({}, { ob_Ilosc: null as unknown as number })],
+        ['dok_NrPelny null', build({ dok_NrPelny: null as unknown as string })],
+        ['dok_NrPelny 65 znaków', build({ dok_NrPelny: 'Z'.repeat(65) })],
+    ] as const) {
+        assert.throws(fn, (error: unknown) => error instanceof PayloadError && error.externalId === 1, label);
+    }
+    assert.equal(build({ dok_NrPelny: 'Z'.repeat(64) })().number.length, 64);
+});

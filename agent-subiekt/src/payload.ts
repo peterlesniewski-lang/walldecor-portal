@@ -49,15 +49,24 @@ const MAX_NAME = 255;
 const MAX_UNIT = 16;
 const MAX_REMARKS = 4000;
 const MAX_NIP = 20;
+/** Limit numeru dokumentu w walidatorze portalu. */
+const MAX_NUMBER = 64;
 
 /** Zaokrąglenie dziesiętne (przesunięcie wykładnika omija błąd 1.005 * 100), symetryczne względem zera. */
 export function roundTo(value: number, digits: number): number {
-    const n = Number(value);
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new RangeError(`niepoprawna liczba: ${String(value)}`);
+    const n = value;
     const shifted = Math.round(Number(`${Math.abs(n)}e${digits}`));
     const result = Number(`${shifted}e-${digits}`);
     return n < 0 && result !== 0 ? -result : result;
 }
-const round2 = (value: number) => roundTo(value, 2);
+/** Kwota / ilość z bazy: NULL, NaN, ±∞ → PayloadError (dokument pominięty z opisem), nie 0 ani NaN w paczce. */
+function amount(value: unknown, digits: number, docId: number, label: string): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new PayloadError(docId, `${label}: brak lub niepoprawna wartość (${String(value)})`);
+    }
+    return roundTo(value, digits);
+}
 
 const clean = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, ' ').trim();
 
@@ -78,10 +87,10 @@ function buildPosition(row: PositionRow, docId: number): SubiektPositionPayload 
         ordinal: row.ob_DokHanLp,
         product_id: row.ob_TowId ?? null,
         name,
-        quantity: roundTo(row.ob_Ilosc, 4),
+        quantity: amount(row.ob_Ilosc, 4, docId, `pozycja ${row.ob_Id}: ob_Ilosc`),
         unit: clean(row.ob_Jm).slice(0, MAX_UNIT),
-        unit_price_net: round2(row.ob_CenaNetto),
-        net_total: round2(row.ob_WartNetto),
+        unit_price_net: amount(row.ob_CenaNetto, 2, docId, `pozycja ${row.ob_Id}: ob_CenaNetto`),
+        net_total: amount(row.ob_WartNetto, 2, docId, `pozycja ${row.ob_Id}: ob_WartNetto`),
         corrects_position_external_id: null,
     };
 }
@@ -118,6 +127,7 @@ export function buildDocument(input: DocumentInput): SubiektDocumentPayload {
     if (!type) throw new PayloadError(h.dok_Id, `nieobsługiwany dok_Typ ${h.dok_Typ}`);
     const number = clean(h.dok_NrPelny);
     if (!number) throw new PayloadError(h.dok_Id, 'pusty numer dokumentu');
+    if (number.length > MAX_NUMBER) throw new PayloadError(h.dok_Id, `numer dłuższy niż ${MAX_NUMBER} znaki: „${number}”`);
     if (!DATE_RE.test(h.dok_DataWyst ?? '')) throw new PayloadError(h.dok_Id, `niepoprawna data wystawienia „${h.dok_DataWyst}”`);
     const contractor = contractorFields(h.dok_Id, input.contractor);
 
@@ -140,8 +150,8 @@ export function buildDocument(input: DocumentInput): SubiektDocumentPayload {
         contractor_nip: contractor.nip,
         architect_code: null,
         parent_external_id: input.selected.parentId,
-        net_total: round2(h.dok_WartNetto),
-        gross_total: round2(h.dok_WartBrutto),
+        net_total: amount(h.dok_WartNetto, 2, h.dok_Id, 'dok_WartNetto'),
+        gross_total: amount(h.dok_WartBrutto, 2, h.dok_Id, 'dok_WartBrutto'),
         is_paid: input.isPaid,
         remarks: remarks || null,
         positions,
