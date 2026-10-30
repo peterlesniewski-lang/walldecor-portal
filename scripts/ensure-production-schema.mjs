@@ -141,6 +141,26 @@ const requiredTables = [
             error TEXT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     },
+    // 021 (loop 5b): uzgodnienia faktur z zamówieniem — jeden wiersz na łańcuch (korzeń ZK) w projekcie.
+    {
+        name: 'subiekt_reconciliations',
+        createSql: `CREATE TABLE IF NOT EXISTS subiekt_reconciliations (
+            id VARCHAR(36) NOT NULL PRIMARY KEY,
+            project_id VARCHAR(36) NOT NULL,
+            root_external_id INTEGER NOT NULL,
+            status VARCHAR(16) NOT NULL,
+            zk_net DECIMAL(12,2) NOT NULL,
+            invoiced_net DECIMAL(12,2) NOT NULL,
+            fingerprint VARCHAR(2000) NOT NULL,
+            amounts_json MEDIUMTEXT NULL,
+            note VARCHAR(500) NULL,
+            opened_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            resolved_at DATETIME NULL,
+            resolved_by VARCHAR(36) NULL,
+            UNIQUE KEY uq_subiekt_reconciliations_chain (project_id, root_external_id),
+            INDEX idx_subiekt_reconciliations_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    },
 ];
 
 // 018: szablon maila z zaproszeniem — dodawany tylko, gdy brak slugu (ręczne edycje admina zostają).
