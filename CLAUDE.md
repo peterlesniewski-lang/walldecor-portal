@@ -6,7 +6,7 @@
 - Loop 5: kod agenta `agent-subiekt/` gotowy (gałąź `subiekt/loop-5-agent`, testy `npm run test:agent`), czeka na `--probe` / `--dry-run` na PC `SERWER` wg `agent-subiekt/README.md`; potem Loop 7 (wdrożenie, wyłącznie na polecenie użytkownika)
 - Każdy loop w osobnym PR; nie zaczynać kolejnego bez zielonej bramki i sekcji DOWÓD
 - Prowizje wyłącznie przez `src/lib/projectItems.ts`; pozycje `source = 'SUBIEKT'` bez edycji ręcznej; akcje admina Subiekta zwracają `{ ok, error }` zamiast rzucać błędy domenowe
-- Otwarte kwestie do decyzji użytkownika: plan §6 (pkt 9–17)
+- Otwarte kwestie do decyzji użytkownika: plan §6 (pkt 9–18)
 
 
 ## After each completed task

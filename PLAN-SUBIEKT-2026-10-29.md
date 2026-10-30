@@ -668,6 +668,29 @@ Test integracyjny (poza wymaganiami planu): Azure SQL Edge 15.0 (ARM64, Docker) 
 - `install-task.ps1` / `uninstall-task.ps1`: parser PowerShell 7.4 — 0 błędów; nazwa zadania „Portal Archi – sync Subiekt” odczytana poprawnie (UTF-8 z BOM, CRLF, `.gitattributes`). Rejestracji zadania nie da się sprawdzić poza Windows — krok 5.
 - Odczyt jako `portal_reader`: `UPDATE dbo.dok__Dokument …` → „The UPDATE permission was denied”.
 
+#### DOWÓD — poprawki po przeglądzie jakości (2026-10-30)
+
+Commity `8140a97` (przodkowie spoza okresu), `1dc1d20` (heurystyka '+' na całej historii płatnika), `351f642` (kod 4 przy dokumentach do ręcznej obsługi), `ae1a5fb` (kwoty / numer → PayloadError; znacznik korzenia tylko `#A` + 1–6 cyfr), `831a54e` (log przed konfiguracją, ścisłe `--since`, kod 5, BOM w `.env`), `a3e3a7e` (timeout 90 s, kontrola odpowiedzi, 429, kolejność stron rodzic → dziecko), `40ca984` (dzienny log bez nazw klientów, `logs/last-sync.txt`, retencja 90 dni), `2d84a35` (sonda: ZK/FS wg `dok_Status`), `928ed2a` (`install-task.ps1 -Force` + `ZeroFreeBSTR`, README). Portal `src/` i `tests/` bez zmian (`git diff 6fba483 -- src tests` pusty).
+
+Bramka (Node 25.8.1):
+
+```
+npm run test:agent          → ℹ tests 54 · pass 54 · fail 0   (chain 18, send 10, payload 6, config 6, paid 4, report 4, contract 2, probe 2, queries 2)
+npm test                    → ℹ tests 353 · pass 353 · fail 0
+npx tsc --noEmit            → 18 × error TS5097 (bez innych)
+cd agent-subiekt && npx tsc -p tsconfig.json --noEmit → exit 0
+cd agent-subiekt && npm run build → exit 0
+npm run build               → exit 0 (Compiled successfully, 23/23 stron)
+install-task.ps1            → parser PowerShell 7.4: 0 błędów
+```
+
+Ponowny test integracyjny (SQL Edge 15.0, baza z pierwszego testu + `dok_Status` + nowe przypadki: ZK 1/PUŁ/01/2024 → FS 2/PUŁ/02/2024 → KFS 9/PUŁ/10/2026; scenariusz z przeglądu — płatnik 900, ZK 5/PUŁ/01/2025 sprzed okresu, ZK 50/PUŁ/06/2025, FS 70/PUŁ/07/2025 '+'; ZK z „#Adam dzwonił”), `--since 2025-04-30`:
+
+- `--probe` → `OK: 8 tabel, 47 kolumn`, `Korzenie: 5`, `Heurystyka FS '+': 1, niejednoznaczne: 1`, `ZK dok_Status 1: 5`, `FS dok_Status 1: 4`, `WYNIK: OK (kod 0)`.
+- `--dry-run` → **exit 4**; `DO RĘCZNEJ OBSŁUGI: 1 … — kod wyjścia 4`; korzeń `ZK 1/PUŁ/01/2024` z `FS 2/PUŁ/02/2024` i `KFS 9/PUŁ/10/2026` (przodkowie spoza okresu); `FS 70/PUŁ/07/2025 … kandydaci: ZK 50/PUŁ/06/2025, ZK 5/PUŁ/01/2025` (nie przypięta do ZK z okresu); ZK z „#Adam” poza paczką; FS 240 nadal przypięta do ZK 115 (ZK 1/2024 ma już FS).
+- sync na `next dev` (świeża baza) → exit 4 dwa razy: `przyjęte 11, nieprzypisane 3`, potem `bez zmian 11`; `subiekt_documents` 1000/1001/31700 `AUTO` (łańcuch 1000), 31800 `UNASSIGNED NO_ARCHITECT`; dzienny log bez nazw kontrahentów (0 trafień), szczegóły i „WYNIK WYSYŁKI” w `logs/last-sync.txt`.
+- `env -i node dist/main.js --since 2026-02-30` → exit 1, w `logs/RRRR-MM-DD.log`: `ERROR Błąd konfiguracji: --since: „2026-02-30” nie jest poprawną datą …`.
+
 ---
 
 ### Loop 6 — Scenariusz końcowy „dzień z życia” (na czystej bazie dev)
@@ -741,5 +764,6 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 13. **Podtypy FS (2026-10-30).** W bazie są FS o `dok_Podtyp` 0, 1, 3, 4, 5; znaczenie nieznane (podejrzenie: faktury zaliczkowe i końcowe). Agent wysyła wszystkie podtypy, portal liczy je jednakowo, więc faktura zaliczkowa + końcowa może podwoić sprzedaż projektu. Do ustalenia po `--probe` (przykłady każdego podtypu): które podtypy pominąć lub jak je łączyć.
 14. **FS z wielu dokumentów (`dok_DoDokNrPelny = '+'`).** Heurystyka agenta (jeden kandydat ZK tego samego płatnika) jest przybliżeniem; do potwierdzenia na dry-runie, czy GT ma tabelę powiązań wielu źródeł, którą można czytać zamiast heurystyki.
 15. **Pozycje KFS (Loop 5, hipoteza do sprawdzenia sondą).** Agent pomija na KFS wiersze `ob_Znak = −1` (zakładany stan „przed korektą”) i wysyła wiersze po korekcie, zgodnie z konwencją portalu (pozycja KFS = stan po korekcie, `net_total` dokumentu = różnica). Struktura KFS w bazie biura nie była w raporcie 30.10.2026 — sekcja sondy „Pozycje najnowszej KFS …” pokazuje `ob_Znak`/`ob_DoId`; jeśli wiersze nie mają par −1/1, trzeba zmienić `payload.ts`.
-16. **FS '+' bez oznaczonego ZK płatnika (Loop 5).** Agent wypisuje do ręcznej obsługi tylko FS '+', których płatnik ma oznaczony ZK w zbiorze (≥ 2 kandydatów albo 0, bo ZK ma już FS / późniejszą datę); FS '+' płatników bez żadnego ZK architekta jest tylko liczona jako zwykła sprzedaż. Do potwierdzenia na dry-runie.
-17. **Statusy dokumentów GT (Loop 5).** Agent nie filtruje po `dok_Status` (np. dokumenty anulowane / odłożone) — plan tego nie przewiduje, a znaczenia wartości nie zweryfikowano. Sprawdzić na dry-runie, czy w zbiorze nie ma anulowanych FS.
+16. **FS '+' bez jednoznacznego ZK (Loop 5, po przeglądzie jakości).** Heurystyka liczy się na całej historii płatnika (ZK architektów i ich FS/WZ bez limitu daty; starsze FS '+' też „zajmują” swoje ZK), więc wynik nie zależy od początku okna. Do ręcznej obsługi (lista w podsumowaniu, kod wyjścia 4) idą FS '+', których płatnik ma ZK architekta, ale kandydatów jest 0 lub ≥ 2; FS '+' płatników bez żadnego ZK architekta jest tylko liczona jako zwykła sprzedaż. Do potwierdzenia na dry-runie.
+17. **Statusy dokumentów GT (Loop 5).** Agent nie filtruje po `dok_Status` (np. dokumenty anulowane / odłożone) — znaczenia wartości nie zweryfikowano. Sonda pokazuje liczność ZK i FS ze zbioru wg `dok_Status`; na tej podstawie zdecydować o filtrze.
+18. **Znacznik w Uwagach: agent węższy niż portal (Loop 5, po przeglądzie jakości).** Agent uznaje za korzeń tylko `#A` + 1–6 cyfr (`/#A[-_]?\d{1,6}(?![A-Za-z0-9])/i`), portal czyta kod szerszym `/#A[-_]?([A-Za-z0-9]{1,16})/i` i bierze pierwsze trafienie — Uwagi „#Adam … #A-0002” dadzą w portalu kod „A-DAM” (dokument w skrzynce „nieznany kod”). Do decyzji: zawęzić wzorzec w portalu.

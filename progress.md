@@ -542,3 +542,11 @@ migrations/
 - Test integracyjny na Azure SQL Edge (syntetyczna baza GT) + `next dev`: sonda 0 i 2 przy brakującej kolumnie, dry-run 7 dokumentów bez zwykłej sprzedaży, sync 200 accepted 7 → unchanged 7, zły sekret 401 / exit 3; wykrył błąd stylu 23 przy `@since` (poprawione).
 - Bramka: `npm run test:agent` 28/28, `npm test` 353/353, tsc portalu 18× TS5097, tsc agenta 0, build agenta i portalu OK.
 - Otwarte (plan §6 pkt 15–17): pary `ob_Znak` na KFS, FS '+' bez ZK płatnika, brak filtra `dok_Status`. Kroki 3–5 (probe, dry-run, harmonogram na PC `SERWER`) wykonuje użytkownik.
+
+## 2026-10-30 — Subiekt loop 5: poprawki agenta po przeglądzie jakości (dowód: plan, Loop 5 „DOWÓD — poprawki po przeglądzie jakości”)
+
+- Przodkowie dokumentów z okresu doczytywani bez limitu daty (`fetchAncestors`, ≤ 32 poziomy); o pochodnych decyduje okres. Heurystyka FS '+' na całej historii płatnika (`fetchPayerHistory`), więc nie zmienia się wraz z oknem.
+- Kod 4, gdy są dokumenty do ręcznej obsługi (FS '+' bez jednoznacznego ZK, błędy danych); kod 5 dla błędu programu; błędy konfiguracji trafiają do `logs/`; `--since` odrzuca nieistniejące dni; `.env` z BOM działa.
+- Dzienny log tylko z liczbami i ostrzeżeniami, szczegóły w nadpisywanym `logs/last-sync.txt`, retencja 90 dni. Timeout żądania 90 s, kontrola treści odpowiedzi, strony w kolejności rodzic → dziecko.
+- Znacznik korzenia w agencie tylko `#A` + 1–6 cyfr (portal bez zmian — plan §6 pkt 18). Sonda: ZK/FS wg `dok_Status`. `install-task.ps1 -Force` + `ZeroFreeBSTR`.
+- Bramka: `test:agent` 54/54, `npm test` 353/353, tsc portalu 18× TS5097, tsc agenta 0, oba buildy OK; ponowny test na SQL Edge + `next dev` zgodny z oczekiwaniami.
