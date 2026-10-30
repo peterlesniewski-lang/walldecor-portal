@@ -627,9 +627,13 @@ export default function AdminProjectPipeline({
         setLoadingId(project.id);
         setActionError('');
         try {
-            await updateProjectStatus(project.id, status, completionNote);
+            const result = await updateProjectStatus(project.id, status, completionNote);
             setConfirming(null);
             setSelectedProject(null);
+            if (!result.success) {
+                setActionError(`„${project.name}”: ${result.error}`);
+                return;
+            }
             router.refresh();
         } catch (err) {
             console.error(err);

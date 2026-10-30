@@ -83,7 +83,7 @@ test('ItemRow: type override through overrideItemType, behind a permission prop'
 test('admin project page: suggested status, documents card, permissions from rbac', async () => {
     const page = await src(`${PROJECT_DIR}/page.tsx`);
     const client = await src(`${PROJECT_DIR}/AdminProjectDetailClient.tsx`);
-    assert.match(page, /computeSuggestedStatus\(/);
+    assert.match(page, /getSuggestedStatus\(/, "Loop 5b: podpowiedź z powodem blokady (computeSuggestedStatus bez powodu)");
     assert.match(page, /getProjectSubiektSummary\(/);
     assert.match(page, /SuggestedStatusBanner/);
     assert.match(page, /canManageFinancialOperations\(session\.user\.role\)/);
