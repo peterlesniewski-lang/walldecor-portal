@@ -99,7 +99,11 @@ test('(a) syncChainItems only touches items of the document in its current proje
 });
 
 test('(b) clearChainItems on a project in progress deletes chain items and their PENDING, other chains stay', async () => {
-    await sync([doc(200, 'ZK'), doc(210, 'FS', { parent_external_id: 200, positions: [pos(2100), pos(2101, { product_id: null, net_total: 300 })] })]);
+    // FS odzwierciedla ZK (MIRROR, loop 5b) → pozycje z FS.
+    await sync([
+        doc(200, 'ZK', { positions: [pos(2000), pos(2001, { product_id: null, net_total: 300 })] }),
+        doc(210, 'FS', { parent_external_id: 200, positions: [pos(2100), pos(2101, { product_id: null, net_total: 300 })] }),
+    ]);
     const projectId = docRow(200).project_id;
     await sync([doc(220, 'ZK')]); // inny łańcuch, własny projekt
     assert.equal(itemsOfProject(projectId).length, 2);
@@ -145,8 +149,10 @@ test('(b) clearDocumentItems removes only the given document items', async () =>
     assert.equal(itemsOfProject(projectId).length, 0);
 });
 
+// (c) Mechanika korekt KFS na pozycjach FS: łańcuch bez ZK (korzeń FP → INVOICE_ONLY). Z korzeniem ZK korekta
+// rozbija odzwierciedlenie ZK i łańcuch przechodzi na uzgodnienie (loop 5b, tests/subiektReconcileSync.test.ts).
 test('(c) KFS applied (800), re-sent with a target that no longer matches → UNMATCHED_CORRECTION and FS item back to 1000', async () => {
-    await sync([doc(600, 'ZK'), doc(610, 'FS', { parent_external_id: 600, positions: [pos(6100)] })]);
+    await sync([doc(600, 'FP', { architect_code: 'A-001' }), doc(610, 'FS', { parent_external_id: 600, positions: [pos(6100)] })]);
     const projectId = docRow(600).project_id;
     await sync([kfsDoc(620, 610, [[6100, 800]])]);
     assert.equal(docRow(620).assignment_status, 'AUTO');
@@ -163,7 +169,7 @@ test('(c) KFS applied (800), re-sent with a target that no longer matches → UN
 });
 
 test('(c) KFS re-sent with another (matching) target → the previously corrected position drops the old correction', async () => {
-    await sync([doc(700, 'ZK'), doc(710, 'FS', { parent_external_id: 700, positions: [pos(7100), pos(7101, { ordinal: 2 })] })]);
+    await sync([doc(700, 'FP', { architect_code: 'A-001' }), doc(710, 'FS', { parent_external_id: 700, positions: [pos(7100), pos(7101, { ordinal: 2 })] })]);
     await sync([kfsDoc(720, 710, [[7100, 600]])]);
     approx(itemByPosition(7100)[0].amount_net, 600);
 

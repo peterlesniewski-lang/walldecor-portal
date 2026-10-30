@@ -4,6 +4,11 @@ import { query } from '@/lib/db';
 import { AMOUNT_EPSILON as EPSILON } from './mapping';
 
 export type SuggestedStatus = 'PRZYJĘTY' | 'W_REALIZACJI' | 'ZAKOŃCZONY';
+/** Dlaczego podpowiedź jest „zablokowana”: RECONCILE_OPEN = projekt ma otwarte uzgodnienie faktur z zamówieniem (Loop 5b). */
+export type SuggestedStatusReason = 'RECONCILE_OPEN';
+
+/** Błąd domenowy updateProjectStatus(…, 'ZAKOŃCZONY') przy otwartym uzgodnieniu. */
+export const RECONCILE_OPEN_STATUS_ERROR = 'Projekt ma nieuzgodnione faktury z Subiekta. Uzgodnij je przed zakończeniem.';
 
 interface ProjectDocRow { type: string; net_total: number; is_paid: number }
 
@@ -20,11 +25,17 @@ const sumOf = (rows: ProjectDocRow[], type: string) =>
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/**
- * Brak dokumentów → null; brak FS → PRZYJĘTY; jakakolwiek FS niezapłacona → W_REALIZACJI;
- * wszystkie FS zapłacone i FS + KFS ≥ ZK (lub brak ZK) → ZAKOŃCZONY; zapłacone, ale poniżej ZK → W_REALIZACJI.
- */
-export async function computeSuggestedStatus(projectId: string): Promise<SuggestedStatus | null> {
+/** Czy projekt ma otwarte uzgodnienie faktur z zamówieniem (subiekt_reconciliations.status = 'OPEN'). */
+export async function hasOpenReconciliation(projectId: string): Promise<boolean> {
+    const [row] = await query<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM subiekt_reconciliations WHERE project_id = ? AND status = 'OPEN'",
+        [projectId]
+    );
+    return Number(row?.count ?? 0) > 0;
+}
+
+/** Podpowiedź z samych dokumentów (bez blokady uzgodnienia). */
+async function statusFromDocuments(projectId: string): Promise<SuggestedStatus | null> {
     const rows = await loadAssignedDocuments(projectId);
     if (rows.length === 0) return null;
 
@@ -35,6 +46,22 @@ export async function computeSuggestedStatus(projectId: string): Promise<Suggest
     const hasOrder = rows.some((r) => r.type === 'ZK');
     const invoiced = sumOf(rows, 'FS') + sumOf(rows, 'KFS');
     return !hasOrder || invoiced >= sumOf(rows, 'ZK') - EPSILON ? 'ZAKOŃCZONY' : 'W_REALIZACJI';
+}
+
+/**
+ * Brak dokumentów → null; brak FS → PRZYJĘTY; jakakolwiek FS niezapłacona → W_REALIZACJI;
+ * wszystkie FS zapłacone i FS + KFS ≥ ZK (lub brak ZK) → ZAKOŃCZONY; zapłacone, ale poniżej ZK → W_REALIZACJI.
+ * Otwarte uzgodnienie faktur (Loop 5b): nigdy ZAKOŃCZONY (zamiast niego W_REALIZACJI), `reason: 'RECONCILE_OPEN'`.
+ */
+export async function getSuggestedStatus(projectId: string): Promise<{ status: SuggestedStatus | null; reason: SuggestedStatusReason | null }> {
+    const status = await statusFromDocuments(projectId);
+    if (status === null || !(await hasOpenReconciliation(projectId))) return { status, reason: null };
+    return { status: status === 'ZAKOŃCZONY' ? 'W_REALIZACJI' : status, reason: 'RECONCILE_OPEN' };
+}
+
+/** Sam sugerowany status (getSuggestedStatus bez powodu) — dla applySuggestedStatus. */
+export async function computeSuggestedStatus(projectId: string): Promise<SuggestedStatus | null> {
+    return (await getSuggestedStatus(projectId)).status;
 }
 
 /** Kwoty netto do widoku projektu: zamówione (ZK), zafakturowane (FS + KFS, czyli po korektach), pozostało. */

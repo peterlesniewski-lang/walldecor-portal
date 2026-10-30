@@ -139,7 +139,7 @@ test('3. ZK with a one-off second position → 1 PRODUCT + 1 INSTALLATION withou
     assert.equal(commissionsOfItem(items[1].id).length, 0);
 });
 
-test('4. FS for the ZK (next page) → ZK items gone, FS items with invoice/order numbers, totals and commissions consistent', async () => {
+test('4. FS for the ZK with another amount (750 vs ZK 800) → loop 5b RECONCILE: ZK item stays with the invoice number, OPEN reconciliation', async () => {
     const zkItem = itemsOfDocument(100)[0];
     const projectId = docRow(100).project_id;
     const fs = doc(110, 'FS', { parent_external_id: 100, positions: [pos(1100, { quantity: 7.5, net_total: 750 })] });
@@ -152,16 +152,20 @@ test('4. FS for the ZK (next page) → ZK items gone, FS items with invoice/orde
     assert.equal(row.architect_id, ARCHI_A, 'architekt odziedziczony po ZK');
     assert.equal(row.root_external_id, 100);
 
-    assert.equal(itemsOfDocument(100).length, 0, 'pozycje ZK usunięte');
-    assert.equal(commissionsOfItem(zkItem.id).length, 0, 'PENDING pozycji ZK usunięta');
+    // FS nie odzwierciedla ZK (inna kwota), sumy się różnią → pozycje z ZK do czasu uzgodnienia przez admina
+    // (FS, która odzwierciedla ZK, zastępuje pozycje ZK — test 13 i tests/subiektReconcileSync.test.ts).
     const items = itemsOfProject(projectId);
     assert.equal(items.length, 1);
-    assert.equal(items[0].subiekt_document_id, row.id);
+    assert.equal(items[0].id, zkItem.id, 'pozycja ZK zostaje');
     assert.equal(items[0].invoice_number, 'FS 110/10/2026');
     assert.equal(items[0].order_number, 'ZK 100/10/2026');
-    const total = items.reduce((s, i) => s + Number(i.amount_net), 0);
-    approx(total, fs.net_total, 'suma pozycji = suma FS');
-    approx(pendingSum(projectId), 750 * RATE_A, 'PENDING = FS PRODUCT × stawka');
+    approx(items[0].amount_net, 800);
+    assert.equal(itemsOfDocument(110).length, 0, 'bez pozycji z FS');
+    assert.equal(commissionsOfItem(zkItem.id).length, 1);
+    approx(pendingSum(projectId), 800 * RATE_A, 'PENDING z ZK');
+    const reconciliation = db.prepare('SELECT * FROM subiekt_reconciliations WHERE project_id = ?').get(projectId) as any;
+    assert.equal(reconciliation.status, 'OPEN');
+    approx(reconciliation.invoiced_net, 750);
 });
 
 test('5. FS without parent and without code → UNASSIGNED NO_ARCHITECT, no project, no items', async () => {
@@ -219,12 +223,13 @@ test('7. FS before its ZK: NO_ROOT_DOCUMENT, then ZK arrives and the unchanged F
     assert.equal(itemsOfDocument(400).length, 0, 'pozycje ZK zastąpione fakturowymi');
 });
 
-test('8. KFS on a ZAKOŃCZONY project: FS item 1000 → 800 and a negative EARNED correction', async (t) => {
+test('8. KFS on a ZAKOŃCZONY ZK project (loop 6 step 8 after loop 5b): the mirror breaks → RECONCILE, FS item corrected to 0, ZK item EARNED, OPEN', async (t) => {
     t.mock.method(console, 'warn', () => {});
     await sync([doc(500, 'ZK'), doc(510, 'FS', { parent_external_id: 500, positions: [pos(5100)] })]);
     const projectId = docRow(500).project_id;
     const [item] = itemsOfDocument(510);
     approx(item.amount_net, 1000);
+    assert.equal(itemsOfDocument(500).length, 0, 'MIRROR: pozycje z FS');
 
     // Rozliczenie projektu jak w updateProjectStatus: status + PENDING → EARNED.
     db.prepare("UPDATE projects SET status = 'ZAKOŃCZONY' WHERE id = ?").run(projectId);
@@ -241,7 +246,48 @@ test('8. KFS on a ZAKOŃCZONY project: FS item 1000 → 800 and a negative EARNE
     assert.equal(row.project_id, projectId);
     assert.equal(row.root_external_id, 500);
 
-    const after = itemsOfDocument(510);
+    // FS po korekcie (800) nie odzwierciedla ZK (1000) → pozycje z ZK do uzgodnienia: pozycja FS korygowana do 0
+    // (wpis korygujący EARNED), pozycja ZK z EARNED; prowizja netto z 1000 do decyzji admina.
+    approx((db.prepare('SELECT amount_net FROM project_items WHERE id = ?').get(item.id) as any).amount_net, 0);
+    const [zkItem] = itemsOfDocument(500).filter((i) => Number(i.amount_net) > 0);
+    approx(zkItem.amount_net, 1000);
+    approx(commissionsOfItem(item.id).reduce((s, c) => s + Number(c.amount_net), 0), 0, 'FS: prowizja skorygowana do 0');
+    assert.equal(commissionsOfItem(zkItem.id)[0].status, 'EARNED');
+    approx(Number((db.prepare('SELECT SUM(amount_net) AS s FROM commissions WHERE project_id = ?').get(projectId) as any).s), 1000 * RATE_A);
+    const reconciliation = db.prepare('SELECT * FROM subiekt_reconciliations WHERE project_id = ?').get(projectId) as any;
+    assert.equal(reconciliation.status, 'OPEN');
+    approx(reconciliation.invoiced_net, 800);
+    assert.equal(itemsOfDocument(520).length, 0, 'KFS nie tworzy własnych pozycji');
+
+    // FS wysłana ponownie ze zmianą (np. opis) nie dopisuje korekt.
+    const commissionsBefore = (db.prepare('SELECT COUNT(*) AS c FROM commissions WHERE project_id = ?').get(projectId) as any).c;
+    await sync([doc(510, 'FS', { parent_external_id: 500, positions: [pos(5100, { name: 'Tapeta Test v2' })] })]);
+    assert.equal((db.prepare('SELECT COUNT(*) AS c FROM commissions WHERE project_id = ?').get(projectId) as any).c, commissionsBefore);
+});
+
+test('8b. KFS on a ZAKOŃCZONY project without ZK (FP root, INVOICE_ONLY): FS item 1000 → 800 and a negative EARNED correction', async (t) => {
+    t.mock.method(console, 'warn', () => {});
+    await sync([doc(540, 'FP', { architect_code: 'A-001' }), doc(550, 'FS', { parent_external_id: 540, positions: [pos(5500)] })]);
+    const projectId = docRow(540).project_id;
+    const [item] = itemsOfDocument(550);
+    approx(item.amount_net, 1000);
+
+    // Rozliczenie projektu jak w updateProjectStatus: status + PENDING → EARNED.
+    db.prepare("UPDATE projects SET status = 'ZAKOŃCZONY' WHERE id = ?").run(projectId);
+    db.prepare("UPDATE commissions SET status = 'EARNED' WHERE project_id = ? AND status = 'PENDING'").run(projectId);
+
+    const kfs = doc(560, 'KFS', {
+        parent_external_id: 550, net_total: -200,
+        positions: [pos(5600, { quantity: 8, net_total: 800, corrects_position_external_id: 5500 })],
+    });
+    const response = await sync([kfs]);
+    assert.equal(response.unassigned, 0);
+    const row = docRow(560);
+    assert.equal(row.assignment_status, 'AUTO');
+    assert.equal(row.project_id, projectId);
+    assert.equal(row.root_external_id, 540);
+
+    const after = itemsOfDocument(550);
     assert.equal(after.length, 1);
     approx(after[0].amount_net, 800);
     const comms = commissionsOfItem(item.id);
@@ -249,11 +295,11 @@ test('8. KFS on a ZAKOŃCZONY project: FS item 1000 → 800 and a negative EARNE
     assert.equal(comms[1].status, 'EARNED');
     approx(comms[1].amount_net, -200 * RATE_A, 'korekta ujemna');
     approx(comms.reduce((s, c) => s + Number(c.amount_net), 0), 800 * RATE_A);
-    assert.equal(itemsOfDocument(520).length, 0, 'KFS nie tworzy własnych pozycji');
+    assert.equal(itemsOfDocument(560).length, 0, 'KFS nie tworzy własnych pozycji');
 
     // FS wysłana ponownie ze zmianą (np. opis) nie cofa korekty KFS.
-    await sync([doc(510, 'FS', { parent_external_id: 500, positions: [pos(5100, { name: 'Tapeta Test v2' })] })]);
-    const resynced = itemsOfDocument(510);
+    await sync([doc(550, 'FS', { parent_external_id: 540, positions: [pos(5500, { name: 'Tapeta Test v2' })] })]);
+    const resynced = itemsOfDocument(550);
     approx(resynced[0].amount_net, 800, 'kwota po korekcie zostaje');
     assert.equal(resynced[0].description, 'Tapeta Test v2');
     assert.equal(commissionsOfItem(item.id).length, 2, 'bez nowych korekt');
@@ -286,7 +332,7 @@ test('10. computeSuggestedStatus and getProjectSubiektSummary from assigned docu
     const paid = await sync([doc(110, 'FS', { parent_external_id: 100, is_paid: true, positions: [pos(1100, { quantity: 7.5, net_total: 750 })] })]);
     assert.equal(paid.unchanged, 1);
     assert.equal(await computeSuggestedStatus(projectId), 'W_REALIZACJI');
-    assert.equal(itemsOfDocument(110)[0].is_paid, 1);
+    assert.equal(itemsOfDocument(100)[0].is_paid, 1, 'pozycja z ZK (RECONCILE) — zapłata = wszystkie FS łańcucha zapłacone');
     assert.deepEqual(await getProjectSubiektSummary(projectId), { zkTotal: 800, fsTotal: 750, remainingToInvoice: 50 });
 
     // FS zapłacona i ≥ ZK
@@ -373,8 +419,10 @@ const kfsDoc = (externalId: number, parent: number, corrections: Array<[number, 
 const itemByPosition = (positionId: number) =>
     db.prepare("SELECT * FROM project_items WHERE subiekt_position_id = ? AND source = 'SUBIEKT'").all(positionId) as any[];
 
+// Mechanika korekt KFS na pozycjach FS — łańcuch bez ZK (korzeń FP → INVOICE_ONLY, pozycje z FS). Z korzeniem ZK
+// korekta, która rozbija odzwierciedlenie ZK, przełącza łańcuch na uzgodnienie (test 8, subiektReconcileSync).
 test('KFS correcting a position to 0, re-sent with changed remarks, then FS re-sent → item stays gone (review repro)', async () => {
-    await sync([doc(2000, 'ZK'), doc(2010, 'FS', { parent_external_id: 2000, positions: [pos(20100), pos(20101)] })]);
+    await sync([doc(2000, 'FP', { architect_code: 'A-001' }), doc(2010, 'FS', { parent_external_id: 2000, positions: [pos(20100), pos(20101)] })]);
     const projectId = docRow(2000).project_id;
     assert.equal(itemsOfProject(projectId).length, 2);
 
@@ -392,7 +440,7 @@ test('KFS correcting a position to 0, re-sent with changed remarks, then FS re-s
 });
 
 test('second KFS on the same position → latest (issued_at, external_id) wins, also when the older one is re-sent', async () => {
-    await sync([doc(2100, 'ZK'), doc(2110, 'FS', { parent_external_id: 2100, positions: [pos(21100)] })]);
+    await sync([doc(2100, 'FP', { architect_code: 'A-001' }), doc(2110, 'FS', { parent_external_id: 2100, positions: [pos(21100)] })]);
     await sync([kfsDoc(2120, 2110, [[21100, 800]], { issued_at: '2026-10-21' })]);
     approx(itemByPosition(21100)[0].amount_net, 800);
 
@@ -423,7 +471,8 @@ test('KFS with one matched and one unknown target → UNMATCHED_CORRECTION, noth
 });
 
 test('MANUAL: admin keeps the assignment, Subiekt content still updates items; IGNORED stays untouched', async () => {
-    await sync([doc(2300, 'ZK'), doc(2310, 'FS', { parent_external_id: 2300, positions: [pos(23100)] })]);
+    // Korzeń FP (INVOICE_ONLY): treść FS prowadzi pozycje; z korzeniem ZK inna kwota FS → uzgodnienie (loop 5b).
+    await sync([doc(2300, 'FP', { architect_code: 'A-001' }), doc(2310, 'FS', { parent_external_id: 2300, positions: [pos(23100)] })]);
     db.prepare("UPDATE subiekt_documents SET assignment_status = 'MANUAL', assignment_note = 'admin' WHERE external_id = 2310").run();
 
     const response = await sync([doc(2310, 'FS', { parent_external_id: 2300, architect_code: 'Z-999', positions: [pos(23100, { net_total: 900 })] })]);
@@ -495,7 +544,7 @@ test('FP root creates a project without items; WZ creates no items; FS from WZ g
     assert.equal(items[0].invoice_number, 'FS 2720/10/2026');
 });
 
-test('idempotency: page [ZK, FS paid, KFS, ZK with 2 positions] sent three times → identical state, unchanged', async () => {
+test('idempotency: page [ZK, FS paid, KFS, ZK with 2 positions] sent three times → identical state (also the reconciliation), unchanged', async () => {
     const page = () => [
         doc(2800, 'ZK'),
         doc(2810, 'FS', { parent_external_id: 2800, is_paid: true, positions: [pos(28100), pos(28101, { product_id: null, name: 'Montaż', net_total: 400 })] }),
@@ -508,13 +557,18 @@ test('idempotency: page [ZK, FS paid, KFS, ZK with 2 positions] sent three times
         projects: db.prepare('SELECT COUNT(*) AS c FROM projects').get(),
         wallet: db.prepare('SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount), 0), 2) AS s FROM wallet_transactions').get(),
         logs: db.prepare('SELECT COUNT(*) AS c FROM activity_logs').get(),
+        reconciliations: db.prepare('SELECT status, zk_net, invoiced_net, fingerprint FROM subiekt_reconciliations ORDER BY id').all(),
     });
 
     const first = await sync(page());
     assert.deepEqual([first.accepted, first.unassigned, first.rejected.length], [4, 0, 0]);
     const afterFirst = snapshot();
-    approx(itemByPosition(28100)[0].amount_net, 900);
-    assert.equal(itemsOfDocument(2800).length, 0);
+    // FS 1000 + montaż 400 ≠ ZK 1000 → uzgodnienie (loop 5b): pozycje z ZK, korekta KFS liczy się do kwoty faktur.
+    assert.equal(itemByPosition(28100).length, 0);
+    approx(itemsOfDocument(2800)[0].amount_net, 1000);
+    const reconciliation = db.prepare('SELECT * FROM subiekt_reconciliations WHERE root_external_id = 2800').get() as any;
+    assert.equal(reconciliation.status, 'OPEN');
+    assert.equal(reconciliation.fingerprint, '2810:1400.00;2820:0.00');
 
     for (let i = 0; i < 2; i++) {
         const again = await sync(page());

@@ -16,7 +16,8 @@ function functionBody(source: string, name: string): string {
     return source.slice(start, next === -1 ? undefined : next);
 }
 
-const OPERATIONAL = ['assignDocumentToProject', 'createProjectFromDocument', 'ignoreDocument', 'applySuggestedStatus'];
+// Loop 5b: uzgodnienie faktur z zamówieniem — ADMIN i STAFF jak pozostałe operacje operacyjne (plan, Loop 5b).
+const OPERATIONAL = ['assignDocumentToProject', 'createProjectFromDocument', 'ignoreDocument', 'applySuggestedStatus', 'resolveReconciliationAction'];
 const FINANCIAL = ['mergeProjects', 'moveDocumentToProject', 'overrideItemType'];
 // Loop 4b: nadawanie brakujących kodów architektów — tylko ADMIN (jak edycja kodu w modalu).
 const ADMIN_ONLY = ['assignMissingSubiektCodes'];

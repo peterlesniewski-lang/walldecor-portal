@@ -113,3 +113,56 @@ export function formatCorrectionForLog(docNumber: string, invoiceNumber: string 
     const parts = [...lines.map(fragment), `wartość korekty ${formatPLNFixed(netTotal)} zł`];
     return `${head}: ${parts.join('; ')}`;
 }
+
+// --- Uzgodnienie faktur z zamówieniem (Loop 5b): wpisy SUBIEKT_RECONCILIATION_* ---
+
+const zl = (value: number) => `${formatPLNFixed(value)} zł`;
+
+/**
+ * SUBIEKT_RECONCILIATION_OPENED, np. "ZK 45/10/2026: faktury niezgodne z zamówieniem — zamówienie 836,59 zł,
+ * faktury 900,00 zł (FS 7/10/2026); różnica 63,41 zł. Kwoty pozycji uzgadnia admin."
+ */
+export function formatReconciliationOpened(zkNumber: string, zkNet: number, invoicedNet: number, invoiceNumbers: string[]): string {
+    const docs = invoiceNumbers.length > 0 ? ` (${invoiceNumbers.join(', ')})` : '';
+    return `${zkNumber}: faktury niezgodne z zamówieniem — zamówienie ${zl(zkNet)}, faktury ${zl(invoicedNet)}${docs}; `
+        + `różnica ${zl(Math.round((invoicedNet - zkNet) * 100) / 100)}. Kwoty pozycji uzgadnia admin.`;
+}
+
+/** SUBIEKT_RECONCILIATION_CLOSED: łańcuch znów zgodny (mirror, równe sumy albo bez faktur). */
+export function formatReconciliationClosed(zkNumber: string, zkNet: number, invoicedNet: number): string {
+    return `${zkNumber}: uzgodnienie zamknięte automatycznie — faktury ${zl(invoicedNet)}, zamówienie ${zl(zkNet)}.`;
+}
+
+export interface ReconciliationAmountChange {
+    description: string | null;
+    before: number;
+    after: number;
+}
+
+/**
+ * SUBIEKT_RECONCILIATION_RESOLVED, np. "ZK 45/10/2026: faktury uzgodnione ręcznie — Tapeta Floral 536,59 → 600,00 zł;
+ * Montaż 300,00 zł bez zmian; razem 900,00 zł. Notatka: …"
+ */
+export function formatReconciliationResolved(zkNumber: string, changes: ReconciliationAmountChange[], total: number, note: string | null): string {
+    const parts = changes.map((c) => {
+        const name = c.description || 'pozycja';
+        return sameAmount(c.before, c.after)
+            ? `${name} ${zl(c.after)} bez zmian`
+            : `${name} ${formatPLNFixed(c.before)} → ${zl(c.after)}`;
+    });
+    const head = `${zkNumber}: faktury uzgodnione ręcznie — ${[...parts, `razem ${zl(total)}`].join('; ')}.`;
+    return note ? `${head} Notatka: ${note}` : head;
+}
+
+/** Wersja wpisów SUBIEKT_RECONCILIATION_* dla architekta — bez kwot faktur i bez szczegółów decyzji. */
+export function formatReconciliationForArchitect(eventType: string, zkNumber: string | null): string {
+    const head = zkNumber ? `${zkNumber}: ` : '';
+    switch (eventType) {
+        case 'SUBIEKT_RECONCILIATION_OPENED':
+            return `${head}faktury w uzgadnianiu z zamówieniem — kwoty pozycji mogą się jeszcze zmienić.`;
+        case 'SUBIEKT_RECONCILIATION_RESOLVED':
+            return `${head}faktury uzgodnione z zamówieniem, kwoty pozycji zaktualizowane.`;
+        default:
+            return `${head}faktury zgodne z zamówieniem.`;
+    }
+}

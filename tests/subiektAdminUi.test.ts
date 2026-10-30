@@ -38,7 +38,7 @@ test('actions return { ok, error } for domain errors; only Unauthorized is throw
     assert.match(actions, /export type SubiektActionResult/);
     assert.match(actions, /\{\s*ok: false,\s*error:/);
     const exported = [...actions.matchAll(/export async function (\w+)\(/g)].map((m) => m[1]);
-    assert.equal(exported.length, 8);
+    assert.equal(exported.length, 9);
     for (const name of exported) {
         const start = actions.indexOf(`export async function ${name}(`);
         const next = actions.indexOf('\nexport ', start + 1);
