@@ -112,6 +112,13 @@ CREATE TABLE subiekt_sync_runs (
   documents_rejected INTEGER NOT NULL DEFAULT 0, documents_unassigned INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'RUNNING', error TEXT
 );
+CREATE TABLE subiekt_reconciliations (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, root_external_id INTEGER NOT NULL, status TEXT NOT NULL,
+  zk_net REAL NOT NULL, invoiced_net REAL NOT NULL, fingerprint TEXT NOT NULL, amounts_json TEXT, note TEXT,
+  opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, resolved_at TEXT, resolved_by TEXT,
+  UNIQUE (project_id, root_external_id)
+);
+CREATE INDEX idx_subiekt_reconciliations_status ON subiekt_reconciliations(status);
 `);
 // SCHEMA-END
 

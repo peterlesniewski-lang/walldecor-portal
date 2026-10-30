@@ -79,7 +79,7 @@ const baseDocs = () => BASE_IDS.map((id) => makeDoc(id));
 test('schema from seed-dev already contains the Subiekt tables (migration 019 not applied twice)', () => {
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'subiekt_%' ORDER BY name").all() as any[])
         .map((t) => t.name);
-    assert.deepEqual(tables, ['subiekt_document_snapshots', 'subiekt_documents', 'subiekt_sync_run_pages', 'subiekt_sync_runs']);
+    assert.deepEqual(tables, ['subiekt_document_snapshots', 'subiekt_documents', 'subiekt_reconciliations', 'subiekt_sync_run_pages', 'subiekt_sync_runs']);
     const userCols = (db.prepare('PRAGMA table_info(users)').all() as any[]).map((c) => c.name);
     const itemCols = (db.prepare('PRAGMA table_info(project_items)').all() as any[]).map((c) => c.name);
     assert.ok(userCols.includes('subiekt_code'));
