@@ -16,9 +16,12 @@ import { buildArchitectRegisteredPlaceholders } from "@/lib/emailPlaceholders";
 import { canManageFinancialOperations, canManageOperationalProjects, canRegisterArchitects } from "@/lib/rbac";
 import { assertFullCommissionPayoutAmount } from "@/lib/payoutWorkflow";
 import { formatSqlDateTime } from "@/lib/dbDate";
+import { cashbackExpiresAt } from "@/lib/cashbackExpiry";
 import { getCommissionRateForTurnover, CASHBACK_RATE } from "@/lib/partnerProgram";
 import { validatePasswordStrength } from "@/lib/passwordPolicy";
 import { addItemCore, deleteItemCore, getArchitectCommissionRate, updateItemAmountCore } from "@/lib/projectItems";
+import { nextSubiektCode, withSubiektCodeRetry } from "@/lib/subiekt/codes";
+import { INTERNAL_MODE_WELCOME_SKIPPED, isSkippedByInternalMode } from "@/lib/internalMode";
 
 function generateTempPassword(): string {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -227,8 +230,7 @@ export async function updateProjectStatus(projectId: string, status: string, com
                     }
 
                     if (cashbackAmount > 0) {
-                        const expiresAt = new Date();
-                        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+                        const expiresAt = cashbackExpiresAt();
                         await queryFn(
                             "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
                             [`t_${item.id}_cashback`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
@@ -374,30 +376,37 @@ export async function registerArchitect(data: {
     const passwordToHash = data.password || generatedPassword!;
     const hashedPassword = await bcrypt.hash(passwordToHash, 10);
 
-    await query(
-        `INSERT INTO users (
-            id, name, first_name, last_name, email, password,
-            role, studio_name, nip, address, bank_account, is_vat_payer, must_change_password
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [
-            userId,
-            fullName,
-            firstName,
-            lastName,
-            email,
-            hashedPassword,
-            'ARCHI',
-            data.studio_name || null,
-            data.nip || null,
-            data.address || null,
-            data.bank_account || null,
-            data.is_vat_payer ? 1 : 0
-        ]
-    );
+    // Kod architekta do Subiekta (A-xxx) nadawany w tej samej transakcji co konto.
+    await withSubiektCodeRetry(async (queryFn) => {
+        const subiektCode = await nextSubiektCode();
+        await queryFn(
+            `INSERT INTO users (
+                id, name, first_name, last_name, email, password,
+                role, studio_name, nip, address, bank_account, is_vat_payer, must_change_password, subiekt_code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+            [
+                userId,
+                fullName,
+                firstName,
+                lastName,
+                email,
+                hashedPassword,
+                'ARCHI',
+                data.studio_name || null,
+                data.nip || null,
+                data.address || null,
+                data.bank_account || null,
+                data.is_vat_payer ? 1 : 0,
+                subiektCode
+            ]
+        );
+    });
 
     // --- Email Notification ---
     let emailSent = false;
     let emailError: string | null = null;
+    // Tryb wewnętrzny: mail pominięty celowo — informacja, nie błąd wysyłki.
+    let emailSkipped: string | null = null;
     try {
         const portalUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
         const result = await sendEmail(
@@ -412,7 +421,9 @@ export async function registerArchitect(data: {
         );
 
         emailSent = result?.success === true;
-        if (!emailSent) {
+        if (isSkippedByInternalMode(result)) {
+            emailSkipped = INTERNAL_MODE_WELCOME_SKIPPED;
+        } else if (!emailSent) {
             emailError = "Konto zostało utworzone, ale nie udało się wysłać maila powitalnego. Sprawdź konfigurację SMTP i aktywność szablonu ARCHITECT_REGISTERED.";
         }
 
@@ -422,7 +433,7 @@ export async function registerArchitect(data: {
     }
 
     revalidatePath('/dashboard/admin');
-    return { success: true, userId, generatedPassword, emailSent, emailError };
+    return { success: true, userId, generatedPassword, emailSent, emailError, emailSkipped };
 }
 
 

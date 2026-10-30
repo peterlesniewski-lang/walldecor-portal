@@ -95,10 +95,11 @@ test('invited email placeholders cover every tag used by the ARCHITECT_INVITED t
 test('accept-invitation endpoint is rate limited, transactional and creates a non-temporary password', async () => {
     const source = await readFile(new URL('../src/app/api/auth/accept-invitation/route.ts', import.meta.url), 'utf8');
     assert.match(source, /createRateLimiter/);
-    assert.match(source, /withTransaction/);
+    // transakcja przez withSubiektCodeRetry (withTransaction + jedna powtórka przy konflikcie kodu, Loop 4b)
+    assert.match(source, /withSubiektCodeRetry\(async \(queryFn\)/);
     assert.match(source, /FOR UPDATE/);
     assert.match(source, /status = 'PENDING'[\s\S]*expires_at > NOW\(\)/);
-    assert.match(source, /must_change_password, password_changed_at, last_login_at\s*\) VALUES \([\s\S]*0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP\)/);
+    assert.match(source, /must_change_password, password_changed_at, last_login_at, subiekt_code\s*\) VALUES \([\s\S]*0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, \?\)/);
     assert.match(source, /SET status = 'ACCEPTED'/);
     assert.match(source, /validatePasswordStrength/);
     assert.match(source, /acceptTerms !== true/);

@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
+
+// mapping.ts importuje ./codeFormat bez rozszerzenia (jak reszta src/) — potrzebny hook rozwiązywania.
+type MappingModule = typeof import('../src/lib/subiekt/mapping.ts');
+await import(new URL('./helpers/srcResolveHooks.ts', import.meta.url).href);
+const {
     resolveArchitectCode, sortDocumentsForProcessing, resolveRoot, positionToItemType,
     buildItemInput, leadingDocType, createsItems,
-} from '../src/lib/subiekt/mapping.ts';
+}: MappingModule = await import(new URL('../src/lib/subiekt/mapping.ts', import.meta.url).href);
 import type { SubiektDocumentPayload, SubiektPositionPayload, SubiektDocType } from '../src/lib/subiekt/types.ts';
 
 function makePos(overrides: Partial<SubiektPositionPayload> = {}): SubiektPositionPayload {
@@ -31,6 +35,15 @@ test('resolveArchitectCode: znacznik z uwag', () => {
     assert.equal(resolveArchitectCode({ architect_code: null, remarks: 'Projekt salon #A-001 pilne' }), 'A-001');
     assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#a001' }), 'A-001');
     assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A_xy9' }), 'A-XY9');
+});
+
+test('resolveArchitectCode: numeric remarks marker is zero-padded like generated codes (A-001)', () => {
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: 'ZK dla #A-1' }), 'A-001');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A-01' }), 'A-001');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#a42' }), 'A-042');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A-0001' }), 'A-001');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A-1200' }), 'A-1200');
+    assert.equal(resolveArchitectCode({ architect_code: null, remarks: '#A-12X' }), 'A-12X', 'niecyfrowy sufiks bez zmian');
 });
 
 test('resolveArchitectCode: pole własne wygrywa, brak → null, pusty string = brak', () => {

@@ -79,6 +79,11 @@ function activeTx(): TxContext | undefined {
     return ctx?.active ? ctx : undefined;
 }
 
+/** Czy bieżący łańcuch async jest wewnątrz otwartej withTransaction. */
+export function inTransaction(): boolean {
+    return activeTx() !== undefined;
+}
+
 /**
  * Runs a callback inside a DB transaction.
  * The callback receives `queryFn` (= `query`, which routes to the transaction's connection).

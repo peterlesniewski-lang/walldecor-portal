@@ -8,6 +8,7 @@ import bcrypt from 'bcrypt';
 import { sendEmail } from "@/lib/email";
 import { logActivity } from "@/lib/services";
 import { validatePasswordStrength } from "@/lib/passwordPolicy";
+import { isSkippedByInternalMode } from "@/lib/internalMode";
 
 const SUBIEKT_CODE_PATTERN = /^[A-Z0-9_-]{1,64}$/;
 
@@ -192,10 +193,12 @@ export async function notifyArchitectProfileIncomplete(architectId: string) {
     if (userRes.length === 0) throw new Error("Architekt nie znaleziony");
 
     const architect = userRes[0];
-    await sendEmail('PROFILE_INCOMPLETE', architect.email, {
+    const result = await sendEmail('PROFILE_INCOMPLETE', architect.email, {
         user_name: architect.name,
     });
 
+    // Tryb wewnętrzny: przycisk pokazuje „Pominięto”, nie „Wysłano”.
+    if (isSkippedByInternalMode(result)) return { success: true, skipped: 'INTERNAL_MODE' as const };
     return { success: true };
 }
 

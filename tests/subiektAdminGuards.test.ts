@@ -18,6 +18,8 @@ function functionBody(source: string, name: string): string {
 
 const OPERATIONAL = ['assignDocumentToProject', 'createProjectFromDocument', 'ignoreDocument', 'applySuggestedStatus'];
 const FINANCIAL = ['mergeProjects', 'moveDocumentToProject', 'overrideItemType'];
+// Loop 4b: nadawanie brakujących kodów architektów — tylko ADMIN (jak edycja kodu w modalu).
+const ADMIN_ONLY = ['assignMissingSubiektCodes'];
 
 test("actions file is a 'use server' module", () => {
     assert.ok(actions.startsWith("'use server';"));
@@ -46,9 +48,18 @@ for (const name of FINANCIAL) {
     });
 }
 
+for (const name of ADMIN_ONLY) {
+    test(`${name}: session + ADMIN role before the operation`, () => {
+        const body = functionBody(actions, name);
+        const guard = body.indexOf(`session.user.role !== 'ADMIN') throw new Error("Unauthorized")`);
+        assert.ok(body.indexOf('getServerSession(authOptions)') !== -1 && guard !== -1, `${name}: brak sesji lub sprawdzenia roli`);
+        assert.ok(body.search(/await \w+Op\(/) > guard);
+    });
+}
+
 test('every exported action is covered by a permission test', () => {
     const exported = [...actions.matchAll(/export async function (\w+)\(/g)].map((m) => m[1]).sort();
-    assert.deepEqual(exported, [...OPERATIONAL, ...FINANCIAL].sort());
+    assert.deepEqual(exported, [...OPERATIONAL, ...FINANCIAL, ...ADMIN_ONLY].sort());
 });
 
 test('mergeProjectsOp runs in withTransaction and deletes the source projects', () => {

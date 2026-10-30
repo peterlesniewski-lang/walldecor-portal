@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { query } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 import { createRateLimiter, getClientIp } from '@/lib/rateLimit';
+import { isInternalMode } from '@/lib/internalMode';
 
 // Per-process limiters (single PM2 instance); reset on restart.
 const ipLimiter = createRateLimiter({ max: 10, windowMs: 15 * 60 * 1000 });
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
         }
 
         const users = await query<any>(
-            "SELECT id, email, provider FROM users WHERE LOWER(email) = ?",
+            "SELECT id, email, provider, role FROM users WHERE LOWER(email) = ?",
             [normalizedEmail]
         );
 
@@ -38,6 +39,11 @@ export async function POST(req: NextRequest) {
         }
 
         const user = users[0];
+
+        // Tryb wewnętrzny: architekt dostaje tę samą odpowiedź co nieistniejący adres (bez tokenu i maila).
+        if (isInternalMode() && user.role === 'ARCHI') {
+            return NextResponse.json({ ok: true });
+        }
 
         // OAuth users can't reset password via email
         if (user.provider !== 'credentials') {

@@ -22,6 +22,7 @@ import {
     overrideItemTypeOp,
 } from "@/lib/subiekt/adminOps";
 import { computeSuggestedStatus } from "@/lib/subiekt/status";
+import { assignMissingSubiektCodesOp } from "@/lib/subiekt/codes";
 import { moveProjectFileDirs, type FileDirMoveResult } from "@/lib/projectFilesStorage";
 import { logActivity } from "@/lib/services";
 import { updateProjectStatus } from "@/app/actions/projects";
@@ -169,5 +170,18 @@ export async function applySuggestedStatus(projectId: string): Promise<SubiektAc
             revalidateSubiekt([projectId]);
         }
         return {};
+    });
+}
+
+/** Nadaje kody `A-xxx` wszystkim architektom bez kodu (przycisk „Nadaj brakujące kody”, tylko ADMIN). */
+export async function assignMissingSubiektCodes(): Promise<SubiektActionResult<{ assigned: number }>> {
+    const session = await getServerSession(authOptions);
+    if (!session || session.user.role !== 'ADMIN') throw new Error("Unauthorized");
+
+    return attempt(async () => {
+        const { assigned } = await assignMissingSubiektCodesOp(session.user.id);
+        revalidatePath('/dashboard/admin/architects');
+        revalidatePath(SUBIEKT_PAGE);
+        return { assigned };
     });
 }

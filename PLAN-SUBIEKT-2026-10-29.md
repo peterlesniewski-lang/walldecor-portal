@@ -530,6 +530,46 @@ Sidebar admina: link „Subiekt” z licznikiem nieprzypisanych (badge znika gdy
 
 ---
 
+### Loop 4b — Tryb wewnętrzny, kody architektów, ważność cashbacku (dodany 2026-10-30)
+
+**Kontekst decyzji.** Pola własne w Subiekcie GT wymagają rozszerzenia PLUS (ok. 2000 zł/rok), więc znacznik architekta idzie do pola „Uwagi” ZK jako `#A-001` (kopiuje się na FS), a kategoria dokumentu `ARCHI` służy jako flaga „zlecenie z udziałem architekta”. Handlowiec szuka kodu architekta w portalu. Portal rusza najpierw **wewnętrznie** (admin/STAFF), architekci dostają dostęp później, gdy sumy zgodzą się z Subiektem.
+
+**Zakres (wszystkie punkty obowiązkowe):**
+
+1. **Kod na liście architektów i w wyszukiwarce.** `src/app/dashboard/admin/architects/page.tsx`: kolumna „Kod” z `u.subiekt_code` (puste → „—”), a filtr `q` szuka także po `u.subiekt_code LIKE ?`. Wpisanie `A-00` w szukajce zawęża listę do architektów z takim kodem.
+2. **Automatyczne nadawanie kodu.** Nowa funkcja `nextSubiektCode()` w `src/lib/subiekt/codes.ts`: w transakcji odczytuje największy numer z kodów pasujących do `^A-(\d+)$` w `users` i zwraca kolejny, format `A-` + numer dopełniony zerami do 3 cyfr (`A-001` … `A-999`, dalej `A-1000`). Wywoływana przy KAŻDYM tworzeniu użytkownika ARCHI: `src/app/actions/import.ts` (import CSV), `src/app/api/auth/accept-invitation/route.ts` (zaproszenie), `src/app/actions/projects.ts` (tworzenie architekta przy projekcie, ok. linii 378). Ręcznie wpisany kod w modalu edycji nadal wygrywa (istniejąca logika `updateArchitect` bez zmian). Istniejące konta bez kodu: akcja serwerowa `assignMissingSubiektCodes()` (ADMIN) + przycisk „Nadaj brakujące kody” na liście architektów, widoczny tylko gdy są konta bez kodu; po kliknięciu lista pokazuje kody, wpis `SUBIEKT_CODES_ASSIGNED` w `activity_logs` z liczbą nadanych. Kolejność nadawania: po `created_at`, potem `name`.
+3. **Przełącznik trybu wewnętrznego** `PORTAL_INTERNAL_MODE=1` (zmienna środowiskowa; helper `isInternalMode()` w `src/lib/internalMode.ts`, akceptuje `1`/`true`). Skutki, gdy włączony:
+   - `src/lib/email.ts` `sendEmail`: wysyła tylko do adresów, które należą do użytkownika z rolą ADMIN lub STAFF (sprawdzenie `SELECT role FROM users WHERE email = ?`). Każdy inny adres (ARCHI lub nieistniejący, np. zaproszenie) → brak wysyłki, `console.info('[internal-mode] pominięto mail <slug> do <email>')`, zwrot `{ success: false, skipped: 'INTERNAL_MODE' }`. Wywołania `sendEmail` traktują to jak dotąd (nie rzucają).
+   - `src/app/api/auth/forgot-password/route.ts`: dla użytkownika z rolą ARCHI odpowiedź identyczna jak dla nieistniejącego adresu (ta sama treść i status, bez tokenu, bez maila), żeby nie zdradzać istnienia konta.
+   - Logowanie (`src/lib/auth.ts`, provider credentials): użytkownik ARCHI z poprawnym hasłem dostaje odmowę z komunikatem „Portal dla architektów jest w przygotowaniu. Spróbuj później.” (komunikat widoczny na ekranie logowania, nie generyczne „Błędne dane”). ADMIN/STAFF logują się normalnie.
+   - Powłoka admina (`src/components/ui/ShellNav.tsx` lub nagłówek layoutu): widoczna plakietka „Tryb wewnętrzny” dla ADMIN/STAFF, żeby nikt nie zapomniał o włączonym przełączniku.
+   - Gdy zmienna nieustawiona: zachowanie dokładnie jak dziś (testy regresji muszą to pokrywać).
+4. **Ważność cashbacku konfigurowalna.** `src/lib/cashbackExpiry.ts` eksportuje `cashbackExpiresAt(now = new Date())` czytające `CASHBACK_EXPIRY_MONTHS` (domyślnie 12; wartość nieliczbowa lub ≤ 0 → 12 z `console.warn`). Trzy miejsca liczące dziś `setFullYear(+1)` (`src/lib/projectItems.ts` ×2, `src/app/actions/projects.ts` ok. linii 230) używają tej funkcji. Przy `CASHBACK_EXPIRY_MONTHS=24` nowy wpis EARN ma `expires_at` 24 miesiące do przodu.
+5. Dokumentacja: `.env.example` (obie zmienne z komentarzem), sekcja Loop 7 planu (ustawić `PORTAL_INTERNAL_MODE=1` i `CASHBACK_EXPIRY_MONTHS=24` w Coolify przy pierwszym wdrożeniu), `CLAUDE.md` „Current task” (Loop 4b zmergowany), `progress.md`.
+
+**Poza zakresem:** zmiana istniejących `expires_at` w bazie; UI do edycji trybu w panelu (zmienna środowiskowa wystarczy); zmiany w agencie.
+
+**Testy (`node:test`, `tests/*.test.ts`, SQLite jak pozostałe):** `nextSubiektCode` (pusta baza → `A-001`; istnieją `A-001`,`A-003` → `A-004`; ręczny kod `A-1200` → `A-1201`; kody niepasujące do wzorca ignorowane); `assignMissingSubiektCodes` nadaje tylko brakujące, kolejność po `created_at`, wpis w activity_logs; każda z 3 ścieżek tworzenia ARCHI zapisuje kod; `sendEmail` w trybie wewnętrznym pomija ARCHI i nieistniejący adres, wysyła do STAFF, a bez zmiennej zachowuje się jak dotąd; `forgot-password` dla ARCHI w trybie wewnętrznym nie tworzy tokenu; `authorize` odmawia ARCHI z właściwym komunikatem, a STAFF wpuszcza; `cashbackExpiresAt` dla 12/24/śmieciowej wartości. E2E (Playwright, jak w Loop 6, przez UI jako admin `admin@dev.local`): lista architektów pokazuje kolumnę „Kod”; szukajka po fragmencie kodu zawęża listę; przycisk „Nadaj brakujące kody” znika po kliknięciu, a kody są widoczne; z `PORTAL_INTERNAL_MODE=1` logowanie architektem `kamila@dev.local` pokazuje komunikat o przygotowaniu, logowanie adminem działa i widać plakietkę.
+
+**Bramka:** `npm test` zielone (wszystkie, nie tylko nowe), `npx tsc --noEmit` tylko z 19 znanymi TS5097, `npm run build` zielony, e2e zielone, sekcja DOWÓD z outputem komend i zrzutami/odpowiedziami. Checklist audytu atrap z §5.
+
+**DoD:** handlowiec (STAFF) wpisuje w szukajce nazwisko architekta i w tym samym wierszu widzi `A-xxx`; nowo zaimportowany architekt ma kod bez udziału admina; przy `PORTAL_INTERNAL_MODE=1` żaden mail nie wychodzi do architekta, architekt nie zaloguje się ani nie zresetuje hasła, a admin pracuje normalnie i widzi plakietkę; przy `CASHBACK_EXPIRY_MONTHS=24` cashback z zamkniętego projektu ma ważność 24 miesiące.
+
+**Stan (2026-10-30, gałąź `subiekt/loop-4b-internal-mode`):**
+
+- [x] 1. Kolumna „Kod” i szukanie po `u.subiekt_code` na liście architektów (`aafd8de`).
+- [x] 2. `nextSubiektCode()` w imporcie CSV, rejestracji (`registerArchitect`) i akceptacji zaproszenia (ARCHI); `assignMissingSubiektCodes()` + przycisk „Nadaj brakujące kody” (tylko ADMIN), log `SUBIEKT_CODES_ASSIGNED` (`aafd8de`).
+- [x] 3. `PORTAL_INTERNAL_MODE`: `sendEmail`, `forgot-password`, logowanie (credentials; także Google), plakietka w powłoce (`77e4521`).
+- [x] 4. `cashbackExpiresAt()` z `CASHBACK_EXPIRY_MONTHS` w trzech miejscach (`b9934e3`).
+- [x] 5. `.env.example`, Loop 7, `CLAUDE.md`, `progress.md`.
+- [x] Testy (353/353 po poprawkach z przeglądów), tsc (18× TS5097 — o jeden mniej, `subiektMapping.test.ts` ładuje `mapping.ts` przez hook), build, e2e, checklist §5.
+
+#### DOWÓD
+
+`docs/subiekt/LOOP4B-DOWOD-2026-10-30.md` — komendy bramki z wynikiem, przebiegi e2e (Playwright, `next start`, fazy bez i z `PORTAL_INTERNAL_MODE=1` / `CASHBACK_EXPIRY_MONTHS=24`), stan bazy, checklist §5 i uwagi (Google, istniejące sesje JWT architektów).
+
+---
+
 ### Loop 5 — Agent na PC z bazą Subiekta GT
 
 **Warunek wstępny (weryfikacja w biurze, przed kodem):**
@@ -605,12 +645,15 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 ### Loop 7 — Wdrożenie na produkcję
 
 - [ ] Ustawić w Coolify `SUBIEKT_SYNC_TOKEN`, `SUBIEKT_SYNC_SECRET` (wygenerowane `openssl rand -hex 32`, dwa różne).
+- [ ] Ustawić w Coolify przy pierwszym wdrożeniu `PORTAL_INTERNAL_MODE=1` (start tylko dla zespołu — Loop 4b) i `CASHBACK_EXPIRY_MONTHS=24`; po wdrożeniu sprawdzić plakietkę „Tryb wewnętrzny” w panelu i odmowę logowania kontem architekta.
 - [ ] Merge do `main`, trigger deployu przez API Coolify (zob. pamięć `reference_coolify`), `ensure-production-schema.mjs` dodaje kolumny i tabele przy starcie — sprawdzić w logach startu kontenera komunikaty o dodanych tabelach.
 - [ ] Sprawdzić strefę czasową MySQL (`SELECT @@global.time_zone, NOW()`) i procesu Node w kontenerze (`date`, `echo $TZ`); mysql2 czyta DATETIME w czasie lokalnym Node, a `CURRENT_TIMESTAMP` zapisuje czas serwera MySQL — jeśli nie obie UTC, ustawić `TZ=UTC` w Coolify dla aplikacji (najprościej) albo `timezone: 'Z'` w poolu `src/lib/db.ts` + `SET time_zone='+00:00'`. Dotyczy `started_at/finished_at` przebiegów, historii ZK i `expires_at` cashbacku (§6 pkt 11).
 - [ ] Sprawdzić kolację bazy produkcyjnej: `SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE();` oraz `SHOW CREATE TABLE invitations;`. Nowe tabele Subiekta mają jawnie `utf8mb4_unicode_ci` (ensure-production-schema.mjs), tak jak stare z `deploy/schema.mysql.sql`; przy `utf8mb4_0900_ai_ci` na starych tabelach złączenia padłyby błędem 1267 (sprawdzone na MySQL 8.4 w Dockerze, 2026-10-30).
 - [ ] `positions_json` jest `MEDIUMTEXT` (16 MB), `remarks` `VARCHAR(4000)` z walidacją po stronie API; baza nie ma obsługi `DB_PORT` — jeśli MySQL produkcyjny nie słucha na 3306, dopisać w `db.ts`.
 - [ ] Smoke test: `curl` z pustą paczką (`documents: []`) → 200, run DONE w panelu. `curl` ze złym tokenem → 401.
 - [ ] Nadać kody wszystkim aktywnym architektom w panelu (lista z `/dashboard/admin/architects`).
+- [ ] Po wdrożeniu kliknąć „Nadaj brakujące kody” na liście architektów (Loop 4b; przycisk widzi tylko ADMIN, znika, gdy wszyscy mają kod) i sprawdzić kolumnę „Kod”.
+- [ ] Import CSV w trybie wewnętrznym zakłada konta architektów z kodem, ale pomija mail powitalny z hasłem tymczasowym (`[internal-mode] pominięto mail ARCHITECT_REGISTERED …` w logu). Onboarding tych architektów idzie później, przy otwarciu portalu, mailem „ustaw hasło” (zob. pamięć „Mail startowy do architektów”).
 - [ ] Na PC z bazą: `.env` agenta z adresem `https://archi.walldecor.pl`, `npm run sync -- --dry-run`, przegląd pliku, potem `npm run sync`. Przegląd skrzynki nieprzypisanych i ręczne przypisanie historycznych dokumentów.
 - [ ] Po pierwszym pełnym imporcie: porównać dla 3 architektów sumę pozycji SUBIEKT w portalu z sumą netto ich FS w GT (raport w GT filtrowany po polu własnym). Różnice wyjaśnić przed ogłoszeniem architektom.
 - [ ] Aktualizacja `PROGRESS.md` (max 10 punktów) i `CLAUDE.md` (sekcja „Current task”).

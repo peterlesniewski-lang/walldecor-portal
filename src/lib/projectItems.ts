@@ -13,6 +13,7 @@ import { logActivity } from "@/lib/services";
 import { v4 as uuidv4 } from 'uuid';
 import { spendCashback } from "@/lib/cashback";
 import { formatSqlDateTime } from "@/lib/dbDate";
+import { cashbackExpiresAt } from "@/lib/cashbackExpiry";
 import { getCommissionRateForTurnover, CASHBACK_RATE } from "@/lib/partnerProgram";
 
 export interface ItemActor { actorId: string | null; note?: string | null }
@@ -166,8 +167,7 @@ export async function updateItemAmountCore(itemId: string, amountNet: number, ac
             const diffCashback = newCashback - oldCashback;
 
             if (diffCashback > 0.01) {
-                const expiresAt = new Date();
-                expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+                const expiresAt = cashbackExpiresAt();
 
                 await txQuery(
                     "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -261,8 +261,7 @@ export async function addItemCore(projectId: string, input: NewItemInput, actor:
 
             const cashbackAmount = input.amount_net * CASHBACK_RATE;
             if (cashbackAmount > 0) {
-                const expiresAt = new Date();
-                expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+                const expiresAt = cashbackExpiresAt();
                 await txQuery(
                     "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, description, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     [`t_${uuidv4().substring(0, 8)}`, owner_id, 'EARN', cashbackAmount, itemId, actor.note || 'Cashback: nowa pozycja po rozliczeniu', formatSqlDateTime(expiresAt)]

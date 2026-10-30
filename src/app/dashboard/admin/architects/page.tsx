@@ -8,6 +8,8 @@ import ArchitectList, { RegisterArchitectButton } from '@/components/ArchitectLi
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState, KpiTile, cx, formatNumber } from '@/components/ui';
 import { walletBalanceSql } from "@/lib/walletSql";
 import { getPartnerStatusInfo } from "@/lib/partnerProgram";
+import { countArchitectsWithoutCode } from "@/lib/subiekt/codes";
+import AssignMissingCodesButton from './AssignMissingCodesButton';
 
 export default async function AdminArchitectsPage({
     searchParams
@@ -24,7 +26,7 @@ export default async function AdminArchitectsPage({
     // 1. Fetch Architects with project counts and current balances
     let sql = `
         SELECT 
-            u.id, u.name, u.email, u.studio_name, u.tier_override,
+            u.id, u.name, u.email, u.studio_name, u.tier_override, u.subiekt_code,
             COUNT(DISTINCT CASE WHEN p.status != 'NIEZREALIZOWANY' THEN p.id END) as projects_count,
             (SELECT COUNT(*) FROM projects projectCount WHERE projectCount.owner_id = u.id) as projectCount,
             (SELECT COUNT(*) FROM commissions commissionCount WHERE commissionCount.architect_id = u.id) as commissionCount,
@@ -49,8 +51,8 @@ export default async function AdminArchitectsPage({
 
     const params: any[] = [];
     if (q) {
-        sql += ` AND (u.name LIKE ? OR u.email LIKE ? OR u.studio_name LIKE ?) `;
-        params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+        sql += ` AND (u.name LIKE ? OR u.email LIKE ? OR u.studio_name LIKE ? OR u.subiekt_code LIKE ?) `;
+        params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
     }
 
     sql += ` GROUP BY u.id ORDER BY u.name ASC`;
@@ -74,6 +76,8 @@ export default async function AdminArchitectsPage({
     const activeCount = architects.filter((a: any) => a.projects_count > 0).length;
 
     const isAdmin = session.user.role === 'ADMIN';
+    // Przycisk „Nadaj brakujące kody” liczy wszystkie konta bez kodu, niezależnie od filtra listy.
+    const missingCodes = isAdmin ? await countArchitectsWithoutCode() : 0;
     const hasFilters = Boolean(q || tier || status);
 
     const listItems = architects.map((a: any) => {
@@ -83,6 +87,7 @@ export default async function AdminArchitectsPage({
             name: a.name,
             email: a.email,
             studio_name: a.studio_name ?? null,
+            subiekt_code: a.subiekt_code || null,
             projects_count: Number(a.projects_count) || 0,
             turnover: Number(a.turnover) || 0,
             balance: Number(a.balance) || 0,
@@ -112,7 +117,8 @@ export default async function AdminArchitectsPage({
                     <ArrowLeft size={16} aria-hidden="true" />
                     Dashboard
                 </Link>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-start gap-2">
+                    {isAdmin && missingCodes > 0 && <AssignMissingCodesButton missingCount={missingCodes} />}
                     <Button href="/dashboard/admin/invitations" variant="secondary" size="sm" icon={<MailPlus size={16} aria-hidden="true" />}>
                         Zaproś architektów
                     </Button>
@@ -131,7 +137,7 @@ export default async function AdminArchitectsPage({
                         name="q"
                         defaultValue={q}
                         aria-label="Szukaj architekta"
-                        placeholder="Szukaj po nazwie, emailu lub pracowni"
+                        placeholder="Szukaj po nazwie, kodzie, emailu lub pracowni"
                         className="h-10 w-full rounded-sm border border-border-strong bg-surface pl-9 pr-3 text-sm text-ink placeholder:text-ink-3"
                     />
                 </form>

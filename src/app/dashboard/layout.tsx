@@ -6,6 +6,8 @@ import Sidebar from "@/components/Sidebar";
 import ShellHeader from "@/components/ShellHeader";
 import { canManageOperationalProjects } from "@/lib/rbac";
 import { getUnassignedCount } from "@/lib/subiekt/queries";
+import { isInternalMode } from "@/lib/internalMode";
+import { StatusPill } from "@/components/ui";
 
 export default async function DashboardLayout({
     children,
@@ -38,6 +40,9 @@ export default async function DashboardLayout({
         }
     }
 
+    // Plakietka „Tryb wewnętrzny” (PORTAL_INTERNAL_MODE) dla zespołu, żeby nikt nie zapomniał o przełączniku.
+    const showInternalModeBadge = isInternalMode() && canManageOperationalProjects(session.user.role);
+
     return (
         <div className="flex min-h-screen flex-col bg-bg lg:flex-row">
             {/* Sidebar (desktop) i pasek górny z szufladą (mobile) */}
@@ -46,6 +51,12 @@ export default async function DashboardLayout({
             {/* Treść: padding 24 px (16 px na mobile), maksymalnie 1280 px */}
             <main className="min-w-0 flex-1">
                 <div className="mx-auto w-full max-w-[1280px] p-4 sm:p-6">
+                    {showInternalModeBadge && (
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                            <StatusPill tone="warning">Tryb wewnętrzny</StatusPill>
+                            <span className="text-[13px] text-ink-2">Architekci nie logują się i nie dostają maili z portalu.</span>
+                        </div>
+                    )}
                     <ShellHeader userRole={session.user.role} />
 
                     {children}

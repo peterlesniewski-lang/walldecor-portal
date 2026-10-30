@@ -45,6 +45,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
     const [error, setError] = useState<string | null>(null);
     const [emailSent, setEmailSent] = useState<boolean | null>(null);
     const [emailError, setEmailError] = useState<string | null>(null);
+    const [emailSkipped, setEmailSkipped] = useState<string | null>(null);
 
     const [formData, setFormData] = useState(EMPTY_FORM);
 
@@ -67,11 +68,13 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
         setError(null);
         setEmailSent(null);
         setEmailError(null);
+        setEmailSkipped(null);
 
         try {
             const res = await registerArchitect(formData);
             setEmailSent(res.emailSent);
             setEmailError(res.emailError ?? null);
+            setEmailSkipped(res.emailSkipped ?? null);
             setSuccess(true);
         } catch (err: any) {
             setError(err.message || 'Wystąpił błąd podczas rejestracji architekta.');
@@ -84,6 +87,7 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
         setSuccess(false);
         setEmailSent(null);
         setEmailError(null);
+        setEmailSkipped(null);
         setFormData(EMPTY_FORM);
         onClose();
     };
@@ -132,6 +136,12 @@ export default function ArchitectRegistrationModal({ isOpen, onClose }: Architec
                         <h3 className="text-lg font-semibold text-ink">Architekt zarejestrowany</h3>
                         {emailSent ? (
                             <p className="text-sm text-ink-2">Konto zostało utworzone, a dane logowania wysłane na adres {formData.email}.</p>
+                        ) : emailSkipped ? (
+                            <div className="mx-auto max-w-lg text-left">
+                                <Banner tone="info" title={emailSkipped}>
+                                    Konto zostało utworzone. Portal działa w trybie wewnętrznym, więc mail do architekta nie wychodzi — dane logowania przekaż mu sam, gdy portal zostanie otwarty dla architektów.
+                                </Banner>
+                            </div>
                         ) : (
                             <div className="mx-auto max-w-lg text-left">
                                 <Banner tone="warning" title="Konto zostało utworzone, ale mail powitalny nie został wysłany.">

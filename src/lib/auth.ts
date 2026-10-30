@@ -1,24 +1,9 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
-import bcrypt from 'bcrypt';
 import { query } from './db';
-import { createRateLimiter } from './rateLimit';
-
-// In-memory rate limiter: max 5 login attempts per email per 5 minutes (per process)
-const loginLimiter = createRateLimiter({ max: 5, windowMs: 5 * 60 * 1000 });
-
-function normalizeEmail(email: string): string {
-    return email.trim().toLowerCase();
-}
-
-function checkRateLimit(email: string): boolean {
-    return loginLimiter.check(normalizeEmail(email));
-}
-
-function resetRateLimit(email: string) {
-    loginLimiter.reset(normalizeEmail(email));
-}
+import { authorizeCredentials } from './authorizeCredentials';
+import { internalModeSignInRefusal } from './internalMode';
 
 const authProviders: NextAuthOptions['providers'] = [
     CredentialsProvider({
@@ -27,41 +12,7 @@ const authProviders: NextAuthOptions['providers'] = [
             email: { label: "Email", type: "text" },
             password: { label: "Password", type: "password" }
         },
-        async authorize(credentials) {
-            if (!credentials?.email || !credentials?.password) return null;
-
-            if (!checkRateLimit(credentials.email)) {
-                throw new Error("Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za 5 minut.");
-            }
-
-            if (process.env.DEMO_MODE === 'true') {
-                if (credentials.email === 'architekt@demo.pl') {
-                    return { id: 'u2', name: 'Piotr Architekt', email: 'architekt@demo.pl', role: 'ARCHI' };
-                }
-                if (credentials.email === 'admin@walldecor.pl') {
-                    return { id: 'u1', name: 'Admin WallDecor', email: 'admin@walldecor.pl', role: 'ADMIN' };
-                }
-            }
-
-            const users = await query<any>(
-                'SELECT * FROM users WHERE LOWER(email) = ?',
-                [normalizeEmail(credentials.email)]
-            );
-
-            const user = users[0];
-
-            if (user && user.password && await bcrypt.compare(credentials.password, user.password)) {
-                resetRateLimit(credentials.email);
-                query("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?", [user.id]).catch(() => {});
-                return {
-                    id: user.id,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                };
-            }
-            return null;
-        }
+        authorize: authorizeCredentials,
     })
 ];
 
@@ -92,6 +43,9 @@ export const authOptions: NextAuthOptions = {
 
                 if (existing.length > 0) {
                     const dbUser = existing[0];
+                    // Tryb wewnętrzny: architekt nie loguje się także przez Google — wraca na naszą stronę logowania.
+                    const refusal = internalModeSignInRefusal(dbUser.role);
+                    if (refusal) return refusal;
                     // Update provider info if not yet linked
                     if (!dbUser.provider_account_id) {
                         await query(
