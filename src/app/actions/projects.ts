@@ -16,6 +16,7 @@ import { buildArchitectRegisteredPlaceholders } from "@/lib/emailPlaceholders";
 import { canManageFinancialOperations, canManageOperationalProjects, canRegisterArchitects } from "@/lib/rbac";
 import { assertFullCommissionPayoutAmount } from "@/lib/payoutWorkflow";
 import { formatSqlDateTime } from "@/lib/dbDate";
+import { cashbackExpiresAt } from "@/lib/cashbackExpiry";
 import { getCommissionRateForTurnover, CASHBACK_RATE } from "@/lib/partnerProgram";
 import { validatePasswordStrength } from "@/lib/passwordPolicy";
 import { addItemCore, deleteItemCore, getArchitectCommissionRate, updateItemAmountCore } from "@/lib/projectItems";
@@ -227,8 +228,7 @@ export async function updateProjectStatus(projectId: string, status: string, com
                     }
 
                     if (cashbackAmount > 0) {
-                        const expiresAt = new Date();
-                        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+                        const expiresAt = cashbackExpiresAt();
                         await queryFn(
                             "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
                             [`t_${item.id}_cashback`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
