@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getProviders, signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Banner, Button } from '@/components/ui';
 import { AuthShell, AuthField, AUTH_INPUT } from '../AuthShell';
-import { INTERNAL_MODE_LOGIN_MESSAGE } from '@/lib/internalMode';
+import { INTERNAL_MODE_LOGIN_MESSAGE, signInErrorMessage } from '@/lib/internalMode';
 
 // Komunikaty z authorize pokazywane dosłownie; każdy inny błąd → ogólne „Błędny email lub hasło”.
 const PASSTHROUGH_ERRORS = new Set([
@@ -25,6 +25,9 @@ function GoogleIcon() {
     );
 }
 
+const subscribeNoop = () => () => {};
+const readUrlErrorCode = () => new URLSearchParams(window.location.search).get('error');
+
 export default function SignIn() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -33,6 +36,13 @@ export default function SignIn() {
     const [googleLoading, setGoogleLoading] = useState(false);
     const [hasGoogleProvider, setHasGoogleProvider] = useState(false);
     const router = useRouter();
+
+    // Błąd z przekierowania (np. odmowa logowania Google w trybie wewnętrznym: ?error=InternalMode).
+    // useSyncExternalStore: na serwerze null, w przeglądarce kod z adresu — bez rozjazdu hydratacji i bez
+    // useSearchParams (wymagałby granicy Suspense na stronie statycznej). Znika po kolejnej próbie logowania.
+    const urlErrorCode = useSyncExternalStore(subscribeNoop, readUrlErrorCode, () => null);
+    const [urlErrorDismissed, setUrlErrorDismissed] = useState(false);
+    const shownError = error || (urlErrorDismissed ? null : signInErrorMessage(urlErrorCode)) || '';
 
     useEffect(() => {
         getProviders()
@@ -48,6 +58,7 @@ export default function SignIn() {
         e.preventDefault();
         setLoading(true);
         setError('');
+        setUrlErrorDismissed(true);
 
         const res = await signIn('credentials', {
             email,
@@ -93,7 +104,7 @@ export default function SignIn() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
-                {error && <Banner tone="danger">{error}</Banner>}
+                {shownError && <Banner tone="danger">{shownError}</Banner>}
 
                 <AuthField id="signin-email" label="Email">
                     <input

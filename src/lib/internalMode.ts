@@ -22,3 +22,20 @@ export function isInternalMode(): boolean {
     const raw = (process.env.PORTAL_INTERNAL_MODE ?? '').trim().toLowerCase();
     return raw === '1' || raw === 'true';
 }
+
+/** Kod błędu w adresie strony logowania po odmowie logowania Google w trybie wewnętrznym. */
+export const INTERNAL_MODE_SIGNIN_ERROR = 'InternalMode';
+export const INTERNAL_MODE_SIGNIN_REDIRECT = `/auth/signin?error=${INTERNAL_MODE_SIGNIN_ERROR}`;
+
+/**
+ * Callback signIn (Google): w trybie wewnętrznym architekt dostaje przekierowanie na naszą stronę logowania
+ * z kodem błędu (polski komunikat), a nie angielską stronę AccessDenied NextAuth. null = logowanie dozwolone.
+ */
+export function internalModeSignInRefusal(role: string | null | undefined): string | null {
+    return isInternalMode() && role === 'ARCHI' ? INTERNAL_MODE_SIGNIN_REDIRECT : null;
+}
+
+/** Komunikat strony logowania dla kodu `?error=` z adresu (tylko znane kody; reszta → null). */
+export function signInErrorMessage(code: string | null | undefined): string | null {
+    return code === INTERNAL_MODE_SIGNIN_ERROR ? INTERNAL_MODE_LOGIN_MESSAGE : null;
+}

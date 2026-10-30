@@ -3,7 +3,7 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import { query } from './db';
 import { authorizeCredentials } from './authorizeCredentials';
-import { isInternalMode } from './internalMode';
+import { internalModeSignInRefusal } from './internalMode';
 
 const authProviders: NextAuthOptions['providers'] = [
     CredentialsProvider({
@@ -43,8 +43,9 @@ export const authOptions: NextAuthOptions = {
 
                 if (existing.length > 0) {
                     const dbUser = existing[0];
-                    // Tryb wewnętrzny: architekt nie loguje się także przez Google.
-                    if (isInternalMode() && dbUser.role === 'ARCHI') return false;
+                    // Tryb wewnętrzny: architekt nie loguje się także przez Google — wraca na naszą stronę logowania.
+                    const refusal = internalModeSignInRefusal(dbUser.role);
+                    if (refusal) return refusal;
                     // Update provider info if not yet linked
                     if (!dbUser.provider_account_id) {
                         await query(

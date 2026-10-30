@@ -194,6 +194,20 @@ test('authorize without the variable admits ARCHI as before', async () => {
     assert.deepEqual(archi, { id: 'u_archi', name: 'Architekt', email: 'archi@test.local', role: 'ARCHI' });
 });
 
+test('Google sign-in refusal: ARCHI in internal mode → redirect to our sign-in page with the error code', () => {
+    setMode('1');
+    assert.equal(internal.INTERNAL_MODE_SIGNIN_REDIRECT, '/auth/signin?error=InternalMode');
+    assert.equal(internal.internalModeSignInRefusal('ARCHI'), '/auth/signin?error=InternalMode');
+    for (const role of ['ADMIN', 'STAFF', undefined, null, '']) {
+        assert.equal(internal.internalModeSignInRefusal(role), null, String(role));
+    }
+    setMode(undefined);
+    assert.equal(internal.internalModeSignInRefusal('ARCHI'), null, 'bez zmiennej architekt wchodzi');
+    assert.equal(internal.signInErrorMessage('InternalMode'), 'Portal dla architektów jest w przygotowaniu. Spróbuj później.');
+    assert.equal(internal.signInErrorMessage('AccessDenied'), null);
+    assert.equal(internal.signInErrorMessage(null), null);
+});
+
 test('sign-in page shows the preparation message; Google sign-in and shell badge follow the mode', async () => {
     const signin = await readFile(new URL('../src/app/auth/signin/page.tsx', import.meta.url), 'utf8');
     const authSource = await readFile(new URL('../src/lib/auth.ts', import.meta.url), 'utf8');
@@ -201,7 +215,9 @@ test('sign-in page shows the preparation message; Google sign-in and shell badge
 
     assert.match(signin, /INTERNAL_MODE_LOGIN_MESSAGE/);
     assert.match(authSource, /authorize: authorizeCredentials/);
-    assert.match(authSource, /isInternalMode\(\) && dbUser\.role === 'ARCHI'/);
+    assert.match(authSource, /internalModeSignInRefusal\(dbUser\.role\)/);
+    assert.match(signin, /new URLSearchParams\(window\.location\.search\)\.get\('error'\)/);
+    assert.match(signin, /signInErrorMessage\(urlErrorCode\)/);
     assert.match(layout, /isInternalMode\(\) && canManageOperationalProjects\(session\.user\.role\)/);
     assert.match(layout, /Tryb wewnętrzny/);
 });
