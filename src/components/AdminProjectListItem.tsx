@@ -23,7 +23,12 @@ export default function AdminProjectListItem({ project }: AdminProjectListItemPr
         setLoading(true);
         setError('');
         try {
-            await updateProjectStatus(project.id, confirming);
+            const result = await updateProjectStatus(project.id, confirming);
+            if (!result.success) {
+                setError(result.error);
+                setConfirming(null);
+                return;
+            }
             router.refresh();
         } catch (err: any) {
             console.error(err);

@@ -132,7 +132,7 @@ test('7. getProjectZkChanges → by subject_id: documents of this project only, 
 
     // FS 101 (test 5) ma inną kwotę niż ZK → projekt ma też wpisy uzgodnienia faktur (Loop 5b) — tu liczą się zmiany ZK.
     const reconciliationIds = () => new Set((db.prepare("SELECT id FROM activity_logs WHERE event_type LIKE 'SUBIEKT_RECONCILIATION_%'").all() as any[]).map((r) => r.id));
-    const zkOnly = (list: Array<{ id: string }>) => list.filter((c) => !reconciliationIds().has(c.id));
+    const zkOnly = <T extends { id: string }>(list: T[]) => list.filter((c) => !reconciliationIds().has(c.id));
     const changes = zkOnly(await getProjectZkChanges(projectId));
     assert.deepEqual(changes.map((c) => c.id), [second.id, first.id], 'bez wpisu FP 200 z innego projektu');
     assert.equal(changes[1].created_at, '2026-10-20T18:00:00.000Z');

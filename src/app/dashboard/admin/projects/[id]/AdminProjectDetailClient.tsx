@@ -2,13 +2,14 @@
 
 import ProjectFilesSection, { ProjectFile } from '@/components/ProjectFilesSection';
 import SubiektChangesCard from '@/components/SubiektChangesCard';
-import type { ProjectDocChain, ProjectZkChange } from '@/lib/subiekt/queries';
+import type { ProjectDocChain, ProjectReconciliation, ProjectZkChange } from '@/lib/subiekt/queries';
 import CommissionsCard from './CommissionsCard';
 import ItemsCard from './ItemsCard';
 import MergeProjectsCard from './MergeProjectsCard';
 import PartnerCard from './PartnerCard';
 import PayoutCard from './PayoutCard';
 import ProjectStatusCard from './ProjectStatusCard';
+import ReconciliationCard from './ReconciliationCard';
 import SubiektDocumentsCard from './SubiektDocumentsCard';
 import type { Commission, Project, ProjectItem } from './types';
 
@@ -26,6 +27,8 @@ interface Props {
         summary: { zkTotal: number; fsTotal: number; remainingToInvoice: number };
         /** getMergeCandidates — cele „Przenieś do…” i źródła „Połącz projekty”. */
         mergeCandidates: Array<{ id: string; name: string; status: string; itemsTotal: number }>;
+        /** getProjectReconciliations — OPEN: karta uzgodnienia nad pozycjami; RESOLVED: linia w dokumentach Subiekt. */
+        reconciliations: ProjectReconciliation[];
     };
     /** canManageFinancialOperations (połącz, przenieś łańcuch, zmień typ pozycji). */
     canManageFinancial: boolean;
@@ -65,6 +68,11 @@ export default function AdminProjectDetailClient({
 
             <ProjectStatusCard project={project} canChangeStatus={canChangeStatus} allowPrimary={!payoutActionable} />
 
+            {/* Uzgodnienie faktur z zamówieniem (Loop 5b): ADMIN i STAFF, tylko otwarte, nad pozycjami. */}
+            {canChangeStatus && subiekt.reconciliations
+                .filter((r) => r.status === 'OPEN')
+                .map((r) => <ReconciliationCard key={r.rootExternalId} projectId={project.id} reconciliation={r} />)}
+
             <ItemsCard
                 projectId={project.id}
                 items={items}
@@ -77,6 +85,7 @@ export default function AdminProjectDetailClient({
                 chains={subiekt.chains}
                 summary={subiekt.summary}
                 moveTargets={subiekt.mergeCandidates}
+                resolved={subiekt.reconciliations.filter((r) => r.status === 'RESOLVED')}
                 canMoveDocuments={canManageFinancial}
             />
 

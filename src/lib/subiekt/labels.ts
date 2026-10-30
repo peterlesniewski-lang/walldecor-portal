@@ -77,3 +77,27 @@ export function documentsLabel(count: number): string {
     const word = abs === 1 ? 'dokument' : last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14) ? 'dokumenty' : 'dokumentów';
     return `${count} ${word}`;
 }
+
+// --- Uzgodnienie faktur z zamówieniem (Loop 5b) ---
+
+const AMOUNT_INPUT = /^\d+(?:[.,]\d{1,2})?$/;
+
+/** Kwota z pola formularza: "536,59", "1 200.5" → liczba; pusta, ujemna, > 2 miejsc lub nie-liczba → null. */
+export function parseAmountInput(text: string): number | null {
+    const compact = (text ?? '').replace(/[\s ]/g, '');
+    if (!AMOUNT_INPUT.test(compact)) return null;
+    return Math.round(Number(compact.replace(',', '.')) * 100) / 100;
+}
+
+/** Suma na żywo w karcie uzgodnienia: `valid` = wszystkie pola poprawne, `matches` = suma = kwota faktur (± 0,005). */
+export function reconciliationTotal(inputs: string[], invoicedNet: number): { total: number | null; matches: boolean; valid: boolean } {
+    const values = inputs.map(parseAmountInput);
+    if (values.some((v) => v === null)) return { total: null, matches: false, valid: false };
+    const total = Math.round((values as number[]).reduce((sum, v) => sum + v, 0) * 100) / 100;
+    return { total, matches: Math.abs(total - Number(invoicedNet)) < 0.005, valid: true };
+}
+
+/** Etykieta plakietki „Subiekt” w menu (liczba = nieprzypisane + otwarte uzgodnienia). */
+export function subiektBadgeLabel(unassigned: number, reconciliations: number): string {
+    return `Subiekt: nieprzypisane dokumenty ${unassigned} + uzgodnienia faktur ${reconciliations}`;
+}

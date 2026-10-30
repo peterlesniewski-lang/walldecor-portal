@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CornerDownRight } from 'lucide-react';
-import { Button, Card, CardBody, CardHeader, InlineConfirm, StatusPill } from '@/components/ui';
+import { Button, Card, CardBody, CardHeader, InlineConfirm, StatusPill, formatDate } from '@/components/ui';
 import { moveDocumentToProject } from '@/app/actions/subiekt';
-import type { DocRow, ProjectDocChain } from '@/lib/subiekt/queries';
+import type { DocRow, ProjectDocChain, ProjectReconciliation } from '@/lib/subiekt/queries';
 import { assignmentStatusEntry, formatDocAmount, formatDocDate, projectStatusLabel } from '@/lib/subiekt/labels';
 import { ErrorBanner } from './ErrorBanner';
 import { SELECT_SM_CLASS } from './styles';
@@ -23,10 +23,12 @@ interface Props {
     moveTargets: MoveTarget[];
     /** Przenoszenie łańcucha przelicza prowizje — canManageFinancialOperations z serwera. */
     canMoveDocuments: boolean;
+    /** Uzgodnienia RESOLVED (Loop 5b) — linia „Faktury uzgodnione ręcznie …” przy łańcuchu. */
+    resolved?: ProjectReconciliation[];
 }
 
 /** „Dokumenty Subiekt” projektu: łańcuchy ZK/FP → WZ/FS/KFS z kwotami, płatnością i sposobem przypisania. */
-export default function SubiektDocumentsCard({ chains, summary, moveTargets, canMoveDocuments }: Props) {
+export default function SubiektDocumentsCard({ chains, summary, moveTargets, canMoveDocuments, resolved = [] }: Props) {
     if (chains.length === 0) return null;
 
     return (
@@ -58,6 +60,12 @@ export default function SubiektDocumentsCard({ chains, summary, moveTargets, can
                                     ))}
                                 </ul>
                             )}
+                            {resolved.filter((r) => r.rootExternalId === chain.rootExternalId).map((r) => (
+                                <p key={r.rootExternalId} className="mt-2 text-[13px] text-ink-2">
+                                    Faktury uzgodnione ręcznie {formatDate(r.resolvedAt)}{r.resolvedByName ? ` przez ${r.resolvedByName}` : ''}{' · '}
+                                    <a href="#zmiany-subiekt" className="font-semibold text-brass-ink underline-offset-2 hover:underline">historia</a>
+                                </p>
+                            ))}
                             {canMoveDocuments && chain.root && isMovableRoot(chain.root) && moveTargets.length > 0 && (
                                 <MoveChain root={chain.root} targets={moveTargets} />
                             )}

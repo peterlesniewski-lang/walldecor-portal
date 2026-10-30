@@ -5,6 +5,7 @@ import ProjectDetailClient from "@/components/ProjectDetailClient";
 import { notFound } from "next/navigation";
 import { query } from "@/lib/db";
 import { getProjectZkChanges } from "@/lib/subiekt/queries";
+import { hasOpenReconciliation } from "@/lib/subiekt/status";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -23,8 +24,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         ORDER BY pf.created_at DESC
     `, [id]);
 
-    // Po sprawdzeniu właściciela powyżej — architekt widzi tylko zmiany swojego projektu.
-    const zkChanges = await getProjectZkChanges(id);
+    // Po sprawdzeniu właściciela powyżej — architekt widzi tylko zmiany swojego projektu. Wpisy uzgodnienia faktur
+    // (Loop 5b) w wersji bez kwot faktur; zamiast szczegółów tylko informacja „Faktury w uzgadnianiu”.
+    const [zkChanges, invoicesInReconciliation] = await Promise.all([
+        getProjectZkChanges(id, 'ARCHITECT'),
+        hasOpenReconciliation(id),
+    ]);
 
     return (
         <ProjectDetailClient
@@ -32,6 +37,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             initialFiles={files}
             currentUserId={session.user.id}
             zkChanges={zkChanges}
+            invoicesInReconciliation={invoicesInReconciliation}
         />
     );
 }

@@ -5,12 +5,13 @@ import { canManageOperationalProjects } from '@/lib/rbac';
 import {
     getArchitectOptions,
     getAssignableProjects,
+    getOpenReconciliations,
     getRecentSyncRuns,
     getUnassignedCount,
     getUnassignedDocuments,
     getUnknownArchitectCodes,
 } from '@/lib/subiekt/queries';
-import { documentsLabel, syncRunStatusEntry } from '@/lib/subiekt/labels';
+import { documentsLabel, formatDocAmount, syncRunStatusEntry } from '@/lib/subiekt/labels';
 import {
     Banner,
     Card,
@@ -38,13 +39,14 @@ export default async function SubiektIntegrationPage() {
         return <Banner tone="danger" title="Brak uprawnień">Ta strona jest dostępna tylko dla administratora i zespołu.</Banner>;
     }
 
-    const [runs, unassignedCount, documents, unknownCodes, architects, assignableProjects] = await Promise.all([
+    const [runs, unassignedCount, documents, unknownCodes, architects, assignableProjects, reconciliations] = await Promise.all([
         getRecentSyncRuns(10),
         getUnassignedCount(),
         getUnassignedDocuments(),
         getUnknownArchitectCodes(),
         getArchitectOptions(),
         getAssignableProjects(),
+        getOpenReconciliations(),
     ]);
     const lastRun = runs[0] ?? null;
 
@@ -95,6 +97,53 @@ export default async function SubiektIntegrationPage() {
                     />
                 )}
             </section>
+
+            {/* Do uzgodnienia (Loop 5b): faktury niezgodne z zamówieniem — admin uzgadnia na stronie projektu. */}
+            {reconciliations.length > 0 && (
+                <Card as="section" className="overflow-hidden">
+                    <CardHeader title={`Do uzgodnienia (${reconciliations.length})`} />
+                    <CardBody flush>
+                        <p className="px-5 pt-4 text-sm text-ink-2">
+                            Faktury z Subiekta mają inną kwotę niż zamówienie. Projekt nie może zostać zakończony, dopóki ktoś z zespołu nie rozłoży kwoty faktur na pozycje.
+                        </p>
+                        <div className="overflow-x-auto">
+                            <table className="mt-3 w-full min-w-[760px] border-collapse text-sm">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" className="label-caps px-5 py-3 text-left">Projekt</th>
+                                        <th scope="col" className="label-caps px-4 py-3 text-left">Architekt</th>
+                                        <th scope="col" className="label-caps px-4 py-3 text-left">Zamówienie</th>
+                                        <th scope="col" className="label-caps px-4 py-3 text-right">Kwota ZK</th>
+                                        <th scope="col" className="label-caps px-4 py-3 text-right">Kwota faktur</th>
+                                        <th scope="col" className="label-caps px-4 py-3 text-right">Różnica</th>
+                                        <th scope="col" className="label-caps px-5 py-3 text-left">Od</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {reconciliations.map((r) => (
+                                        <tr key={`${r.projectId}-${r.rootExternalId}`} className="border-t border-border">
+                                            <td className="px-5 py-3">
+                                                <Link
+                                                    href={`/dashboard/admin/projects/${r.projectId}`}
+                                                    className="font-semibold text-brass-ink underline-offset-2 hover:underline"
+                                                >
+                                                    {r.projectName || r.projectId}
+                                                </Link>
+                                            </td>
+                                            <td className="px-4 py-3 text-ink-2">{r.architectName ?? '—'}</td>
+                                            <td className="px-4 py-3 text-ink">{r.zkNumber ?? '—'}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right tnum">{formatDocAmount(r.zkNet)}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right tnum">{formatDocAmount(r.invoicedNet)}</td>
+                                            <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tnum text-warning">{formatDocAmount(r.difference)}</td>
+                                            <td className="whitespace-nowrap px-5 py-3 tnum text-ink-2">{formatDateTime(r.openedAt)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </CardBody>
+                </Card>
+            )}
 
             {/* Skrzynka nieprzypisanych */}
             <SubiektInboxClient documents={documents} architects={architects} assignableProjects={assignableProjects} />

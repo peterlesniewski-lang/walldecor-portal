@@ -36,6 +36,8 @@ interface ProjectDetailClientProps {
     initialFiles: ProjectFile[];
     currentUserId: string;
     zkChanges: ProjectZkChange[];
+    /** Projekt ma otwarte uzgodnienie faktur z zamówieniem (Loop 5b) — bez kwot faktur. */
+    invoicesInReconciliation?: boolean;
 }
 
 const categoryIcons: any = {
@@ -84,7 +86,7 @@ function buildTimeline(project: any): TimelineEvent[] {
     return events;
 }
 
-export default function ProjectDetailClient({ project, initialFiles, currentUserId, zkChanges }: ProjectDetailClientProps) {
+export default function ProjectDetailClient({ project, initialFiles, currentUserId, zkChanges, invoicesInReconciliation = false }: ProjectDetailClientProps) {
     const items: any[] = project.items ?? [];
     const totalNet = items.reduce((acc: number, item: any) => acc + (Number(item.amount_net) || 0), 0);
     const productNet = items
@@ -139,6 +141,12 @@ export default function ProjectDetailClient({ project, initialFiles, currentUser
                         </div>
                         <h2 className="font-display text-[34px] font-normal leading-[1.1] tracking-[-0.01em] text-ink">{project.name}</h2>
                         <p className="mt-2 text-sm text-ink-2">Klient: <span className="font-semibold text-ink">{project.client_label}</span></p>
+                        {invoicesInReconciliation && (
+                            <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-2">
+                                <StatusPill tone="warning">Faktury w uzgadnianiu</StatusPill>
+                                <span>WallDecor uzgadnia faktury z zamówieniem — kwoty pozycji i prowizji mogą się jeszcze zmienić.</span>
+                            </p>
+                        )}
                     </div>
                     <div className="shrink-0 md:text-right">
                         <p className="label-caps mb-1">Data zgłoszenia</p>
