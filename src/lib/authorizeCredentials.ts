@@ -46,7 +46,7 @@ export async function authorizeCredentials(
 
     if (process.env.DEMO_MODE === 'true') {
         if (credentials.email === 'architekt@demo.pl') {
-            return refuseArchitectInInternalMode({ id: 'u2', name: 'Piotr Architekt', email: 'architekt@demo.pl', role: 'ARCHI' });
+            return refuseArchitectInInternalMode<AuthorizedUser>({ id: 'u2', name: 'Piotr Architekt', email: 'architekt@demo.pl', role: 'ARCHI' });
         }
         if (credentials.email === 'admin@walldecor.pl') {
             return { id: 'u1', name: 'Admin WallDecor', email: 'admin@walldecor.pl', role: 'ADMIN' };
