@@ -30,6 +30,16 @@ function contractorName(id: number, build: BuildResult, contractors: Map<number,
         .map((v) => (v ?? '').trim()).find(Boolean) ?? '(brak nazwy)';
 }
 
+/** Jedna linia liczb do dziennego logu synchronizacji — bez nazw kontrahentów i numerów dokumentów. */
+export function countsLine(selection: ChainSelection, build: BuildResult): string {
+    const counts = new Map<string, number>();
+    for (const d of build.documents) counts.set(d.type, (counts.get(d.type) ?? 0) + 1);
+    const roots = selection.documents.filter((d) => d.parentId === null).length;
+    return `Dokumenty w paczce: ${build.documents.length} (${['ZK', 'WZ', 'FS', 'KFS'].map((t) => `${t} ${counts.get(t) ?? 0}`).join(', ')}); ` +
+        `korzenie ${roots}; heurystyka FS '+': ${selection.heuristic.length}; do ręcznej obsługi: ${manualReviewCount(selection, build)}; ` +
+        `FS '+' zwykłej sprzedaży: ${selection.unlinkedMultiSource}`;
+}
+
 export interface SummaryInput {
     title: string;
     generatedAt: string;

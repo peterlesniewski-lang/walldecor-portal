@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifySubiektRequest } from '../../src/lib/subiekt/auth.ts';
-import { buildPages, createFileLogger, postPage, sendAll, sortForSending, RETRY_DELAYS_MS, type SendDeps } from '../src/send.ts';
+import { buildPages, createFileLogger, postPage, pruneLogs, sendAll, sortForSending, staleLogFiles, RETRY_DELAYS_MS, type SendDeps } from '../src/send.ts';
 import type { SubiektDocumentPayload, SubiektSyncRequest } from '../src/contract.ts';
 
 const AUTH = { token: 't'.repeat(64), secret: 's'.repeat(64) };
@@ -167,4 +167,20 @@ test('kolejność wysyłki: rodzice przed dziećmi (ZK → WZ → FS → KFS), p
     const pages = buildPages([doc(9999, 'KFS'), ...Array.from({ length: 200 }, (_, i) => doc(i + 1))], RUN_ID, '0.1.0');
     assert.equal(pages[0]?.documents[0]?.type, 'ZK');
     assert.deepEqual(pages[1]?.documents.map((d) => d.external_id), [9999]);
+});
+
+test('retencja logów: dzienne RRRR-MM-DD.log starsze niż 90 dni są usuwane; inne pliki zostają', () => {
+    const today = new Date(2026, 9, 30, 20, 0);
+    const names = ['2026-07-31.log', '2026-08-01.log', '2026-10-30.log', 'probe-2026-01-01.txt', 'dry-run-2025-01-01.json', 'last-sync.txt', 'notatki.log'];
+    assert.deepEqual(staleLogFiles(names, today, 90), ['2026-07-31.log']);
+
+    const dir = mkdtempSync(join(tmpdir(), 'agent-subiekt-prune-'));
+    try {
+        for (const name of names) writeFileSync(join(dir, name), 'x');
+        assert.deepEqual(pruneLogs(dir, today), ['2026-07-31.log']);
+        assert.deepEqual(readdirSync(dir).sort(), names.filter((n) => n !== '2026-07-31.log').sort());
+        assert.deepEqual(pruneLogs(join(dir, 'brak'), today), [], 'brak katalogu to nie błąd');
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
 });

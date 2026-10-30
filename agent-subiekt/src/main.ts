@@ -1,7 +1,7 @@
 // Agent Subiekt GT → Portal Architekta. Tryby: synchronizacja (domyślnie), --dry-run, --probe, --since RRRR-MM-DD.
 // Kody wyjścia: zob. EXIT poniżej i README.md.
 import { randomUUID } from 'node:crypto';
-import { existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fetchAncestors, fetchPayerHistory, selectChains, GT_DOC_TYPE, type ChainSelection, type HeaderRow } from './chain.ts';
 import { AGENT_DIR, AGENT_VERSION, applyEnvFile, ConfigError, LOGS_DIR, loadConfig, lookbackStart, parseArgs, type AgentConfig } from './config.ts';
@@ -13,8 +13,8 @@ import {
     REQUIRED_COLUMNS, SQL_ADDRESS_HISTORY_SAMPLE, SQL_CATEGORY, SQL_CHAIN_HEADERS, SQL_TABLES, SQL_TYPE_COUNTS,
     sqlArchitectZkOfPayers, sqlColumns, sqlContractors, sqlFinance, sqlHeadersByIds, sqlInvoicesOfPayers, sqlPositions,
 } from './queries.ts';
-import { docNumber, formatSummary, manualReviewCount, money, typeLabel } from './report.ts';
-import { buildPages, createFileLogger, localDate, sendAll, type Logger } from './send.ts';
+import { countsLine, docNumber, formatSummary, manualReviewCount, money, typeLabel } from './report.ts';
+import { buildPages, createFileLogger, localDate, pruneLogs, sendAll, type Logger } from './send.ts';
 
 export const EXIT = {
     OK: 0,
@@ -95,11 +95,17 @@ async function sync(pool: Pool, config: AgentConfig, since: string, logger: Logg
     }
     const runId = randomUUID();
     const data = await collect(pool, config, since);
-    for (const line of summaryLines('SYNCHRONIZACJA', config, since, runId, data)) logger.info(line);
+    // Szczegóły (kontrahenci, numery, łańcuchy) tylko w jednym nadpisywanym pliku; dzienny log ma same liczby i ostrzeżenia.
+    const summaryFile = join(config.logsDir, 'last-sync.txt');
+    writeFileSync(summaryFile, `${summaryLines('SYNCHRONIZACJA', config, since, runId, data).join('\r\n')}\r\n`, 'utf8');
+    logger.info(`${countsLine(data.selection, data.build)} · szczegóły: ${summaryFile}`);
     for (const warning of data.selection.heuristic) logger.warn(`MULTI_SOURCE_HEURISTIC ${docNumber(warning.fs)} → ${docNumber(warning.parent)}`);
+    const manual = manualReviewCount(data.selection, data.build);
+    if (manual > 0) logger.warn(`Do ręcznej obsługi: ${manual} dokumentów — lista w ${summaryFile}`);
 
     const pages = buildPages(data.build.documents, runId, AGENT_VERSION);
     logger.info(`Wysyłka do ${config.portal.endpoint}: ${data.build.documents.length} dokumentów, stron ${pages.length}, run_id ${runId}`);
+    const result: string[] = ['', 'WYNIK WYSYŁKI'];
     try {
         const summary = await sendAll(config.portal.endpoint, pages, config.portal, {
             fetch: (url, init) => fetch(url, init),
@@ -107,13 +113,19 @@ async function sync(pool: Pool, config: AgentConfig, since: string, logger: Logg
             now: () => Date.now(),
             logger,
         });
-        logger.info(`Portal: przyjęte ${summary.accepted}, bez zmian ${summary.unchanged}, nieprzypisane ${summary.unassigned}, odrzucone ${summary.rejected.length}`);
-        for (const rejected of summary.rejected) logger.warn(`Odrzucony dokument ${rejected.external_id}: ${rejected.reason}`);
-        const manual = manualReviewCount(data.selection, data.build);
-        if (manual > 0) logger.warn(`Do ręcznej obsługi: ${manual} dokumentów (FS wielodokumentowe bez jednoznacznego ZK, błędy danych)`);
+        const totals = `Portal: przyjęte ${summary.accepted}, bez zmian ${summary.unchanged}, nieprzypisane ${summary.unassigned}, odrzucone ${summary.rejected.length}`;
+        logger.info(totals);
+        result.push(totals);
+        for (const rejected of summary.rejected) {
+            logger.warn(`Odrzucony dokument ${rejected.external_id}: ${rejected.reason}`);
+            result.push(`- odrzucony dok_Id ${rejected.external_id}: ${rejected.reason}`);
+        }
+        appendFileSync(summaryFile, `${result.join('\r\n')}\r\n`, 'utf8');
         return summary.rejected.length > 0 || manual > 0 ? EXIT.INCOMPLETE : EXIT.OK;
     } catch (error) {
-        logger.error(error instanceof Error ? error.message : String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(message);
+        appendFileSync(summaryFile, `${[...result, `BŁĄD: ${message}`].join('\r\n')}\r\n`, 'utf8');
         return EXIT.PORTAL;
     }
 }
@@ -255,6 +267,8 @@ export async function main(argv: string[]): Promise<number> {
         return EXIT.CONFIG;
     }
 
+    const pruned = pruneLogs(config.logsDir);
+    if (pruned.length > 0) logger.info(`Usunięto logi starsze niż 90 dni: ${pruned.length}`);
     const since = args.since ?? lookbackStart(new Date(), config.lookbackMonths);
     logger.info(`Start ${args.mode} · agent ${AGENT_VERSION} · dokumenty od ${since}`);
 

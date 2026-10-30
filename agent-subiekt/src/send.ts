@@ -1,7 +1,7 @@
 // Wysyłka paczki do portalu (PLAN-SUBIEKT-2026-10-29.md 2.1, Loop 5): podpis HMAC identyczny z portalem
 // (src/lib/subiekt/auth.ts), strony po 200 dokumentów z jednym run_id, ponowienia z backoffem, log do pliku.
 import { createHmac } from 'node:crypto';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
     SUBIEKT_SYNC_MAX_DOCUMENTS,
@@ -192,4 +192,25 @@ export function createFileLogger(dir: string, options: { now?: () => Date; echo?
         warn: (message) => write('WARN', message),
         error: (message) => write('ERROR', message),
     };
+}
+
+/** Ile dni trzymamy dzienne logi `RRRR-MM-DD.log`. */
+export const LOG_RETENTION_DAYS = 90;
+const DAILY_LOG = /^(\d{4}-\d{2}-\d{2})\.log$/;
+
+/** Dzienne logi z datą w nazwie starszą niż `days` dni przed `today` (data lokalna). Inne pliki (probe, dry-run, last-sync) zostają. */
+export function staleLogFiles(names: string[], today: Date, days = LOG_RETENTION_DAYS): string[] {
+    const cutoff = localDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - days));
+    return names.filter((name) => {
+        const match = DAILY_LOG.exec(name);
+        return match !== null && (match[1] as string) < cutoff;
+    }).sort();
+}
+
+/** Usuwa stare dzienne logi z `dir`; zwraca nazwy usuniętych plików. */
+export function pruneLogs(dir: string, now = new Date(), days = LOG_RETENTION_DAYS): string[] {
+    if (!existsSync(dir)) return [];
+    const stale = staleLogFiles(readdirSync(dir), now, days);
+    for (const name of stale) rmSync(join(dir, name), { force: true });
+    return stale;
 }
