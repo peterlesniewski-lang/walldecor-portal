@@ -203,51 +203,64 @@ export async function updateProjectStatus(projectId: string, status: string, com
             }
 
             // --- Write phase (all in one transaction) ---
-            await withTransaction(async (queryFn) => {
-                await queryFn(
-                    "UPDATE projects SET status = ?, completed_by = ?, completed_at = CURRENT_TIMESTAMP, completion_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    [status, session.user.id, completionNote?.trim() || null, projectId]
-                );
+            try {
+                await withTransaction(async (queryFn) => {
+                    await queryFn(
+                        "UPDATE projects SET status = ?, completed_by = ?, completed_at = CURRENT_TIMESTAMP, completion_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        [status, session.user.id, completionNote?.trim() || null, projectId]
+                    );
 
-                const existingTrans = await queryFn<any>(
-                    "SELECT id FROM wallet_transactions WHERE related_item_id IN (SELECT id FROM project_items WHERE project_id = ?) LIMIT 1",
-                    [projectId]
-                );
+                    // Loop 5b: ponowne sprawdzenie w tej samej transakcji co zmiana statusu — synchronizacja mogła otworzyć
+                    // uzgodnienie po sprawdzeniu wyżej. Wyjątek wycofuje zmianę statusu; zamieniamy go niżej na wynik.
+                    const openReconciliations = await queryFn<{ count: number }>(
+                        "SELECT COUNT(*) AS count FROM subiekt_reconciliations WHERE project_id = ? AND status = 'OPEN' FOR UPDATE",
+                        [projectId]
+                    );
+                    if (Number(openReconciliations[0]?.count ?? 0) > 0) throw new Error(RECONCILE_OPEN_STATUS_ERROR);
 
-                // Guard ponownej finalizacji: pomijamy naliczenia także gdy projekt ma już rozliczoną prowizję
-                // (np. import historyczny tworzy od razu PAID bez cashbacku). Status projektu i tak jest zaktualizowany.
-                const existingSettledComm = await queryFn<any>(
-                    "SELECT id FROM commissions WHERE project_id = ? AND status IN ('EARNED', 'IN_PAYMENT', 'PAID') LIMIT 1",
-                    [projectId]
-                );
+                    const existingTrans = await queryFn<any>(
+                        "SELECT id FROM wallet_transactions WHERE related_item_id IN (SELECT id FROM project_items WHERE project_id = ?) LIMIT 1",
+                        [projectId]
+                    );
 
-                if (existingTrans.length > 0 || existingSettledComm.length > 0) {
-                    console.log(`Project ${projectId} already processed for commissions/cashback. Skipping.`);
-                    return;
-                }
+                    // Guard ponownej finalizacji: pomijamy naliczenia także gdy projekt ma już rozliczoną prowizję
+                    // (np. import historyczny tworzy od razu PAID bez cashbacku). Status projektu i tak jest zaktualizowany.
+                    const existingSettledComm = await queryFn<any>(
+                        "SELECT id FROM commissions WHERE project_id = ? AND status IN ('EARNED', 'IN_PAYMENT', 'PAID') LIMIT 1",
+                        [projectId]
+                    );
 
-                for (const { item, commAmount, cashbackAmount } of itemOps) {
-                    if (pendingCommMap[item.id]) {
-                        await queryFn(
-                            "UPDATE commissions SET status = 'EARNED', amount_net = ?, rate = ? WHERE project_item_id = ? AND status = 'PENDING'",
-                            [commAmount, commissionRate, item.id]
-                        );
-                    } else if (commAmount > 0) {
-                        await queryFn(
-                            "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate) VALUES (?, ?, ?, ?, ?, 'EARNED', ?)",
-                            [`c_${item.id}_earned`, projectId, item.id, owner_id, commAmount, commissionRate]
-                        );
+                    if (existingTrans.length > 0 || existingSettledComm.length > 0) {
+                        console.log(`Project ${projectId} already processed for commissions/cashback. Skipping.`);
+                        return;
                     }
 
-                    if (cashbackAmount > 0) {
-                        const expiresAt = cashbackExpiresAt();
-                        await queryFn(
-                            "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-                            [`t_${item.id}_cashback`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
-                        );
+                    for (const { item, commAmount, cashbackAmount } of itemOps) {
+                        if (pendingCommMap[item.id]) {
+                            await queryFn(
+                                "UPDATE commissions SET status = 'EARNED', amount_net = ?, rate = ? WHERE project_item_id = ? AND status = 'PENDING'",
+                                [commAmount, commissionRate, item.id]
+                            );
+                        } else if (commAmount > 0) {
+                            await queryFn(
+                                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate) VALUES (?, ?, ?, ?, ?, 'EARNED', ?)",
+                                [`c_${item.id}_earned`, projectId, item.id, owner_id, commAmount, commissionRate]
+                            );
+                        }
+
+                        if (cashbackAmount > 0) {
+                            const expiresAt = cashbackExpiresAt();
+                            await queryFn(
+                                "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+                                [`t_${item.id}_cashback`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
+                            );
+                        }
                     }
-                }
-            });
+                });
+            } catch (error) {
+                if (error instanceof Error && error.message === RECONCILE_OPEN_STATUS_ERROR) return { success: false, error: RECONCILE_OPEN_STATUS_ERROR };
+                throw error;
+            }
         }
 
         await logActivity(session.user.id, 'PROJECT_STATUS_CHANGE', `Zmieniono status projektu ${projectId} na ${status}`, { projectId, status });

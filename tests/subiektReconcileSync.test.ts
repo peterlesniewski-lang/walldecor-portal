@@ -393,6 +393,27 @@ test('locking (review I3): reconciliation rows are read FOR UPDATE in sync and i
     assert.match(op, /affectedRows/);
 });
 
+test('updateProjectStatus re-checks open reconciliations inside the ZAKOŃCZONY transaction (review M1)', async () => {
+    await sync([zk(1900)]);
+    await sync([fs(1910, 1900, [product(19101), service(19102)], { is_paid: true })]);
+    const projectId = projectOf(1900);
+    assert.equal(await status.hasOpenReconciliation(projectId), false);
+    // Synchronizacja „w międzyczasie”: uzgodnienie OPEN pojawia się po sprawdzeniu przed transakcją.
+    db.exec(`CREATE TRIGGER race_1900 AFTER UPDATE OF status ON projects WHEN NEW.id = '${projectId}' AND NEW.status = 'ZAKOŃCZONY'
+             BEGIN INSERT INTO subiekt_reconciliations (id, project_id, root_external_id, status, zk_net, invoiced_net, fingerprint)
+                   VALUES ('rec_race_1900', '${projectId}', 1900, 'OPEN', 836.59, 900, 'x'); END`);
+    let result;
+    try {
+        result = await projectActions.updateProjectStatus(projectId, 'ZAKOŃCZONY');
+    } finally {
+        db.exec('DROP TRIGGER race_1900');
+    }
+    assert.deepEqual(result, { success: false, error: 'Projekt ma nieuzgodnione faktury z Subiekta. Uzgodnij je przed zakończeniem.' });
+    assert.equal(projectRow(projectId).status, 'PRZYJĘTY', 'zmiana statusu wycofana');
+    assert.equal(commissionSum(projectId, ['EARNED']), 0, 'bez finalizacji prowizji');
+    assert.equal(reconciliation(projectId, 1900), undefined, 'wiersz z wyzwalacza wycofany z transakcją');
+});
+
 // --- KFS na łańcuchu z rozbiciem ZK (poprawka po przeglądzie: mirror przed korektą) ---
 
 test('downward KFS on a mirroring chain (loop 6 step 8) → stays MIRROR, the invoice item is corrected, no reconciliation', async (t) => {
