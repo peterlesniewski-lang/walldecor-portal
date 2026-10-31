@@ -560,6 +560,6 @@ migrations/
 - Widoki: `getOpenReconciliations` / `getOpenReconciliationCount` (plakietka = nieprzypisane + uzgodnienia), `getProjectReconciliations`, `getProjectZkChanges(id, 'ARCHITECT')` — wpisy uzgodnienia bez kwot faktur.
 - UI: `ReconciliationCard` nad pozycjami, baner z powodem, linia „Faktury uzgodnione ręcznie … · historia” (#zmiany-subiekt), sekcja „Do uzgodnienia (n)”, „Faktury w uzgadnianiu” u architekta.
 - `REMARKS_MARKER` = `#A` + 1–6 cyfr jak agent (§6 pkt 18 zamknięty). Migracja 021 + ensure-production-schema + seed.
-- Testy KFS z Loopów 2–4 przeszły na korzeń FP (INVOICE_ONLY) — w łańcuchu ZK korekta otwiera uzgodnienie (§6 pkt 19).
+- Po przeglądzie (`93ab273`): `mirrors` na pozycjach FS przed KFS — łańcuch z rozbiciem ZK zostaje MIRROR, KFS koryguje pozycję FS jak w Loopie 6; ponowne otwarcie RESOLVED przywraca pozycje uzgodnione na 0 (kwota z ZK). Bramka 399/399, e2e faza 5 14/14.
 - Bramka: `npm test` 395/395, `test:agent` 56/56, tsc 18× TS5097, build OK; e2e `next start` 4 fazy (DoD 1–4), restart, idempotencja, izolacja architektów, STAFF.
 
