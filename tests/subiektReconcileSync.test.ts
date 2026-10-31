@@ -455,6 +455,26 @@ test('cancelled project (review M2): open reconciliations close, resolve is refu
     assert.match(client, /project\.status !== 'NIEZREALIZOWANY'/);
 });
 
+test('merge conflict (review M4): a live RESOLVED row wins over a stale AUTO_CLOSED row of the same chain', async () => {
+    await sync([zk(2200)]);
+    await sync([fs(2210, 2200, [collective(22101, 900)])]);
+    const target = projectOf(2200);
+    await resolve(target, 2200, [600, 300]);
+    const live = reconciliation(target, 2200);
+    // Projekt źródłowy tego samego architekta ze starym, zamkniętym wierszem tego łańcucha (np. po przeniesieniu).
+    db.prepare("INSERT INTO projects (id, owner_id, name, client_label, status, created_at) VALUES ('p_src22', ?, 'Źródło', 'K', 'PRZYJĘTY', CURRENT_TIMESTAMP)").run(ARCHI_A);
+    db.prepare(`INSERT INTO subiekt_reconciliations (id, project_id, root_external_id, status, zk_net, invoiced_net, fingerprint, opened_at)
+                VALUES ('rec_stale22', 'p_src22', 2200, 'AUTO_CLOSED', 836.59, 836.59, '2210:836.59', '2026-01-01 08:00:00')`).run();
+    await ops.mergeProjectsOp(target, ['p_src22'], ADMIN);
+    const rows = db.prepare('SELECT * FROM subiekt_reconciliations WHERE root_external_id = 2200').all() as any[];
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].id, live.id, 'zostaje żywy wiersz');
+    assert.equal(rows[0].status, 'RESOLVED');
+    assert.deepEqual(JSON.parse(rows[0].amounts_json), { 22001: 600, 22002: 300 });
+    assert.deepEqual(amountsOf(target), [600, 300]);
+    assert.equal(logs('SUBIEKT_RECONCILIATION_OPENED', docRow(2200).id).length, 1, 'bez ponownego otwarcia');
+});
+
 // --- KFS na łańcuchu z rozbiciem ZK (poprawka po przeglądzie: mirror przed korektą) ---
 
 test('downward KFS on a mirroring chain (loop 6 step 8) → stays MIRROR, the invoice item is corrected, no reconciliation', async (t) => {

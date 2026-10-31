@@ -87,22 +87,27 @@ async function addOverriddenItem(projectId: string, source: SubiektItemRow, type
 
 /**
  * Przenosi wiersz uzgodnienia łańcucha `rootExternalId` z projektów `fromProjectIds` do `targetId` (UNIQUE
- * project_id + root_external_id): zostaje najwcześniej otwarty wiersz źródeł, pozostałe wiersze tego łańcucha
- * (także celu) są usuwane. Zwraca true, gdy wierszy było więcej niż jeden (łańcuch trzeba przeliczyć).
+ * project_id + root_external_id). Gdy wierszy tego łańcucha jest kilka (źródła i cel), zostaje jeden: najpierw
+ * żywy (OPEN / RESOLVED — decyzja admina nie ginie) przed AUTO_CLOSED, potem ze źródła, potem najwcześniej otwarty;
+ * pozostałe są usuwane. Bez wiersza w źródłach nic się nie zmienia. Zwraca true, gdy wierszy było więcej niż jeden
+ * (łańcuch trzeba przeliczyć).
  */
 async function moveReconciliationRows(rootExternalId: number, fromProjectIds: string[], targetId: string): Promise<boolean> {
-    const rows = await query<{ id: string; project_id: string }>(
-        `SELECT id, project_id FROM subiekt_reconciliations
+    const rows = await query<{ id: string; project_id: string; status: string }>(
+        `SELECT id, project_id, status FROM subiekt_reconciliations
          WHERE root_external_id = ? AND project_id IN (${placeholders([...fromProjectIds, targetId])})
          ORDER BY opened_at, id`,
         [rootExternalId, ...fromProjectIds, targetId]
     );
-    const keep = rows.find((r) => fromProjectIds.includes(r.project_id));
-    if (!keep) return false;
+    if (!rows.some((r) => fromProjectIds.includes(r.project_id))) return false;
+    const rank = (r: { project_id: string; status: string }) =>
+        (r.status === 'AUTO_CLOSED' ? 2 : 0) + (fromProjectIds.includes(r.project_id) ? 0 : 1);
+    // Sortowanie stabilne: przy równej randze zostaje kolejność opened_at z zapytania.
+    const keep = [...rows].sort((a, b) => rank(a) - rank(b))[0];
     for (const row of rows) {
         if (row.id !== keep.id) await query('DELETE FROM subiekt_reconciliations WHERE id = ?', [row.id]);
     }
-    await query('UPDATE subiekt_reconciliations SET project_id = ? WHERE id = ?', [targetId, keep.id]);
+    if (keep.project_id !== targetId) await query('UPDATE subiekt_reconciliations SET project_id = ? WHERE id = ?', [targetId, keep.id]);
     return rows.length > 1;
 }
 
