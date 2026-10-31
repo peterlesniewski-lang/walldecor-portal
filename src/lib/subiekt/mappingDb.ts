@@ -436,6 +436,16 @@ async function saveAssignment(
 async function refreshPaidFlag(doc: StoredDoc) {
     // Zapłata nie wchodzi do hasha; is_paid pozycji nie wpływa na prowizję. Tylko pozycje w projekcie dokumentu.
     if (!doc.project_id) return;
+    // ZK z fakturami w łańcuchu: jego pozycje (ORDER_BREAKDOWN / RECONCILE) mają zapłatę z FS, nie z ZK — nie nadpisujemy
+    // (w MIRROR ZK i tak nie ma pozycji). Jedno zapytanie zamiast pełnego resyncu łańcucha.
+    if (doc.type === 'ZK' && doc.root_external_id !== null && doc.root_external_id !== undefined) {
+        const [invoices] = await query<{ count: number }>(
+            `SELECT COUNT(*) AS count FROM subiekt_documents
+             WHERE type = 'FS' AND root_external_id = ? AND project_id = ? AND assignment_status IN ${ASSIGNED_STATUSES}`,
+            [doc.root_external_id, doc.project_id]
+        );
+        if (Number(invoices?.count ?? 0) > 0) return;
+    }
     await query(
         "UPDATE project_items SET is_paid = ? WHERE subiekt_document_id = ? AND project_id = ? AND source = 'SUBIEKT' AND is_paid <> ?",
         [Number(doc.is_paid), doc.id, doc.project_id, Number(doc.is_paid)]

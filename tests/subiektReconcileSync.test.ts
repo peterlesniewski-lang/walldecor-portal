@@ -145,6 +145,25 @@ test('ORDER_BREAKDOWN: one collective FS position for the ZK amount → items fr
     assert.deepEqual(await status.getSuggestedStatus(projectId), { status: 'ZAKOŃCZONY', reason: null });
 });
 
+test('ORDER_BREAKDOWN: an unchanged ZK re-send after a paid FS keeps is_paid on items taken from the order (review I1)', async () => {
+    await sync([zk(150)]);
+    await sync([fs(160, 150, [collective(1601, 836.59)], { is_paid: true })]);
+    const projectId = projectOf(150);
+    assert.deepEqual(liveItems(projectId).map((i) => Number(i.is_paid)), [1, 1]);
+    const response = await sync([zk(150)]);
+    assert.equal(response.unchanged, 1);
+    assert.deepEqual(liveItems(projectId).map((i) => Number(i.is_paid)), [1, 1], 'zapłata z FS, nie z ZK');
+    await sync([zk(150), fs(160, 150, [collective(1601, 836.59)], { is_paid: true })]);
+    assert.deepEqual(liveItems(projectId).map((i) => Number(i.is_paid)), [1, 1]);
+});
+
+test('ORDER_ONLY: an unchanged ZK still refreshes its own paid flag on its items', async () => {
+    await sync([zk(170)]);
+    const projectId = projectOf(170);
+    await sync([zk(170, { is_paid: true })]);
+    assert.deepEqual(liveItems(projectId).map((i) => Number(i.is_paid)), [1, 1]);
+});
+
 test('ORDER_BREAKDOWN: two FS (300 + 536.59) not mirroring by name, equal sum → items from ZK, invoice numbers by issued_at', async () => {
     await sync([zk(200)]);
     await sync([
