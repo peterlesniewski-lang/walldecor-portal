@@ -105,11 +105,55 @@ Zrzuty i pliki dowodów (scratchpad sesji, poza repo): `…/scratchpad/e2e/shots
 9. **Historia dla architekta**: `getProjectZkChanges(id, 'ARCHITECT')` — wpisy uzgodnienia neutralne (bez kwot, numerów faktur i notatki), autor-admin jako „WallDecor”; admin widzi pełną treść i nazwisko.
 10. **Odcisk** dłuższy niż 2000 znaków → `sha256:<hex>`; kwoty w odcisku z 2 miejscami (`900.00`).
 11. **Przycisk zapisu** w karcie jest `secondary` (konwencja strony: jeden przycisk primary).
-12. Testy mechaniki korekt KFS z Loopów 2–4 przeszły na łańcuch z korzeniem **FP** (INVOICE_ONLY), bo z korzeniem ZK korekta rozbija mirror i łańcuch idzie do uzgodnienia; test 8 (`subiektMappingSync`) opisuje teraz nowe zachowanie dla ZK, a 8b — dawne dla FP.
+12. Testy mechaniki korekt KFS z Loopów 2–4 przeszły na łańcuch z korzeniem **FP** (INVOICE_ONLY). Po poprawce z 2026-10-31 (niżej) to nie jest już wymagane, ale testy zostają na FP (pokrywają ścieżkę INVOICE_ONLY); test 8 (`subiektMappingSync`) wrócił do zachowania z Loopu 6 (korekta na pozycji FS), 8b pokrywa wariant FP.
 
 ## Konsekwencje i otwarte kwestie (do decyzji użytkownika)
 
-1. **KFS w łańcuchu ZK zawsze otwiera uzgodnienie.** `mirrors` porównuje pozycje FS *po* KFS, więc korekta w dół (np. Loop 6 krok 8: tapeta 8 → 6 szt) rozbija odzwierciedlenie → RECONCILE: w projekcie ZAKOŃCZONY pozycja FS jest korygowana do 0, a pozycja z ZK wraca z pełną kwotą ZK (EARNED + cashback) do czasu decyzji admina. Wcześniej korekta trafiała wprost w pozycję FS. Wariant do rozważenia: odzwierciedlenie sprawdzać na pozycjach FS *przed* KFS i stosować korekty jak dotąd.
+1. ~~**KFS w łańcuchu ZK zawsze otwiera uzgodnienie.**~~ **Rozstrzygnięte 2026-10-31** (`93ab273`, §6 pkt 19) — zob. „Poprawki po przeglądzie”.
 2. **Faktura częściowa** (np. najpierw sam produkt) otwiera uzgodnienie, które zamyka się samo przy kolejnej FS (MIRROR / równe sumy). W historii zostają wpisy OPENED + CLOSED; admin może też uzgodnić „za wcześnie” — kolejna FS i tak zmieni odcisk.
 3. **Kwoty faktur u architekta**: wpisy uzgodnienia ich nie pokazują, ale istniejący od Loopu 6 wpis `SUBIEKT_CORRECTION` pokazuje architektowi numer FS i ceny przed/po korekcie (zrzut `09`). Jeśli to ma zniknąć, trzeba zmienić decyzję z Loopu 6 (krok 8: „Anna widzi zmianę w logu”).
-4. Pozycja wyzerowana decyzją admina w projekcie w toku jest usuwana; przy ponownym otwarciu nie ma jej w karcie (ma 0 w `amounts_json`), więc nie da się jej przywrócić z poziomu karty — dopiero zmiana pozycji ZK otworzy ją z kwotą z ZK.
+4. ~~Pozycja wyzerowana decyzją admina nie wracała przy ponownym otwarciu.~~ **Rozstrzygnięte 2026-10-31** (`93ab273`, §6 pkt 22) — zob. „Poprawki po przeglądzie”.
+
+## Poprawki po przeglądzie (2026-10-31, commit `93ab273`)
+
+Decyzja koordynatora: punkty 1 i 4 z „Konsekwencji” poprawione w kodzie; punkty 2 i 3 zostają jako otwarte (§6 pkt 20–21).
+
+1. **Mirror przed KFS.** `mirrors(zkPositions, fsPositions)` dostaje pozycje FS tak, jak są na fakturze (`describeChain` w `mappingDb.ts` nie stosuje już mapy korekt). Łańcuch, którego faktury powtarzają rozbicie ZK, zostaje MIRROR także po KFS — korekta trafia w pozycję FS jak przed Loop 5b. Bez odzwierciedlenia obowiązuje reguła sum z KFS (`invoicedNet` = FS + KFS), a odcisk nadal zawiera KFS, więc nowa korekta przywraca pytanie.
+2. **Pozycja uzgodniona na 0 wraca.** Przy ponownym otwarciu RESOLVED (`settleReconciliation`) kwoty 0 są zdejmowane z `amounts_json`; pozycja wraca z kwotą z ZK przez istniejący `syncDocumentItems` → `addItemCore` (w ZAKOŃCZONY: korekta zerowego wiersza w górę przez `updateItemAmountCore`) i jest w formularzu. Notatka poprzedniej decyzji zostaje do nowego zapisu.
+
+Testy (TDD — czerwone przed zmianą, zielone po): `subiektReconcile` (chainMode: KFS na łańcuchu z rozbiciem → MIRROR, na łańcuchu zbiorczym → RECONCILE), `subiektReconcileSync` (+4: KFS w dół na łańcuchu MIRROR w projekcie ZAKOŃCZONY — pozycja FS 436,59, prowizja −100 × stawka, bez uzgodnienia; KFS na łańcuchu ORDER_BREAKDOWN → odcisk `1410:836.59;1420:-100.00`, OPEN; ponowne otwarcie po KFS przywraca montaż 300 i `amounts_json` bez zer, kolejny sync go nie usuwa, nowa decyzja 550 + 300; ponowne otwarcie po zmianie ZK w projekcie ZAKOŃCZONY przywraca montaż). Test 8 w `subiektMappingSync` z powrotem: FS 1000 → 800, korekta EARNED −200 × stawka, brak wiersza uzgodnienia. Test „MIRROR → RECONCILE → MIRROR (ZAKOŃCZONY)” porównuje saldo portfela przed i po (wcześniej sumował wszystkie transakcje architekta B, co psuły nowe testy).
+
+### Bramka po poprawkach
+
+```
+npm test              → ℹ tests 399 · pass 399 · fail 0
+npm run test:agent    → ℹ tests 56 · pass 56 · fail 0
+npx tsc --noEmit      → 18 × error TS5097, 0 innych
+npm run build         → exit 0 (✓ Compiled successfully)
+```
+
+### E2E faza 5 (nowa czysta baza `e2e2.sqlite`, `next start -p 3605`, build z `93ab273`) — 14/14 PASS
+
+Kod `A-001` dla Kamili nadany w UI (faza 1). Paczki (każda 2×, druga `unchanged 1`): ZK 91/10 (`7301`: Tapeta Test 8 × 100, karta 77; Montaż 500) + FS 92/10 (`7302`, to samo rozbicie, zapłacona); ZK 101/10 (`7401`: Tapeta Floral 536,59 + Montaż 300) + FS 102/10 (`7402`, „Usługa” 900). W trakcie: KFS 93/10 (`7303`: tapeta 8 → 6 szt, −200) i KFS 103/10 (`7403`: usługa 900 → 850, −50).
+
+| # | Sprawdzenie | Wynik |
+|---|---|---|
+| S1–S2 | Loop 6 krok 8: FS z rozbiciem ZK → pozycje z FS, brak karty, „Zastosuj” → ZAKOŃCZONY, EARNED 80 (10 % × 800) | PASS |
+| S3 | Po KFS: brak karty i brak wiersza `subiekt_reconciliations` dla projektu | PASS |
+| S4 | Pozycje: `600.0@FS 500.0@FS` (tapeta skorygowana na pozycji FS, pozycje ZK nie wracają) | PASS |
+| S5 | Prowizja EARNED 80 − 20 = 60, w UI „Prowizja zarobiona 60” | PASS |
+| S6 | Historia: „KFS 93/10/2026 (korekta FS 92/10/2026): Tapeta Test 8 → 6 szt; wartość korekty -200,00 zł” | PASS |
+| S7 | Architekt: bez „Faktury w uzgadnianiu”, pozycja 600 | PASS |
+| T1–T2 | Karta z 2 pozycjami; zapis 900 + 0 → karta znika, montaż usunięty (pozycje: `900.0`) | PASS |
+| T3 | Po KFS 103/10 karta wraca z **obiema** pozycjami: pola `900,00` (decyzja) i `300,00` (kwota z ZK) | PASS |
+| T4 | Kwota faktur 850,00; montaż znów w pozycjach projektu (`900.0 300.0`) | PASS |
+| T5 | Nowa decyzja 550 + 300 → RESOLVED, pozycje `550.0 300.0` | PASS |
+| T6 | Ponowna wysyłka ZK, FS, KFS (`unchanged 1` ×3) nie cofa decyzji | PASS |
+| U | Konsola przeglądarki bez błędów | PASS |
+
+Stan końcowy: `p_77c8e59e 7401 RESOLVED 836.59 850.0 '7402:900.00;7403:-50.00' {"74011":550,"74012":300} u_admin`; wpisy: OPENED (900) → RESOLVED „Montaż 300,00 → 0,00 zł” → OPENED (850, z KFS) → RESOLVED „Tapeta Floral 900,00 → 550,00 zł; Montaż 300,00 zł bez zmian”. Projekt Loop 6 krok 8 (`p_50e7b690`) — ZAKOŃCZONY, bez wiersza uzgodnienia.
+
+Zrzuty: `…/scratchpad/e2e/shots2/11-loop6-step8-admin.png`, `12-loop6-step8-architect.png`, `13-resolved-900-0.png`, `14-reopened-both-positions.png`, `15-resolved-550-300.png`; wyniki: `…/e2e/evidence2/{sends-1,phase5,state-final}.txt`, skrypt `phase5.mjs`.
+
+Faz 2–4 nie powtarzano: scenariusz łańcucha zbiorczego (ORDER_BREAKDOWN / RECONCILE / RESOLVED / KFS → OPEN) nie zmienił zachowania (łańcuch bez odzwierciedlenia — reguła sum jak wcześniej), co potwierdzają niezmienione testy i T1–T6.
+

@@ -4,7 +4,7 @@
 - Plan: `PLAN-SUBIEKT-2026-10-29.md` (loopy 0–7, DoD, checklist audytu atrap). Stan 2026-10-30: loopy 0–4 i 6 zmergowane do `main` (PR #6–#11); dowód scenariusza e2e w `docs/subiekt/LOOP6-DOWOD-2026-10-30.md`
 - Loop 4b (tryb wewnętrzny `PORTAL_INTERNAL_MODE`, auto-kody `A-001…`, `CASHBACK_EXPIRY_MONTHS`) zmergowany; dowód `docs/subiekt/LOOP4B-DOWOD-2026-10-30.md`
 - Loop 5: kod agenta `agent-subiekt/` gotowy (gałąź `subiekt/loop-5-agent`, testy `npm run test:agent`), czeka na `--probe` / `--dry-run` na PC `SERWER` wg `agent-subiekt/README.md`; potem Loop 7 (wdrożenie, wyłącznie na polecenie użytkownika)
-- Loop 5b (uzgodnienie faktur z ZK: tryby łańcucha w `reconcile.ts`/`syncChainOf`, `subiekt_reconciliations`, blokada ZAKOŃCZONY, `ReconciliationCard`) na gałęzi `subiekt/loop-5b-reconcile`; dowód `docs/subiekt/LOOP5B-DOWOD-2026-10-30.md`, otwarte §6 pkt 19–21
+- Loop 5b (uzgodnienie faktur z ZK: tryby łańcucha w `reconcile.ts`/`syncChainOf`, `subiekt_reconciliations`, blokada ZAKOŃCZONY, `ReconciliationCard`) na gałęzi `subiekt/loop-5b-reconcile`; dowód `docs/subiekt/LOOP5B-DOWOD-2026-10-30.md`, otwarte §6 pkt 20–21 (19 i 22 poprawione po przeglądzie)
 - Każdy loop w osobnym PR; nie zaczynać kolejnego bez zielonej bramki i sekcji DOWÓD
 - Prowizje wyłącznie przez `src/lib/projectItems.ts`; pozycje `source = 'SUBIEKT'` bez edycji ręcznej; akcje admina Subiekta zwracają `{ ok, error }` zamiast rzucać błędy domenowe
 - Otwarte kwestie do decyzji użytkownika: plan §6 (pkt 9–18)
