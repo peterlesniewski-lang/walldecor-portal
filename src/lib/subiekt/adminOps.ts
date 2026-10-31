@@ -541,7 +541,8 @@ export async function resolveReconciliationOp(input: ResolveReconciliationInput,
     return withTransaction(async () => {
         const project = await loadProject(String(input.projectId));
         const [row] = await query<{ id: string; status: string; fingerprint: string }>(
-            'SELECT id, status, fingerprint FROM subiekt_reconciliations WHERE project_id = ? AND root_external_id = ?',
+            // Blokada wiersza do końca transakcji (MySQL): równoległa synchronizacja łańcucha czeka na zapis decyzji.
+            'SELECT id, status, fingerprint FROM subiekt_reconciliations WHERE project_id = ? AND root_external_id = ? FOR UPDATE',
             [project.id, rootExternalId]
         );
         if (!row) throw new Error('Brak uzgodnienia dla tego zamówienia — odśwież stronę.');
@@ -594,11 +595,15 @@ export async function resolveReconciliationOp(input: ResolveReconciliationInput,
                 if (Number(pos.net_total) > 0) decision[String(pos.external_id)] = byPosition.get(Number(pos.external_id)) ?? 0;
             }
         }
-        await query(
+        // Zapis warunkowy: wiersz musi być nadal OPEN z tym samym odciskiem (np. silnik bez blokady albo zmiana w trakcie
+        // operacji). 0 zmienionych wierszy = wyjątek, więc cała transakcja (kwoty, prowizje) się wycofuje.
+        const updated = await query<{ affectedRows?: number }>(
             `UPDATE subiekt_reconciliations SET status = 'RESOLVED', amounts_json = ?, note = ?, zk_net = ?, invoiced_net = ?,
-                resolved_at = CURRENT_TIMESTAMP, resolved_by = ? WHERE id = ?`,
-            [JSON.stringify(decision), note, state.zkNet, state.invoicedNet, actorId, row.id]
+                resolved_at = CURRENT_TIMESTAMP, resolved_by = ? WHERE id = ? AND status = 'OPEN' AND fingerprint = ?`,
+            [JSON.stringify(decision), note, state.zkNet, state.invoicedNet, actorId, row.id, row.fingerprint]
         );
+        const affectedRows = Number((updated as { affectedRows?: number }).affectedRows ?? updated?.[0]?.affectedRows ?? 0);
+        if (affectedRows !== 1) throw new Error(STALE_RECONCILIATION_ERROR);
 
         await logActivity(actorId, 'SUBIEKT_RECONCILIATION_RESOLVED', formatReconciliationResolved(zk.number, changes, total, note), {
             projectId: project.id,

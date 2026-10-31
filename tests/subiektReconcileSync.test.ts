@@ -360,6 +360,39 @@ test('stale form (review I2): same invoiced total, different FS set → the old 
     assert.equal(reconciliation(projectId, 1700).status, 'RESOLVED');
 });
 
+test('race (review I3): row changed between the read and the final UPDATE → resolve fails and rolls back everything', async () => {
+    await sync([zk(1800)]);
+    await sync([fs(1810, 1800, [collective(18101, 900)])]);
+    const projectId = projectOf(1800);
+    const commissionsBefore = commissionSum(projectId);
+    // Równoległa synchronizacja zmienia wiersz uzgodnienia w trakcie zapisu (pierwsza zmiana kwoty pozycji ją wyzwala).
+    db.exec(`CREATE TRIGGER race_1800 AFTER UPDATE OF amount_net ON project_items
+             WHEN NEW.project_id = '${projectId}'
+             BEGIN UPDATE subiekt_reconciliations SET fingerprint = 'zmieniony-w-trakcie' WHERE project_id = '${projectId}'; END`);
+    try {
+        await assert.rejects(resolve(projectId, 1800, [600, 300]), /^Error: Dokumenty zmieniły się, odśwież stronę$/);
+    } finally {
+        db.exec('DROP TRIGGER race_1800');
+    }
+    assert.deepEqual(amountsOf(projectId), [536.59, 300], 'kwoty pozycji wycofane');
+    approx(commissionSum(projectId), commissionsBefore, 'prowizje wycofane');
+    const row = reconciliation(projectId, 1800);
+    assert.equal(row.status, 'OPEN');
+    assert.equal(row.fingerprint, '1810:900.00', 'zmiana z wyzwalacza wycofana razem z transakcją');
+    assert.equal(logs('SUBIEKT_RECONCILIATION_RESOLVED', docRow(1800).id).length, 0);
+});
+
+test('locking (review I3): reconciliation rows are read FOR UPDATE in sync and in resolve; the resolve write is conditional', async () => {
+    const reconciliationDb = await readFile(new URL('../src/lib/subiekt/reconciliationDb.ts', import.meta.url), 'utf8');
+    const find = reconciliationDb.slice(reconciliationDb.indexOf('async function findReconciliation('));
+    assert.match(find.slice(0, find.indexOf('\n}\n')), /FOR UPDATE/);
+    const adminOps = await readFile(new URL('../src/lib/subiekt/adminOps.ts', import.meta.url), 'utf8');
+    const op = adminOps.slice(adminOps.indexOf('export async function resolveReconciliationOp('));
+    assert.match(op, /FROM subiekt_reconciliations WHERE project_id = \? AND root_external_id = \? FOR UPDATE/);
+    assert.match(op, /WHERE id = \? AND status = 'OPEN' AND fingerprint = \?/);
+    assert.match(op, /affectedRows/);
+});
+
 // --- KFS na łańcuchu z rozbiciem ZK (poprawka po przeglądzie: mirror przed korektą) ---
 
 test('downward KFS on a mirroring chain (loop 6 step 8) → stays MIRROR, the invoice item is corrected, no reconciliation', async (t) => {

@@ -81,9 +81,10 @@ export async function loadChainState(projectId: string, rootExternalId: number):
     return describeChain(await loadChainDocuments(rootExternalId, projectId));
 }
 
+/** Wiersz uzgodnienia łańcucha, z blokadą (MySQL; SQLite ignoruje FOR UPDATE) — sync i resolve nie przeplatają się. */
 async function findReconciliation(projectId: string, rootExternalId: number): Promise<ReconciliationRow | undefined> {
     const [row] = await query<ReconciliationRow>(
-        'SELECT * FROM subiekt_reconciliations WHERE project_id = ? AND root_external_id = ?',
+        'SELECT * FROM subiekt_reconciliations WHERE project_id = ? AND root_external_id = ? FOR UPDATE',
         [projectId, rootExternalId]
     );
     return row;
