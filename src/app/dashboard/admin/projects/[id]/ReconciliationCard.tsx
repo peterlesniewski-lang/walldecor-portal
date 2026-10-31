@@ -31,8 +31,10 @@ export default function ReconciliationCard({ projectId, reconciliation }: Props)
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
-    const sum = reconciliationTotal(reconciliation.items.map((_, i) => amounts[i] ?? ''), reconciliation.invoicedNet);
-    const remaining = sum.total === null ? null : Math.round((reconciliation.invoicedNet - sum.total) * 100) / 100;
+    // Faktury po korektach ≤ 0: celem jest 0 (pozycje nie mogą być ujemne) — tak samo liczy resolveReconciliationOp.
+    const target = Math.max(0, reconciliation.invoicedNet);
+    const sum = reconciliationTotal(reconciliation.items.map((_, i) => amounts[i] ?? ''), target);
+    const remaining = sum.total === null ? null : Math.round((target - sum.total) * 100) / 100;
 
     const setAmount = (index: number, value: string) =>
         setAmounts((prev) => prev.map((current, i) => (i === index ? value : current)));
@@ -82,6 +84,12 @@ export default function ReconciliationCard({ projectId, reconciliation }: Props)
                         </div>
                     ))}
                 </dl>
+
+                {reconciliation.invoicedNet <= 0 && (
+                    <p className="text-sm font-semibold text-warning">
+                        Korekty zerują faktury (kwota po korektach {formatDocAmount(reconciliation.invoicedNet)}) — ustaw wszystkie kwoty na 0, pozycje zostaną usunięte.
+                    </p>
+                )}
 
                 {reconciliation.invoices.length > 0 && (
                     <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-[13px] text-ink-2">

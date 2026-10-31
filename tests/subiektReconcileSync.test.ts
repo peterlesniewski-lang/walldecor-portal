@@ -475,6 +475,29 @@ test('merge conflict (review M4): a live RESOLVED row wins over a stale AUTO_CLO
     assert.equal(logs('SUBIEKT_RECONCILIATION_OPENED', docRow(2200).id).length, 1, 'bez ponownego otwarcia');
 });
 
+test('invoices ≤ 0 after corrections (review M5): resolve to 0 on every item, items removed through the core', async () => {
+    await sync([zk(2300)]);
+    await sync([fs(2310, 2300, [collective(23101, 300)])]);
+    const projectId = projectOf(2300);
+    // Korekta większa niż faktura (np. błąd danych w GT): faktury po korektach −50.
+    await sync([doc(2320, 'KFS', [{ ...collective(23201, 0), corrects_position_external_id: 23101 }], { parent_external_id: 2310, net_total: -350 })]);
+    const row = reconciliation(projectId, 2300);
+    assert.equal(row.status, 'OPEN');
+    approx(row.invoiced_net, -50);
+    const items = liveItems(projectId);
+    const base = { projectId, rootExternalId: 2300, fingerprint: row.fingerprint };
+    await assert.rejects(ops.resolveReconciliationOp({ ...base, amounts: [{ itemId: items[0].id, amount_net: 1 }, { itemId: items[1].id, amount_net: 0 }] }, ADMIN),
+        /Suma kwot \(1,00 zł\) musi być równa kwocie faktur \(0,00 zł\)/);
+    await resolve(projectId, 2300, [0, 0]);
+    assert.equal(reconciliation(projectId, 2300).status, 'RESOLVED');
+    assert.deepEqual(amountsOf(projectId), [], 'pozycje usunięte');
+    approx(commissionSum(projectId), 0);
+    await sync([zk(2300, { remarks: 'resync' })]);
+    assert.deepEqual(amountsOf(projectId), [], 'kolejny sync nie przywraca pozycji');
+    const card = await readFile(new URL('../src/app/dashboard/admin/projects/[id]/ReconciliationCard.tsx', import.meta.url), 'utf8');
+    assert.match(card, /Math\.max\(0, reconciliation\.invoicedNet\)/, 'karta liczy do max(0, faktury)');
+});
+
 // --- KFS na łańcuchu z rozbiciem ZK (poprawka po przeglądzie: mirror przed korektą) ---
 
 test('downward KFS on a mirroring chain (loop 6 step 8) → stays MIRROR, the invoice item is corrected, no reconciliation', async (t) => {

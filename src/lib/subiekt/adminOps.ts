@@ -574,9 +574,12 @@ export async function resolveReconciliationOp(input: ResolveReconciliationInput,
         }
         if (items.some((i) => !amounts.has(i.id))) throw new Error('Podaj kwoty dla wszystkich pozycji zamówienia.');
 
+        // Faktury po korektach ≤ 0 (korekta większa niż faktura): pozycje nie mogą być ujemne, więc celem jest 0 —
+        // admin zamyka uzgodnienie zerami, pozycje znikają przez rdzeń.
+        const target = Math.max(0, state.invoicedNet);
         const total = round2([...amounts.values()].reduce((sum, value) => sum + value, 0));
-        if (Math.abs(total - state.invoicedNet) >= AMOUNT_EPSILON) {
-            throw new Error(`Suma kwot (${formatPLNFixed(total)} zł) musi być równa kwocie faktur (${formatPLNFixed(state.invoicedNet)} zł).`);
+        if (Math.abs(total - target) >= AMOUNT_EPSILON) {
+            throw new Error(`Suma kwot (${formatPLNFixed(total)} zł) musi być równa kwocie faktur (${formatPLNFixed(target)} zł).`);
         }
 
         const zk = state.orders[0];
