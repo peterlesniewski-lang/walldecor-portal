@@ -6,7 +6,7 @@ import { Package, Wrench } from 'lucide-react';
 import { Button, Card, CardBody, CardHeader, StatusPill, cx, formatDateTime } from '@/components/ui';
 import { resolveReconciliationAction } from '@/app/actions/subiekt';
 import type { ProjectReconciliation } from '@/lib/subiekt/queries';
-import { formatDocAmount, formatDocDate, reconciliationTotal } from '@/lib/subiekt/labels';
+import { formatDocAmount, formatDocDate, parseAmountInput, reconciliationTotal } from '@/lib/subiekt/labels';
 import { ErrorBanner } from './ErrorBanner';
 import { INPUT_CLASS, LABEL_CLASS, TD_CLASS, TEXTAREA_CLASS, TH_CLASS } from './styles';
 
@@ -31,7 +31,7 @@ export default function ReconciliationCard({ projectId, reconciliation }: Props)
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
-    const sum = reconciliationTotal(amounts, reconciliation.invoicedNet);
+    const sum = reconciliationTotal(reconciliation.items.map((_, i) => amounts[i] ?? ''), reconciliation.invoicedNet);
     const remaining = sum.total === null ? null : Math.round((reconciliation.invoicedNet - sum.total) * 100) / 100;
 
     const setAmount = (index: number, value: string) =>
@@ -42,10 +42,13 @@ export default function ReconciliationCard({ projectId, reconciliation }: Props)
         setSaving(true);
         setError('');
         try {
-            const result = await resolveReconciliationAction(projectId, reconciliation.rootExternalId, reconciliation.items.map((item, i) => ({
-                itemId: item.id,
-                amount_net: Number(amounts[i].replace(/[\s ]/g, '').replace(',', '.')),
-            })), note);
+            const result = await resolveReconciliationAction(
+                projectId,
+                reconciliation.rootExternalId,
+                reconciliation.fingerprint,
+                reconciliation.items.map((item, idx) => ({ itemId: item.id, amount_net: parseAmountInput(amounts[idx] ?? '') ?? NaN })),
+                note,
+            );
             if (result.ok) router.refresh();
             else setError(result.error);
         } catch (e: unknown) {
@@ -120,7 +123,7 @@ export default function ReconciliationCard({ projectId, reconciliation }: Props)
                                         <input
                                             id={`rec-${item.id}`}
                                             inputMode="decimal"
-                                            value={amounts[i]}
+                                            value={amounts[i] ?? ''}
                                             onChange={(e) => setAmount(i, e.target.value)}
                                             disabled={saving}
                                             className={`${INPUT_CLASS} text-right`}

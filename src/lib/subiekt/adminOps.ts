@@ -489,6 +489,8 @@ export function nextStatusSteps(current: string, target: SuggestedStatus): strin
 export interface ResolveReconciliationInput {
     projectId: string;
     rootExternalId: number;
+    /** Odcisk faktur, który widział admin (getProjectReconciliations → karta); inny niż bieżący = formularz nieaktualny. */
+    fingerprint: string;
     /** Kwoty netto dla WSZYSTKICH pozycji Subiekta z ZK łańcucha (≥ 0, do grosza; 0 = pozycja znika). */
     amounts: Array<{ itemId: string; amount_net: number }>;
     note?: string | null;
@@ -503,6 +505,9 @@ interface ChainItemRow {
 }
 
 const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
+
+/** Komunikat dla nieaktualnego formularza uzgodnienia (brzmienie z planu, Loop 5b). */
+export const STALE_RECONCILIATION_ERROR = 'Dokumenty zmieniły się, odśwież stronę';
 
 /** Walidacja kształtu wejścia (bez bazy): kwoty liczbowe ≥ 0 z dokładnością do grosza, bez powtórzeń, notatka ≤ 500. */
 function parseResolveInput(input: ResolveReconciliationInput): { amounts: Map<string, number>; note: string | null } {
@@ -524,7 +529,7 @@ function parseResolveInput(input: ResolveReconciliationInput): { amounts: Map<st
 
 /**
  * Admin rozkłada kwotę faktur łańcucha (FS + KFS) na pozycje ZK: jedna transakcja. Wymagania: uzgodnienie OPEN,
- * jego odcisk = bieżący stan dokumentów (inaczej „Dokumenty zmieniły się, odśwież stronę”), kwoty dla wszystkich
+ * odcisk z formularza = odcisk wiersza = bieżący stan dokumentów (inaczej „Dokumenty zmieniły się, odśwież stronę”), kwoty dla wszystkich
  * pozycji SUBIEKT z ZK łańcucha w projekcie, suma = kwota faktur (± AMOUNT_EPSILON). Skutek: zmiany kwot przez
  * rdzeń (updateItemAmountCore; 0 → removeSubiektItem → deleteItemCore), decyzja w amounts_json (ob_Id pozycji ZK →
  * kwota; kolejne synchronizacje stosują ją, dopóki odcisk się nie zmieni), RESOLVED, wpis SUBIEKT_RECONCILIATION_RESOLVED.
@@ -542,8 +547,12 @@ export async function resolveReconciliationOp(input: ResolveReconciliationInput,
         if (!row) throw new Error('Brak uzgodnienia dla tego zamówienia — odśwież stronę.');
         if (row.status !== 'OPEN') throw new Error('Uzgodnienie nie jest otwarte — odśwież stronę.');
 
+        // Formularz pokazany dla innego zestawu faktur (np. ta sama suma, inne FS) albo dokumenty zmieniły się od
+        // ostatniej synchronizacji — decyzja dotyczyłaby innych faktur.
         const state = await loadChainState(project.id, rootExternalId);
-        if (state.mode !== 'RECONCILE' || state.fingerprint !== row.fingerprint) throw new Error('Dokumenty zmieniły się, odśwież stronę.');
+        if (input.fingerprint !== row.fingerprint || state.mode !== 'RECONCILE' || state.fingerprint !== row.fingerprint) {
+            throw new Error(STALE_RECONCILIATION_ERROR);
+        }
 
         const orderIds = state.orders.map((d) => d.id);
         const items = orderIds.length === 0 ? [] : await query<ChainItemRow>(

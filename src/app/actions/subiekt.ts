@@ -182,6 +182,7 @@ export async function applySuggestedStatus(projectId: string): Promise<SubiektAc
 export async function resolveReconciliationAction(
     projectId: string,
     rootExternalId: number,
+    fingerprint: string,
     amounts: Array<{ itemId: string; amount_net: number }>,
     note: string,
 ): Promise<SubiektActionResult> {
@@ -189,7 +190,7 @@ export async function resolveReconciliationAction(
     if (!session || !canManageOperationalProjects(session.user.role)) throw new Error("Unauthorized");
 
     return attempt(async () => {
-        const { affectedProjectIds } = await resolveReconciliationOp({ projectId, rootExternalId, amounts, note }, session.user.id);
+        const { affectedProjectIds } = await resolveReconciliationOp({ projectId, rootExternalId, fingerprint, amounts, note }, session.user.id);
         revalidateSubiekt(affectedProjectIds);
         return {};
     });

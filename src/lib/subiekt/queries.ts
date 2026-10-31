@@ -180,6 +180,8 @@ export interface ReconciliationItem {
 export interface ProjectReconciliation {
     rootExternalId: number;
     status: 'OPEN' | 'RESOLVED';
+    /** Odcisk faktur w chwili odczytu — karta odsyła go z zapisem (resolveReconciliationOp odrzuca nieaktualny). */
+    fingerprint: string;
     zkNumber: string | null;
     zkNet: number;
     invoicedNet: number;
@@ -235,6 +237,7 @@ export async function getProjectReconciliations(projectId: string): Promise<Proj
         result.push({
             rootExternalId: root,
             status: String(r.status) as 'OPEN' | 'RESOLVED',
+            fingerprint: String(r.fingerprint ?? ''),
             zkNumber: orders.length > 0 ? String(orders[0].number) : null,
             zkNet: round2(Number(r.zk_net)),
             invoicedNet: round2(Number(r.invoiced_net)),

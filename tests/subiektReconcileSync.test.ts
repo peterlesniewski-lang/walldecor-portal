@@ -101,6 +101,8 @@ async function resolve(projectId: string, root: number, amounts: number[], note?
     assert.equal(items.length, amounts.length, 'jedna kwota na pozycję');
     return ops.resolveReconciliationOp({
         projectId, rootExternalId: root, note,
+        // Odcisk, który widział admin (karta wysyła go razem z kwotami).
+        fingerprint: reconciliation(projectId, root)?.fingerprint ?? '',
         amounts: items.map((item, i) => ({ itemId: item.id, amount_net: amounts[i] })),
     }, ADMIN);
 }
@@ -235,7 +237,7 @@ test('RECONCILE: FS for 900.00 → OPEN, items from ZK, one OPENED log, status c
 test('resolveReconciliationOp validates input and state without changing anything', async () => {
     const projectId = projectOf(100);
     const items = liveItems(projectId);
-    const base = { projectId, rootExternalId: 100 };
+    const base = { projectId, rootExternalId: 100, fingerprint: '110:900.00' };
     const all = (a: number, b: number) => [{ itemId: items[0].id, amount_net: a }, { itemId: items[1].id, amount_net: b }];
     await assert.rejects(ops.resolveReconciliationOp({ ...base, amounts: all(500, 300) }, ADMIN), /Suma kwot \(800,00 zł\) musi być równa kwocie faktur \(900,00 zł\)/);
     await assert.rejects(ops.resolveReconciliationOp({ ...base, amounts: all(600, 300).slice(0, 1) }, ADMIN), /wszystkich pozycji/);
@@ -249,6 +251,9 @@ test('resolveReconciliationOp validates input and state without changing anythin
     db.prepare("UPDATE subiekt_reconciliations SET fingerprint = '110:1.00' WHERE project_id = ? AND root_external_id = 100").run(projectId);
     await assert.rejects(ops.resolveReconciliationOp({ ...base, amounts: all(600, 300) }, ADMIN), /Dokumenty zmieniły się, odśwież stronę/);
     db.prepare("UPDATE subiekt_reconciliations SET fingerprint = '110:900.00' WHERE project_id = ? AND root_external_id = 100").run(projectId);
+    // Formularz z innym odciskiem niż bieżący (albo bez odcisku) → odrzucony bez zmian.
+    await assert.rejects(ops.resolveReconciliationOp({ ...base, fingerprint: '110:800.00', amounts: all(600, 300) }, ADMIN), /^Error: Dokumenty zmieniły się, odśwież stronę$/);
+    await assert.rejects(ops.resolveReconciliationOp({ ...base, fingerprint: '', amounts: all(600, 300) }, ADMIN), /Dokumenty zmieniły się, odśwież stronę/);
 
     assert.deepEqual(amountsOf(projectId), [536.59, 300]);
     assert.equal(reconciliation(projectId, 100).status, 'OPEN');
@@ -330,6 +335,29 @@ test('advance FS 300 + final FS 836.59 (sum above ZK) → RECONCILE', async () =
     approx(row.invoiced_net, 1136.59);
     assert.deepEqual(amountsOf(projectId), [536.59, 300]);
     assert.equal(itemsOfDoc(411).length + itemsOfDoc(412).length, 0);
+});
+
+test('stale form (review I2): same invoiced total, different FS set → the old fingerprint is rejected', async () => {
+    await sync([zk(1700)]);
+    await sync([fs(1710, 1700, [collective(17101, 900)])]);
+    const projectId = projectOf(1700);
+    const items = liveItems(projectId);
+    const seen = reconciliation(projectId, 1700).fingerprint;
+    assert.equal(seen, '1710:900.00');
+    // Faktura 1710 zmieniona na 400 i nowa 1711 na 500 — suma ta sama (900), inny zestaw faktur.
+    await sync([fs(1710, 1700, [collective(17101, 400)]), fs(1711, 1700, [collective(17111, 500)])]);
+    const row = reconciliation(projectId, 1700);
+    assert.equal(row.status, 'OPEN');
+    assert.equal(row.fingerprint, '1710:400.00;1711:500.00');
+    await assert.rejects(ops.resolveReconciliationOp({
+        projectId, rootExternalId: 1700, fingerprint: seen,
+        amounts: items.map((item, i) => ({ itemId: item.id, amount_net: [600, 300][i] })),
+    }, ADMIN), /^Error: Dokumenty zmieniły się, odśwież stronę$/);
+    assert.equal(reconciliation(projectId, 1700).status, 'OPEN');
+    assert.deepEqual(amountsOf(projectId), [536.59, 300]);
+    // Po odświeżeniu (nowy odcisk) zapis przechodzi.
+    await resolve(projectId, 1700, [600, 300]);
+    assert.equal(reconciliation(projectId, 1700).status, 'RESOLVED');
 });
 
 // --- KFS na łańcuchu z rozbiciem ZK (poprawka po przeglądzie: mirror przed korektą) ---
@@ -518,15 +546,20 @@ test('resolveReconciliationAction: ADMIN and STAFF, domain errors as { ok: false
     const projectId = projectOf(1100);
     const items = liveItems(projectId);
     const amounts = [{ itemId: items[0].id, amount_net: 600 }, { itemId: items[1].id, amount_net: 300 }];
+    const fp = reconciliation(projectId, 1100).fingerprint;
 
     setTestSession({ id: 'u_archi_a', role: 'ARCHI' });
-    await assert.rejects(subiektActions.resolveReconciliationAction(projectId, 1100, amounts, ''), /Unauthorized/);
+    await assert.rejects(subiektActions.resolveReconciliationAction(projectId, 1100, fp, amounts, ''), /Unauthorized/);
     setTestSession({ id: 'u_staff', role: 'STAFF' });
     assert.deepEqual(
-        await subiektActions.resolveReconciliationAction(projectId, 1100, [{ itemId: items[0].id, amount_net: 1 }, amounts[1]], ''),
+        await subiektActions.resolveReconciliationAction(projectId, 1100, fp, [{ itemId: items[0].id, amount_net: 1 }, amounts[1]], ''),
         { ok: false, error: 'Suma kwot (301,00 zł) musi być równa kwocie faktur (900,00 zł).' },
     );
-    assert.deepEqual(await subiektActions.resolveReconciliationAction(projectId, 1100, amounts, ''), { ok: true });
+    assert.deepEqual(
+        await subiektActions.resolveReconciliationAction(projectId, 1100, 'stary-odcisk', amounts, ''),
+        { ok: false, error: 'Dokumenty zmieniły się, odśwież stronę' },
+    );
+    assert.deepEqual(await subiektActions.resolveReconciliationAction(projectId, 1100, fp, amounts, ''), { ok: true });
     assert.equal(reconciliation(projectId, 1100).status, 'RESOLVED');
     assert.equal(reconciliation(projectId, 1100).note, null);
     setTestSession({ id: ADMIN, role: 'ADMIN', name: 'Admin Główny' });
@@ -564,6 +597,7 @@ test('getProjectReconciliations: OPEN with invoices and chain items (ZK amount p
     assert.equal(open.status, 'OPEN');
     assert.equal(open.rootExternalId, 1200);
     assert.equal(open.zkNumber, 'ZK 1200/10/2026');
+    assert.equal(open.fingerprint, '1210:900.00', 'karta wysyła odcisk, który pokazała');
     assert.deepEqual([open.zkNet, open.invoicedNet, open.difference], [836.59, 900, 63.41]);
     assert.deepEqual(open.invoices, [{ number: 'FS 1210/10/2026', type: 'FS', issued_at: '2026-10-20', net_total: 900 }]);
     assert.deepEqual(open.items.map((i) => [i.description, i.type, i.amount_net, i.zk_amount]), [

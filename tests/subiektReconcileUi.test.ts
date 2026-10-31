@@ -40,7 +40,9 @@ test('ReconciliationCard: one form, live sum, save only when the sum matches, re
     const card = await src(`${PROJECT_DIR}/ReconciliationCard.tsx`);
     assert.ok(card.startsWith("'use client';"));
     assert.match(card, /import \{ resolveReconciliationAction \} from '@\/app\/actions\/subiekt'/);
-    assert.match(card, /resolveReconciliationAction\(projectId, reconciliation\.rootExternalId,/);
+    assert.match(card, /resolveReconciliationAction\(\s*projectId,\s*reconciliation\.rootExternalId,\s*reconciliation\.fingerprint,/);
+    assert.match(card, /value=\{amounts\[i\] \?\? ''\}/, 'pole zawsze kontrolowane');
+    assert.match(card, /parseAmountInput\(/, 'kwota z pola przez wspólny parser');
     assert.match(card, /reconciliationTotal\(/);
     assert.match(card, /disabled=\{!sum\.matches \|\| saving\}/);
     assert.match(card, /Zapisz uzgodnienie/);
@@ -59,6 +61,7 @@ test('admin project page: reconciliation data from the read model, card above th
     const cardAt = client.indexOf('<ReconciliationCard');
     assert.ok(cardAt !== -1 && cardAt < client.indexOf('<ItemsCard'), 'karta nad pozycjami');
     assert.match(client, /r\.status === 'OPEN'/);
+    assert.match(client, /key=\{`\$\{r\.rootExternalId\}:\$\{r\.fingerprint\}:\$\{r\.items\.map\(\(i\) => i\.id\)\.join\(','\)\}`\}/, 'nowy stan dokumentów = świeży formularz');
     assert.match(client, /canChangeStatus &&/);
 
     const banner = await src(`${PROJECT_DIR}/SuggestedStatusBanner.tsx`);

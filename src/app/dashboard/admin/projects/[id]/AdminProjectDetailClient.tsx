@@ -71,7 +71,10 @@ export default function AdminProjectDetailClient({
             {/* Uzgodnienie faktur z zamówieniem (Loop 5b): ADMIN i STAFF, tylko otwarte, nad pozycjami. */}
             {canChangeStatus && subiekt.reconciliations
                 .filter((r) => r.status === 'OPEN')
-                .map((r) => <ReconciliationCard key={r.rootExternalId} projectId={project.id} reconciliation={r} />)}
+                .map((r) => (
+                    // Klucz z odciskiem i pozycjami: po zmianie dokumentów formularz startuje od nowa (świeże pola).
+                    <ReconciliationCard key={`${r.rootExternalId}:${r.fingerprint}:${r.items.map((i) => i.id).join(',')}`} projectId={project.id} reconciliation={r} />
+                ))}
 
             <ItemsCard
                 projectId={project.id}
