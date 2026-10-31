@@ -340,7 +340,10 @@ async function syncChainOf(doc: StoredDoc, actor: ItemActor): Promise<void> {
 
     // KFS → resync WSZYSTKICH faktur projektu, nie tylko obecnych celów: korekta, która zmieniła cel albo
     // wypadła z mapy, musi zdjąć starą kwotę z pozycji FS, którą korygowała wcześniej (idempotentne).
-    if (doc.type === 'KFS') return resyncInvoicesOf(project.id, actor);
+    if (doc.type === 'KFS') {
+        await resyncInvoicesOf(project.id, actor);
+        return;
+    }
 
     const rootKey = doc.root_external_id === null || doc.root_external_id === undefined ? null : Number(doc.root_external_id);
     const chain = rootKey === null ? [doc] : await loadChainDocuments(rootKey, project.id, doc.id);
@@ -381,12 +384,14 @@ async function syncChainOf(doc: StoredDoc, actor: ItemActor): Promise<void> {
  * Uzgodnienia projektu, które nie mają już łańcucha w tym projekcie (zignorowany / przeniesiony korzeń), są
  * zamykane; pozostałe OPEN / RESOLVED przechodzą przez syncChainOf (idempotentne). Wołane po operacjach admina.
  */
-async function refreshReconciliationsOf(projectId: string, actor: ItemActor): Promise<void> {
+async function refreshReconciliationsOf(projectId: string, actor: ItemActor, alreadySynced: Set<number> = new Set()): Promise<void> {
     const rows = await query<ReconciliationRow>(
         "SELECT * FROM subiekt_reconciliations WHERE project_id = ? AND status IN ('OPEN', 'RESOLVED') ORDER BY root_external_id",
         [projectId]
     );
     for (const row of rows) {
+        // Łańcuch przeliczony przed chwilą (resyncInvoicesOf) — drugi przebieg niczego by nie zmienił.
+        if (alreadySynced.has(Number(row.root_external_id))) continue;
         const chain = await loadChainDocuments(Number(row.root_external_id), projectId);
         const lead = chain.find((d) => d.type === 'ZK') ?? chain.find((d) => d.type === 'FS');
         if (lead) await syncChainOf(lead, actor);
@@ -394,8 +399,8 @@ async function refreshReconciliationsOf(projectId: string, actor: ItemActor): Pr
     }
 }
 
-/** Resync łańcuchów wszystkich przypisanych FS projektu (raz na korzeń), z bieżącą mapą korekt KFS. */
-async function resyncInvoicesOf(projectId: string, actor: ItemActor): Promise<void> {
+/** Resync łańcuchów wszystkich przypisanych FS projektu (raz na korzeń), z bieżącą mapą korekt KFS. Zwraca przeliczone korzenie. */
+async function resyncInvoicesOf(projectId: string, actor: ItemActor): Promise<Set<number>> {
     const invoices = await query<StoredDoc>(
         `SELECT * FROM subiekt_documents WHERE type = 'FS' AND project_id = ? AND assignment_status IN ${ASSIGNED_STATUSES}
          ORDER BY issued_at, external_id`,
@@ -408,6 +413,7 @@ async function resyncInvoicesOf(projectId: string, actor: ItemActor): Promise<vo
         done.add(chainKey);
         await syncChainOf(fs, actor);
     }
+    return new Set([...done].filter((key) => key.startsWith('root:')).map((key) => Number(key.slice('root:'.length))));
 }
 
 // --- zapis wyniku ---
@@ -553,8 +559,8 @@ export async function syncChainItems(subiektDocumentId: string, actor?: ItemActo
 export async function resyncProjectInvoices(projectId: string, actor: ItemActor): Promise<void> {
     const project = await loadProject(projectId, projectId);
     if (project.status === 'NIEZREALIZOWANY') return;
-    await resyncInvoicesOf(projectId, actor);
-    await refreshReconciliationsOf(projectId, actor);
+    const synced = await resyncInvoicesOf(projectId, actor);
+    await refreshReconciliationsOf(projectId, actor, synced);
 }
 
 /** Czy KFS (wszystkie jej pozycje) wskazuje pozycje przypisanych FS projektu — warunek wejścia do mapy korekt. */
