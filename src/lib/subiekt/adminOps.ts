@@ -12,7 +12,8 @@ import { addItemCore, deleteItemCore, updateItemAmountCore, type ItemActor } fro
 import type { FileDirMove } from '@/lib/projectFilesStorage';
 import { formatPLNFixed } from '@/lib/utils';
 import { AMOUNT_EPSILON, ROOT_IGNORED, sortDocumentsForProcessing, subiektCategory } from './mapping';
-import { insertProjectForDocument, kfsMatchesProject, loadChainState, remapDocument, resyncProjectInvoices, syncChainItems } from './mappingDb';
+import { insertProjectForDocument, kfsMatchesProject, remapDocument, resyncProjectInvoices, syncChainItems } from './mappingDb';
+import { loadChainState } from './reconciliationDb';
 import { clearChainItems, clearDocumentItems, removeSubiektItem } from './chainOps';
 import { formatReconciliationResolved } from './diff';
 import { findChainDocuments, findDocumentByExternalId, findDocumentById, findProject, normalizeDocument, type ProjectRow, type SubiektDocumentRow } from './repo';
