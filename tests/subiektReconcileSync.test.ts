@@ -414,6 +414,47 @@ test('updateProjectStatus re-checks open reconciliations inside the ZAKOŃCZONY 
     assert.equal(reconciliation(projectId, 1900), undefined, 'wiersz z wyzwalacza wycofany z transakcją');
 });
 
+test('RESOLVED → AUTO_CLOSED logs SUBIEKT_RECONCILIATION_CLOSED with the previous decision (review M3)', async () => {
+    await sync([zk(2000)]);
+    await sync([fs(2010, 2000, [collective(20101, 900)])]);
+    const projectId = projectOf(2000);
+    await resolve(projectId, 2000, [600, 300]);
+    // Faktura poprawiona na kwotę ZK: inny odcisk, równe sumy → ORDER_BREAKDOWN, decyzja admina przestaje obowiązywać.
+    await sync([fs(2010, 2000, [collective(20101, 836.59)])]);
+    assert.equal(reconciliation(projectId, 2000).status, 'AUTO_CLOSED');
+    assert.deepEqual(amountsOf(projectId), [536.59, 300]);
+    const closed = logs('SUBIEKT_RECONCILIATION_CLOSED', docRow(2000).id);
+    assert.equal(closed.length, 1);
+    const meta = JSON.parse(closed[0].metadata);
+    assert.equal(meta.previous_status, 'RESOLVED');
+    assert.deepEqual(meta.previous_amounts, { 20001: 600, 20002: 300 });
+    assert.match(closed[0].description, /Ręczne uzgodnienie przestało obowiązywać/);
+});
+
+test('cancelled project (review M2): open reconciliations close, resolve is refused, card hidden', async () => {
+    await sync([zk(2100)]);
+    await sync([fs(2110, 2100, [collective(21101, 900)])]);
+    const projectId = projectOf(2100);
+    const items = liveItems(projectId);
+    const fp = reconciliation(projectId, 2100).fingerprint;
+    assert.deepEqual(await projectActions.updateProjectStatus(projectId, 'NIEZREALIZOWANY'), { success: true });
+    assert.equal(reconciliation(projectId, 2100).status, 'AUTO_CLOSED');
+    assert.equal(await status.hasOpenReconciliation(projectId), false);
+    const closed = logs('SUBIEKT_RECONCILIATION_CLOSED', docRow(2100).id);
+    assert.equal(closed.length, 1);
+    assert.equal(JSON.parse(closed[0].metadata).reason, 'PROJECT_CANCELLED');
+    assert.match(closed[0].description, /projekt niezrealizowany/);
+    // Nawet z wierszem OPEN (np. stan sprzed poprawki) uzgodnienie projektu niezrealizowanego jest odrzucane.
+    db.prepare("UPDATE subiekt_reconciliations SET status = 'OPEN' WHERE project_id = ?").run(projectId);
+    await assert.rejects(ops.resolveReconciliationOp({
+        projectId, rootExternalId: 2100, fingerprint: fp,
+        amounts: items.map((item, i) => ({ itemId: item.id, amount_net: [600, 300][i] })),
+    }, ADMIN), /Projekt jest niezrealizowany/);
+    db.prepare("UPDATE subiekt_reconciliations SET status = 'AUTO_CLOSED' WHERE project_id = ?").run(projectId);
+    const client = await readFile(new URL('../src/app/dashboard/admin/projects/[id]/AdminProjectDetailClient.tsx', import.meta.url), 'utf8');
+    assert.match(client, /project\.status !== 'NIEZREALIZOWANY'/);
+});
+
 // --- KFS na łańcuchu z rozbiciem ZK (poprawka po przeglądzie: mirror przed korektą) ---
 
 test('downward KFS on a mirroring chain (loop 6 step 8) → stays MIRROR, the invoice item is corrected, no reconciliation', async (t) => {

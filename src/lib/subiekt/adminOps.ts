@@ -540,6 +540,7 @@ export async function resolveReconciliationOp(input: ResolveReconciliationInput,
 
     return withTransaction(async () => {
         const project = await loadProject(String(input.projectId));
+        if (project.status === 'NIEZREALIZOWANY') throw new Error('Projekt jest niezrealizowany — faktur nie uzgadnia się.');
         const [row] = await query<{ id: string; status: string; fingerprint: string }>(
             // Blokada wiersza do końca transakcji (MySQL): równoległa synchronizacja łańcucha czeka na zapis decyzji.
             'SELECT id, status, fingerprint FROM subiekt_reconciliations WHERE project_id = ? AND root_external_id = ? FOR UPDATE',

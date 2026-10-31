@@ -119,32 +119,64 @@ const invoiceNumbersOf = (state: ChainState) => [...state.invoices, ...state.cor
     .sort((a, b) => (a.issued_at === b.issued_at ? a.external_id - b.external_id : a.issued_at < b.issued_at ? -1 : 1))
     .map((d) => d.number);
 
+/** Dlaczego uzgodnienie zamknęło się samo: dokumenty znów zgodne (domyślnie) albo projekt niezrealizowany. */
+export type CloseReason = 'DOCUMENTS' | 'PROJECT_CANCELLED';
+
 async function logReconciliation(
     event: 'SUBIEKT_RECONCILIATION_OPENED' | 'SUBIEKT_RECONCILIATION_CLOSED',
     projectId: string,
     rootExternalId: number,
     state: ChainState,
+    closing?: { previousStatus: string; previousAmounts: Map<number, number> | null; reason: CloseReason },
 ): Promise<void> {
     const zk = state.orders[0] ?? await loadDocByExternalId(rootExternalId);
     const zkNumber = zk?.number ?? `ZK ${rootExternalId}`;
     const invoices = invoiceNumbersOf(state);
     const description = event === 'SUBIEKT_RECONCILIATION_OPENED'
         ? formatReconciliationOpened(zkNumber, state.zkNet, state.invoicedNet, invoices)
-        : formatReconciliationClosed(zkNumber, state.zkNet, state.invoicedNet);
+        : formatReconciliationClosed(zkNumber, state.zkNet, state.invoicedNet, {
+            previousResolved: closing?.previousStatus === 'RESOLVED',
+            projectCancelled: closing?.reason === 'PROJECT_CANCELLED',
+        });
     await logActivity(null, event, description, {
         projectId, rootExternalId, zkNumber, zk_net: state.zkNet, invoiced_net: state.invoicedNet, invoices,
+        ...(closing ? {
+            reason: closing.reason,
+            previous_status: closing.previousStatus,
+            previous_amounts: closing.previousAmounts ? Object.fromEntries(closing.previousAmounts) : null,
+        } : {}),
     }, zk?.id ?? null);
 }
 
-/** Łańcuch nie wymaga uzgodnienia (MIRROR, równe sumy, brak FS lub ZK): OPEN / RESOLVED → AUTO_CLOSED; wpis tylko dla OPEN. */
-export async function closeReconciliation(projectId: string, rootExternalId: number, state: ChainState): Promise<void> {
+/**
+ * Łańcuch nie wymaga uzgodnienia (MIRROR, równe sumy, brak FS lub ZK) albo projekt jest niezrealizowany:
+ * OPEN / RESOLVED → AUTO_CLOSED z wpisem SUBIEKT_RECONCILIATION_CLOSED (przy RESOLVED z poprzednią decyzją
+ * admina w metadata, żeby została w historii).
+ */
+export async function closeReconciliation(projectId: string, rootExternalId: number, state: ChainState, reason: CloseReason = 'DOCUMENTS'): Promise<void> {
     const row = await findReconciliation(projectId, rootExternalId);
     if (!row || row.status === 'AUTO_CLOSED') return;
     await query(
         "UPDATE subiekt_reconciliations SET status = 'AUTO_CLOSED', zk_net = ?, invoiced_net = ?, fingerprint = ? WHERE id = ?",
         [state.zkNet, state.invoicedNet, state.fingerprint, row.id]
     );
-    if (row.status === 'OPEN') await logReconciliation('SUBIEKT_RECONCILIATION_CLOSED', projectId, rootExternalId, state);
+    await logReconciliation('SUBIEKT_RECONCILIATION_CLOSED', projectId, rootExternalId, state, {
+        previousStatus: row.status,
+        previousAmounts: row.status === 'RESOLVED' ? parseReconciliationAmounts(row.amounts_json) : null,
+        reason,
+    });
+}
+
+/** Projekt niezrealizowany: wszystkie OPEN / RESOLVED uzgodnienia projektu → AUTO_CLOSED (wpis z powodem). */
+export async function closeReconciliationsOfCancelledProject(projectId: string): Promise<void> {
+    const rows = await query<ReconciliationRow>(
+        "SELECT * FROM subiekt_reconciliations WHERE project_id = ? AND status IN ('OPEN', 'RESOLVED') ORDER BY root_external_id",
+        [projectId]
+    );
+    for (const row of rows) {
+        const root = Number(row.root_external_id);
+        await closeReconciliation(projectId, root, describeChain(await loadChainDocuments(root, projectId)), 'PROJECT_CANCELLED');
+    }
 }
 
 /**

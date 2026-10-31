@@ -128,9 +128,19 @@ export function formatReconciliationOpened(zkNumber: string, zkNet: number, invo
         + `różnica ${zl(Math.round((invoicedNet - zkNet) * 100) / 100)}. Kwoty pozycji uzgadnia admin.`;
 }
 
-/** SUBIEKT_RECONCILIATION_CLOSED: łańcuch znów zgodny (mirror, równe sumy albo bez faktur). */
-export function formatReconciliationClosed(zkNumber: string, zkNet: number, invoicedNet: number): string {
-    return `${zkNumber}: uzgodnienie zamknięte automatycznie — faktury ${zl(invoicedNet)}, zamówienie ${zl(zkNet)}.`;
+/**
+ * SUBIEKT_RECONCILIATION_CLOSED: łańcuch znów zgodny (mirror, równe sumy albo bez faktur) lub projekt niezrealizowany.
+ * Przy zamknięciu RESOLVED dopisek, że ręczna decyzja przestała obowiązywać (kwoty są w metadata wpisu).
+ */
+export function formatReconciliationClosed(
+    zkNumber: string,
+    zkNet: number,
+    invoicedNet: number,
+    options: { previousResolved?: boolean; projectCancelled?: boolean } = {},
+): string {
+    const why = options.projectCancelled ? 'projekt niezrealizowany' : `faktury ${zl(invoicedNet)}, zamówienie ${zl(zkNet)}`;
+    const tail = options.previousResolved ? ' Ręczne uzgodnienie przestało obowiązywać.' : '';
+    return `${zkNumber}: uzgodnienie zamknięte automatycznie — ${why}.${tail}`;
 }
 
 export interface ReconciliationAmountChange {

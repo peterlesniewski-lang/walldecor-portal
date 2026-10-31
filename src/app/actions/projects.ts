@@ -23,6 +23,7 @@ import { addItemCore, deleteItemCore, getArchitectCommissionRate, updateItemAmou
 import { nextSubiektCode, withSubiektCodeRetry } from "@/lib/subiekt/codes";
 import { INTERNAL_MODE_WELCOME_SKIPPED, isSkippedByInternalMode } from "@/lib/internalMode";
 import { RECONCILE_OPEN_STATUS_ERROR, hasOpenReconciliation } from "@/lib/subiekt/status";
+import { closeReconciliationsOfCancelledProject } from "@/lib/subiekt/reconciliationDb";
 
 function generateTempPassword(): string {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -277,6 +278,9 @@ export async function updateProjectStatus(projectId: string, status: string, com
         "UPDATE projects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         [status, projectId]
     );
+
+    // Loop 5b: projekt niezrealizowany nie czeka na uzgodnienie faktur — otwarte uzgodnienia zamykają się (wpis w historii).
+    if (status === 'NIEZREALIZOWANY') await closeReconciliationsOfCancelledProject(projectId);
 
     // Log the change
     await logActivity(session.user.id, 'PROJECT_STATUS_CHANGE', `Zmieniono status projektu ${projectId} na ${status}`, { projectId, status });

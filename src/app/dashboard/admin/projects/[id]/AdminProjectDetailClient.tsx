@@ -68,8 +68,8 @@ export default function AdminProjectDetailClient({
 
             <ProjectStatusCard project={project} canChangeStatus={canChangeStatus} allowPrimary={!payoutActionable} />
 
-            {/* Uzgodnienie faktur z zamówieniem (Loop 5b): ADMIN i STAFF, tylko otwarte, nad pozycjami. */}
-            {canChangeStatus && subiekt.reconciliations
+            {/* Uzgodnienie faktur z zamówieniem (Loop 5b): ADMIN i STAFF, tylko otwarte, nad pozycjami; nie w projekcie niezrealizowanym. */}
+            {canChangeStatus && project.status !== 'NIEZREALIZOWANY' && subiekt.reconciliations
                 .filter((r) => r.status === 'OPEN')
                 .map((r) => (
                     // Klucz z odciskiem i pozycjami: po zmianie dokumentów formularz startuje od nowa (świeże pola).
