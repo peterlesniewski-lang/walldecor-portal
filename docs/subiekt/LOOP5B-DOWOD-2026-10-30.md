@@ -2,7 +2,9 @@
 
 Plan: `PLAN-SUBIEKT-2026-10-29.md`, sekcja „Loop 5b”. Gałąź `subiekt/loop-5b-reconcile` (od `c741ca8`).
 
-**Stan końcowy (2026-11-01, `c0f6c36`):** `npm test` 411/411, `npm run test:agent` 56/56, `npx tsc --noEmit` 18 × TS5097 i 0 innych, `npm run build` OK; e2e na `next start`: fazy 1–4 (49 sprawdzeń, 2 asercje skryptu poprawione), faza 5 14/14 (po przeglądzie spec), faza 6 12/12 (po przeglądzie jakości). Szczegóły kolejnych rund niżej.
+**Stan końcowy (2026-11-01, `9cfa90d`):** `npm test` 416/416, `npm run test:agent` 56/56, `npx tsc --noEmit` 18 × TS5097 i 0 innych, `npm run build` OK; e2e na `next start`: fazy 1–4 (49 sprawdzeń, 2 asercje skryptu poprawione), faza 5 14/14 (po przeglądzie spec), faza 6 12/12 (po przeglądzie jakości). Szczegóły kolejnych rund niżej.
+
+**Blokady MySQL:** `SELECT … FOR UPDATE` i zapis warunkowy sprawdzone tylko symulacją na SQLite (wyzwalacze zmieniające wiersz w trakcie transakcji; SQLite pomija `FOR UPDATE`) — sprawdzenie na prawdziwym MySQL do wykonania w Loopie 7.
 
 **Wynik pierwszej rundy:** zakres z planu zrobiony. Bramka zielona, e2e: 4 fazy, 49 sprawdzeń. Dwie asercje skryptu e2e były źle napisane (F11, J1, opis niżej) — produkt działał poprawnie, skrypt poprawiony. DoD spełniony; uwagi w sekcji „Konsekwencje i otwarte kwestie”.
 
@@ -206,4 +208,26 @@ Paczki: ZK 111/10 (`7501`) + FS 112/10 (`7502`, „Usługa” 900); ZK 121/10 (`
 Zrzuty: `…/scratchpad/e2e/shots3/16-stale-form-rejected.png`, `17-refreshed-card.png`, `18-cancelled-project.png`; wyniki `…/e2e/evidence3/{sends-1,phase6}.txt`, skrypt `phase6.mjs`.
 
 Pominięte zgodnie z decyzją koordynatora: zachowanie przy fakturze częściowej (§6 pkt 20, decyzja właściciela), wyrównanie RBAC, wydajność resyncu niezmienionej FS; luka przeliczenia przy łączeniu zapisana jako §6 pkt 23.
+
+## Ponowny przegląd (2026-11-01, `49ebdc3`, `9cfa90d`)
+
+| Punkt | Commit | Zmiana | Test |
+|---|---|---|---|
+| 1 | `49ebdc3` | `SELECT … FOR UPDATE` na `subiekt_reconciliations` jest pierwszym zapytaniem transakcji `resolveReconciliationOp` (przed odczytem projektu), więc migawka InnoDB REPEATABLE READ powstaje po blokadzie. Odcisk obejmuje tylko FS/KFS — `zk_net` zablokowanego wiersza porównywany z bieżącą sumą ZK, zapis warunkowy dodatkowo `AND zk_net = ?`; niezgodność → „Dokumenty zmieniły się, odśwież stronę” | test źródła (kolejność, warunek); ZK zmienione bez odświeżenia wiersza → odrzucone; pozycja ZK dodana synchronizacją między wyświetleniem a zapisem → stary formularz odrzucony (tu przez sprawdzenie kompletu pozycji — „Podaj kwoty dla wszystkich pozycji zamówienia.”) |
+| 2 | `9cfa90d` | Reaktywacja NIEZREALIZOWANY → ZGŁOSZONY: `resyncProjectInvoices` po zmianie statusu — łańcuchy przeliczone, niezgodne faktury znów otwierają uzgodnienie (zamknięte przy odrzuceniu), ZAKOŃCZONY znów zablokowany. Decyzja RESOLVED sprzed odrzucenia nie wraca (zamknięta z wpisem w historii; po reaktywacji nowe OPEN z kwotami z ZK) | odrzucenie → reaktywacja → OPEN, `hasOpenReconciliation`, PRZYJĘTY → ZAKOŃCZONY odrzucone |
+| 3 | `9cfa90d` | Ścieżka zmiany statusu inna niż ZAKOŃCZONY (UPDATE statusu, zamknięcie uzgodnień przy odrzuceniu, resync przy reaktywacji) w jednej `withTransaction` | test źródła |
+| 4 | (ten commit) | Uwaga o weryfikacji blokad MySQL tylko symulacją (nagłówek dowodu) | — |
+
+### Bramka (`9cfa90d`)
+
+```
+npm test              → ℹ tests 416 · pass 416 · fail 0
+npm run test:agent    → ℹ tests 56 · pass 56 · fail 0
+npx tsc --noEmit      → 18 × error TS5097, 0 innych
+npm run build         → exit 0 (✓ Compiled successfully)
+npx eslint src/lib/subiekt/adminOps.ts → 0 problemów
+npx eslint src/app/actions/projects.ts → 33 × no-explicit-any — tyle samo w wersji bazowej c741ca8 (istniejące, bez nowych)
+```
+
+E2E nie powtarzane: zmiany dotyczą kolejności zapytań w transakcji, dodatkowego warunku zapisu i ścieżki reaktywacji — pokryte testami integracyjnymi na SQLite; zachowanie karty (faza 6) bez zmian.
 
