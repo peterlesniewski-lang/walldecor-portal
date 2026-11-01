@@ -313,7 +313,7 @@ Jeden przebieg bez dotykania bazy ręcznie i bez trafienia na martwy element:
 
 1. **[Rozstrzygnięte 2026-11-01 — decyzja 6a.]** Mapowanie magazynów: `MAG` = Jagiellońska (`JAG`), `PUŁ` = Puławska (`PUL`). Sonda Loopa 1 potwierdza tylko, że `sl_Magazyn.mag_Symbol` ma te wartości i że nie ma trzeciego magazynu z dokumentami sprzedaży.
 2. **[Rozstrzygnięte 2026-11-01 — decyzja 6b.]** E-commerce na razie zgrupowane z Puławską, kanał `ECOMMERCE` ręczny; przyszły magazyn `INT` obsłużony wpisem mapy `INT:PUL:ECOMMERCE`.
-3. **Paragony i faktury do paragonu — do sprawdzenia w SSMS przed Loopem 1 (użytkownik, login `portal_reader`).** Kierunek użytkownika: wykluczać faktury detaliczne jak w raportach GT, ale najpierw sprawdzić, czy FS z wydrukowanym paragonem mają w bazie własny znacznik. Zapytania (wyniki wkleić do tego punktu):
+3. **Paragony i faktury do paragonu — do sprawdzenia w bazie przed Loopem 1 (biuro, login `portal_reader`).** Kierunek użytkownika: wykluczać faktury detaliczne jak w raportach GT, ale najpierw sprawdzić, czy FS z wydrukowanym paragonem mają w bazie własny znacznik. **Gotowy pakiet dla biura (także dla agenta Codex z computer use): `docs/subiekt/sql-checks-A-F/` — `INSTRUKCJA.md`, skrypt `uruchom-A-F.ps1` (sqlcmd, wyniki do plików), `sql/*.sql` (00, A, A2 rozkład wartości znaczników, A3 tabele KSeF, B–E, F-szablon), `RAPORT-A-F-szablon.md`; składnia sprawdzona 2026-11-01 na Azure SQL Edge z syntetyczną bazą i loginem z DENY.** Zapytania poniżej są wersją skróconą; wyniki (raport) wkleić do tego punktu:
 
    ```sql
    -- A. Kolumny (w całej bazie), które mogą oznaczać fiskalizację / fakturę detaliczną / status KSeF

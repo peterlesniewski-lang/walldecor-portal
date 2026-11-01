@@ -572,3 +572,10 @@ migrations/
 - Ustalenia: Codex w workerze WallDecor-App ma MCP wyłączone → aplikacja czyta mostek serwerowo; przychody w aplikacji brutto per `JAG`/`PUL` × `SALON`/`MONTAZ`/`ECOMMERCE`.
 - Decyzje użytkownika 2026-11-01: `MAG` = Jagiellońska, `PUŁ` = Puławska; e-commerce zgrupowane z Puławską (przyszły magazyn `INT`); faktury do paragonu — sprawdzić w SSMS znacznik fiskalizacji (zapytania w §6 pkt 3), potem filtr; przyszłe narzędzie `unfiscalized_invoices` (kontrola fiskalizacji FS dla osób prywatnych; FS wysłana do KSeF wypada z listy, FS w KSeF z paragonem = anomalia).
 - Kod mostka pójdzie do nowego repo `walldecor-bridge`, zasianego z `agent-subiekt/src/`; start dopiero po Loopie 7 portalu, na polecenie.
+
+## 2026-11-01 — Pakiet zapytań kontrolnych A–F dla biura (walldecor-bridge §6 pkt 3)
+
+- `docs/subiekt/sql-checks-A-F/`: `INSTRUKCJA.md` (ścieżka 1: `uruchom-A-F.ps1` + sqlcmd, ścieżka 2: SSMS; sekcja dla agenta Codex z computer use — wolno/nie wolno/stop/kryterium ukończenia), `sql/` (00, A, A2 rozkład wartości znaczników, A3 tabele KSeF, B–E, F-szablon), `RAPORT-A-F-szablon.md`.
+- Skrypt czyta hasło z `.env` agenta albo pyta, hasło tylko w `SQLCMDPASSWORD` procesu; wyniki do `C:\PortalArchi\sql-wyniki\A-F-RRRR-MM-DD\`; bez nazw klientów w wynikach.
+- Składnia wszystkich zapytań i obu wariantów F sprawdzona na Azure SQL Edge (Docker) z syntetyczną bazą `WD_sp` i loginem `portal_reader` z DENY (UPDATE odrzucony). Skrypt PowerShell bez testu wykonania (brak pwsh na Macu) — pierwsze uruchomienie w biurze to test.
+- Niezacommitowane (gałąź `docs/plan-walldecor-bridge`); do PR na polecenie.
