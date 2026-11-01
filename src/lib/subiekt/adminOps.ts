@@ -542,20 +542,25 @@ export async function resolveReconciliationOp(input: ResolveReconciliationInput,
     const rootExternalId = Number(input.rootExternalId);
 
     return withTransaction(async () => {
+        const [row] = await query<{ id: string; status: string; fingerprint: string; zk_net: number | string }>(
+            // PIERWSZE zapytanie transakcji: blokada wiersza do końca transakcji (MySQL) — migawka REPEATABLE READ
+            // powstaje dopiero po niej, więc projekt i dokumenty czytamy w stanie po ostatniej synchronizacji łańcucha.
+            'SELECT id, status, fingerprint, zk_net FROM subiekt_reconciliations WHERE project_id = ? AND root_external_id = ? FOR UPDATE',
+            [String(input.projectId), rootExternalId]
+        );
         const project = await loadProject(String(input.projectId));
         if (project.status === 'NIEZREALIZOWANY') throw new Error('Projekt jest niezrealizowany — faktur nie uzgadnia się.');
-        const [row] = await query<{ id: string; status: string; fingerprint: string }>(
-            // Blokada wiersza do końca transakcji (MySQL): równoległa synchronizacja łańcucha czeka na zapis decyzji.
-            'SELECT id, status, fingerprint FROM subiekt_reconciliations WHERE project_id = ? AND root_external_id = ? FOR UPDATE',
-            [project.id, rootExternalId]
-        );
         if (!row) throw new Error('Brak uzgodnienia dla tego zamówienia — odśwież stronę.');
         if (row.status !== 'OPEN') throw new Error('Uzgodnienie nie jest otwarte — odśwież stronę.');
 
         // Formularz pokazany dla innego zestawu faktur (np. ta sama suma, inne FS) albo dokumenty zmieniły się od
-        // ostatniej synchronizacji — decyzja dotyczyłaby innych faktur.
+        // ostatniej synchronizacji — decyzja dotyczyłaby innych faktur. Odcisk obejmuje tylko FS/KFS, więc zmianę
+        // samego ZK wykrywa porównanie zk_net wiersza z bieżącą sumą ZK.
         const state = await loadChainState(project.id, rootExternalId);
-        if (input.fingerprint !== row.fingerprint || state.mode !== 'RECONCILE' || state.fingerprint !== row.fingerprint) {
+        if (
+            input.fingerprint !== row.fingerprint || state.mode !== 'RECONCILE' || state.fingerprint !== row.fingerprint ||
+            Math.abs(round2(row.zk_net) - state.zkNet) >= AMOUNT_EPSILON
+        ) {
             throw new Error(STALE_RECONCILIATION_ERROR);
         }
 
@@ -606,8 +611,8 @@ export async function resolveReconciliationOp(input: ResolveReconciliationInput,
         // operacji). 0 zmienionych wierszy = wyjątek, więc cała transakcja (kwoty, prowizje) się wycofuje.
         const updated = await query<{ affectedRows?: number }>(
             `UPDATE subiekt_reconciliations SET status = 'RESOLVED', amounts_json = ?, note = ?, zk_net = ?, invoiced_net = ?,
-                resolved_at = CURRENT_TIMESTAMP, resolved_by = ? WHERE id = ? AND status = 'OPEN' AND fingerprint = ?`,
-            [JSON.stringify(decision), note, state.zkNet, state.invoicedNet, actorId, row.id, row.fingerprint]
+                resolved_at = CURRENT_TIMESTAMP, resolved_by = ? WHERE id = ? AND status = 'OPEN' AND fingerprint = ? AND zk_net = ?`,
+            [JSON.stringify(decision), note, state.zkNet, state.invoicedNet, actorId, row.id, row.fingerprint, row.zk_net]
         );
         const affectedRows = Number((updated as { affectedRows?: number }).affectedRows ?? updated?.[0]?.affectedRows ?? 0);
         if (affectedRows !== 1) throw new Error(STALE_RECONCILIATION_ERROR);
