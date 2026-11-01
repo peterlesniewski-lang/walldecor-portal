@@ -518,6 +518,68 @@ test('ORDER_BREAKDOWN with a saved RESOLVED decision of the same fingerprint use
     assert.equal(logs('SUBIEKT_RECONCILIATION_CLOSED', docRow(2500).id).length, 0);
 });
 
+test('re-review 1: the row lock is the first statement of the resolve transaction; the write also checks zk_net', async () => {
+    const adminOps = await readFile(new URL('../src/lib/subiekt/adminOps.ts', import.meta.url), 'utf8');
+    const op = adminOps.slice(adminOps.indexOf('export async function resolveReconciliationOp('));
+    const tx = op.slice(op.indexOf('return withTransaction(async () => {'));
+    const firstAwait = tx.slice(tx.indexOf('await '), tx.indexOf('await ') + 800);
+    assert.match(firstAwait, /^await query<[^>]*>\(\s*(\/\/[^\n]*\n\s*)*'SELECT [^']*FROM subiekt_reconciliations WHERE project_id = \? AND root_external_id = \? FOR UPDATE'/,
+        'blokada przed odczytem projektu i dokumentów (migawka REPEATABLE READ po blokadzie)');
+    assert.match(op, /WHERE id = \? AND status = 'OPEN' AND fingerprint = \? AND zk_net = \?/);
+});
+
+test('re-review 1: order changed but the row not refreshed (zk_net differs) → rejected as stale', async () => {
+    await sync([zk(2600)]);
+    await sync([fs(2610, 2600, [collective(26101, 900)])]);
+    const projectId = projectOf(2600);
+    // Zmiana ZK, której synchronizacja jeszcze nie dotarła do wiersza uzgodnienia (odcisk obejmuje tylko FS/KFS).
+    const positions = [product(26001), service(26002), product(26003, { ordinal: 3, product_id: 88, name: 'Klej', net_total: 50, unit_price_net: 50 })];
+    db.prepare('UPDATE subiekt_documents SET positions_json = ?, net_total = 886.59 WHERE external_id = 2600').run(JSON.stringify(positions));
+    await assert.rejects(resolve(projectId, 2600, [600, 300]), /^Error: Dokumenty zmieniły się, odśwież stronę$/);
+    assert.equal(reconciliation(projectId, 2600).status, 'OPEN');
+    assert.deepEqual(amountsOf(projectId), [536.59, 300]);
+});
+
+test('re-review 1: a ZK position added by sync between render and resolve → the old form is rejected', async () => {
+    await sync([zk(2700)]);
+    await sync([fs(2710, 2700, [collective(27101, 900)])]);
+    const projectId = projectOf(2700);
+    const rendered = (await queries.getProjectReconciliations(projectId))[0];
+    await sync([doc(2700, 'ZK', [product(27001), service(27002), product(27003, { ordinal: 3, product_id: 88, name: 'Klej', net_total: 50, unit_price_net: 50 })])]);
+    await assert.rejects(ops.resolveReconciliationOp({
+        projectId, rootExternalId: 2700, fingerprint: rendered.fingerprint,
+        amounts: rendered.items.map((item, i) => ({ itemId: item.id, amount_net: [600, 300][i] })),
+    }, ADMIN), /Dokumenty zmieniły się, odśwież stronę|wszystkich pozycji/);
+    assert.equal(reconciliation(projectId, 2700).status, 'OPEN');
+    assert.deepEqual(amountsOf(projectId), [536.59, 300, 50]);
+});
+
+test('re-review 2: cancelled → reactivated project recomputes chains, the reconciliation reopens and blocks ZAKOŃCZONY', async () => {
+    await sync([zk(2800)]);
+    await sync([fs(2810, 2800, [collective(28101, 900)], { is_paid: true })]);
+    const projectId = projectOf(2800);
+    assert.deepEqual(await projectActions.updateProjectStatus(projectId, 'NIEZREALIZOWANY'), { success: true });
+    assert.equal(reconciliation(projectId, 2800).status, 'AUTO_CLOSED');
+    assert.deepEqual(await projectActions.updateProjectStatus(projectId, 'ZGŁOSZONY'), { success: true });
+    assert.equal(reconciliation(projectId, 2800).status, 'OPEN', 'łańcuch przeliczony po reaktywacji');
+    assert.equal(await status.hasOpenReconciliation(projectId), true);
+    assert.deepEqual(await projectActions.updateProjectStatus(projectId, 'PRZYJĘTY'), { success: true });
+    assert.deepEqual(await projectActions.updateProjectStatus(projectId, 'ZAKOŃCZONY'),
+        { success: false, error: 'Projekt ma nieuzgodnione faktury z Subiekta. Uzgodnij je przed zakończeniem.' });
+    assert.equal(projectRow(projectId).status, 'PRZYJĘTY');
+});
+
+test('re-review 3: the cancel path (status + closing reconciliations) and reactivation run in one transaction', async () => {
+    const projects = await readFile(new URL('../src/app/actions/projects.ts', import.meta.url), 'utf8');
+    const action = projects.slice(projects.indexOf('export async function updateProjectStatus('), projects.indexOf('export async function getAllArchitects('));
+    const tx = action.slice(action.lastIndexOf('await withTransaction(async () => {'));
+    assert.ok(action.lastIndexOf('await withTransaction(async () => {') > action.indexOf("if (status === 'ZAKOŃCZONY')"), 'osobna transakcja ścieżki innej niż ZAKOŃCZONY');
+    const body = tx.slice(0, tx.indexOf('\n        });'));
+    assert.match(body, /UPDATE projects SET status = \?, updated_at = CURRENT_TIMESTAMP WHERE id = \?/);
+    assert.match(body, /closeReconciliationsOfCancelledProject\(projectId\)/);
+    assert.match(body, /previousStatus === 'NIEZREALIZOWANY'[\s\S]*resyncProjectInvoices\(projectId,/);
+});
+
 // --- KFS na łańcuchu z rozbiciem ZK (poprawka po przeglądzie: mirror przed korektą) ---
 
 test('downward KFS on a mirroring chain (loop 6 step 8) → stays MIRROR, the invoice item is corrected, no reconciliation', async (t) => {

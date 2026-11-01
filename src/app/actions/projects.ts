@@ -24,6 +24,7 @@ import { nextSubiektCode, withSubiektCodeRetry } from "@/lib/subiekt/codes";
 import { INTERNAL_MODE_WELCOME_SKIPPED, isSkippedByInternalMode } from "@/lib/internalMode";
 import { RECONCILE_OPEN_STATUS_ERROR, hasOpenReconciliation } from "@/lib/subiekt/status";
 import { closeReconciliationsOfCancelledProject } from "@/lib/subiekt/reconciliationDb";
+import { resyncProjectInvoices } from "@/lib/subiekt/mappingDb";
 
 function generateTempPassword(): string {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -274,13 +275,22 @@ export async function updateProjectStatus(projectId: string, status: string, com
         return { success: true };
     }
 
-    await query(
-        "UPDATE projects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        [status, projectId]
-    );
+    // Zmiana statusu i skutki dla uzgodnień faktur (Loop 5b) w jednej transakcji.
+    await withTransaction(async () => {
+        await query(
+            "UPDATE projects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            [status, projectId]
+        );
 
-    // Loop 5b: projekt niezrealizowany nie czeka na uzgodnienie faktur — otwarte uzgodnienia zamykają się (wpis w historii).
-    if (status === 'NIEZREALIZOWANY') await closeReconciliationsOfCancelledProject(projectId);
+        // Projekt niezrealizowany nie czeka na uzgodnienie faktur — otwarte uzgodnienia zamykają się (wpis w historii).
+        if (status === 'NIEZREALIZOWANY') await closeReconciliationsOfCancelledProject(projectId);
+
+        // Reaktywacja (NIEZREALIZOWANY → ZGŁOSZONY): sync pomijał projekt niezrealizowany, a uzgodnienia zamknęły się przy
+        // odrzuceniu — przeliczamy łańcuchy, więc niezgodne faktury znów otwierają uzgodnienie i blokują zakończenie.
+        if (previousStatus === 'NIEZREALIZOWANY') {
+            await resyncProjectInvoices(projectId, { actorId: session.user.id, note: 'Reaktywacja projektu' });
+        }
+    });
 
     // Log the change
     await logActivity(session.user.id, 'PROJECT_STATUS_CHANGE', `Zmieniono status projektu ${projectId} na ${status}`, { projectId, status });
