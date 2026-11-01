@@ -38,7 +38,7 @@ test('actions return { ok, error } for domain errors; only Unauthorized is throw
     assert.match(actions, /export type SubiektActionResult/);
     assert.match(actions, /\{\s*ok: false,\s*error:/);
     const exported = [...actions.matchAll(/export async function (\w+)\(/g)].map((m) => m[1]);
-    assert.equal(exported.length, 8);
+    assert.equal(exported.length, 9);
     for (const name of exported) {
         const start = actions.indexOf(`export async function ${name}(`);
         const next = actions.indexOf('\nexport ', start + 1);
@@ -83,7 +83,7 @@ test('ItemRow: type override through overrideItemType, behind a permission prop'
 test('admin project page: suggested status, documents card, permissions from rbac', async () => {
     const page = await src(`${PROJECT_DIR}/page.tsx`);
     const client = await src(`${PROJECT_DIR}/AdminProjectDetailClient.tsx`);
-    assert.match(page, /computeSuggestedStatus\(/);
+    assert.match(page, /getSuggestedStatus\(/, "Loop 5b: podpowiedź z powodem blokady (computeSuggestedStatus bez powodu)");
     assert.match(page, /getProjectSubiektSummary\(/);
     assert.match(page, /SuggestedStatusBanner/);
     assert.match(page, /canManageFinancialOperations\(session\.user\.role\)/);

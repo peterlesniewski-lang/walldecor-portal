@@ -261,20 +261,28 @@ test('ignore: AUTO ZK with items → items and PENDING gone, IGNORED with note, 
     assert.equal(itemsOfProject(projectId).length, 0);
 });
 
-test('ignore: the only FS of a chain → FS items gone, ZK items come back; ignoring a KFS restores the FS amount', async () => {
-    await sync([doc(310, 'ZK'), doc(311, 'FS', { parent_external_id: 310, positions: [pos(3110, { net_total: 700 })] })]);
+test('ignore: the only FS of a chain → FS items gone, ZK items come back', async () => {
+    // FS odzwierciedla ZK (MIRROR, loop 5b) → pozycje z FS.
+    await sync([doc(310, 'ZK'), doc(311, 'FS', { parent_external_id: 310 })]);
     const projectId = docRow(310).project_id;
-    await sync([doc(312, 'KFS', { parent_external_id: 311, positions: [pos(3120, { net_total: 500, corrects_position_external_id: 3110 })] })]);
-    approx(subiektItems(projectId)[0].amount_net, 500);
-
-    await ops.ignoreDocumentOp(docRow(312).id, 'błędna korekta', ADMIN);
-    approx(subiektItems(projectId)[0].amount_net, 700, 'korekta zdjęta');
+    assert.equal(subiektItems(projectId)[0].subiekt_document_id, docRow(311).id);
 
     await ops.ignoreDocumentOp(docRow(311).id, 'faktura anulowana', ADMIN);
     const items = subiektItems(projectId);
     assert.equal(items.length, 1);
     assert.equal(items[0].subiekt_document_id, docRow(310).id, 'wiodący znowu ZK');
     approx(pendingSum(projectId), 1000 * RATE);
+});
+
+test('ignore: a KFS on an invoice-led chain (FP root, INVOICE_ONLY) → the FS amount is restored', async () => {
+    await sync([doc(315, 'FP', { architect_code: 'A-001' }), doc(316, 'FS', { parent_external_id: 315, positions: [pos(3160, { net_total: 700 })] })]);
+    const projectId = docRow(315).project_id;
+    await sync([doc(317, 'KFS', { parent_external_id: 316, positions: [pos(3170, { net_total: 500, corrects_position_external_id: 3160 })] })]);
+    approx(subiektItems(projectId)[0].amount_net, 500);
+
+    await ops.ignoreDocumentOp(docRow(317).id, 'błędna korekta', ADMIN);
+    approx(subiektItems(projectId)[0].amount_net, 700, 'korekta zdjęta');
+    approx(pendingSum(projectId), 700 * RATE);
 });
 
 test('ignore root ZK → a later FS of that ZK inherits IGNORED (ROOT_IGNORED), assigning the ZK again re-activates it', async () => {
@@ -303,7 +311,12 @@ test('ignore root ZK → a later FS of that ZK inherits IGNORED (ROOT_IGNORED), 
 });
 
 test('ignore root ZK with existing chain → AUTO FS follows (ROOT_IGNORED, items cleared), MANUAL FS keeps its items', async () => {
-    await sync([doc(330, 'ZK'), doc(331, 'FS', { parent_external_id: 330 }), doc(332, 'FS', { parent_external_id: 330, positions: [pos(3320, { net_total: 400 })] })]);
+    // Dwie FS razem odzwierciedlają pozycje ZK (MIRROR, loop 5b) → pozycje z FS.
+    await sync([
+        doc(330, 'ZK', { positions: [pos(3300), pos(3301, { ordinal: 2, net_total: 400 })] }),
+        doc(331, 'FS', { parent_external_id: 330 }),
+        doc(332, 'FS', { parent_external_id: 330, positions: [pos(3320, { net_total: 400 })] }),
+    ]);
     const projectId = docRow(330).project_id;
     db.prepare("UPDATE subiekt_documents SET assignment_status = 'MANUAL' WHERE external_id = 332").run();
     assert.equal(subiektItems(projectId).length, 2);
@@ -401,7 +414,8 @@ test('merge: items of a ZGŁOSZONY source get PENDING in an accepted target (thr
 // --- moveDocumentToProject ---
 
 test('move: chain ZK+FS → old project has no SUBIEKT items, new one has them, totals and PENDING preserved', async () => {
-    await sync([doc(500, 'ZK'), doc(510, 'FS', { parent_external_id: 500, positions: [pos(5100, { net_total: 1200 })] })]);
+    // FS odzwierciedla ZK (MIRROR, loop 5b) → pozycje z FS.
+    await sync([doc(500, 'ZK', { positions: [pos(5000, { net_total: 1200 })] }), doc(510, 'FS', { parent_external_id: 500, positions: [pos(5100, { net_total: 1200 })] })]);
     const oldProject = docRow(500).project_id;
     newProject('p_move');
     const [items, pending] = [itemsSum(oldProject), pendingSum(oldProject)];
@@ -419,7 +433,7 @@ test('move: chain ZK+FS → old project has no SUBIEKT items, new one has them, 
     assert.equal(subiektItems('p_move')[0].subiekt_document_id, docRow(510).id);
     assert.equal(lastLog('SUBIEKT_CHAIN_MOVED').subject_id, docRow(500).id);
 
-    await sync([doc(510, 'FS', { parent_external_id: 500, positions: [pos(5100, { net_total: 1100 })] })]);
+    await sync([doc(500, 'ZK', { positions: [pos(5000, { net_total: 1100 })] }), doc(510, 'FS', { parent_external_id: 500, positions: [pos(5100, { net_total: 1100 })] })]);
     approx(itemsSum('p_move'), 1100);
     assert.equal(itemsOfProject(oldProject).length, 0, 'sync nie wraca do starego projektu');
 });

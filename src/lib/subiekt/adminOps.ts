@@ -10,10 +10,13 @@ import { query, withTransaction } from '@/lib/db';
 import { logActivity } from '@/lib/services';
 import { addItemCore, deleteItemCore, updateItemAmountCore, type ItemActor } from '@/lib/projectItems';
 import type { FileDirMove } from '@/lib/projectFilesStorage';
-import { ROOT_IGNORED, sortDocumentsForProcessing, subiektCategory } from './mapping';
+import { formatPLNFixed } from '@/lib/utils';
+import { AMOUNT_EPSILON, ROOT_IGNORED, round2, sortDocumentsForProcessing, subiektCategory } from './mapping';
 import { insertProjectForDocument, kfsMatchesProject, remapDocument, resyncProjectInvoices, syncChainItems } from './mappingDb';
-import { clearChainItems, clearDocumentItems } from './chainOps';
-import { findChainDocuments, findDocumentByExternalId, findDocumentById, findProject, normalizeDocument, type ProjectRow, type SubiektDocumentRow } from './repo';
+import { loadChainState } from './reconciliationDb';
+import { clearChainItems, clearDocumentItems, removeSubiektItem } from './chainOps';
+import { formatReconciliationResolved } from './diff';
+import { findChainDocuments, findDocumentByExternalId, findDocumentById, findProject, normalizeDocument, positionsOf, type ProjectRow, type SubiektDocumentRow } from './repo';
 import type { SuggestedStatus } from './status';
 import type { SubiektDocType } from './types';
 
@@ -80,6 +83,32 @@ async function addOverriddenItem(projectId: string, source: SubiektItemRow, type
     }, actor);
     await query('UPDATE project_items SET type_overridden = 1 WHERE id = ?', [itemId]);
     return itemId;
+}
+
+/**
+ * Przenosi wiersz uzgodnienia łańcucha `rootExternalId` z projektów `fromProjectIds` do `targetId` (UNIQUE
+ * project_id + root_external_id). Gdy wierszy tego łańcucha jest kilka (źródła i cel), zostaje jeden: najpierw
+ * żywy (OPEN / RESOLVED — decyzja admina nie ginie) przed AUTO_CLOSED, potem ze źródła, potem najwcześniej otwarty;
+ * pozostałe są usuwane. Bez wiersza w źródłach nic się nie zmienia. Zwraca true, gdy wierszy było więcej niż jeden
+ * (łańcuch trzeba przeliczyć).
+ */
+async function moveReconciliationRows(rootExternalId: number, fromProjectIds: string[], targetId: string): Promise<boolean> {
+    const rows = await query<{ id: string; project_id: string; status: string }>(
+        `SELECT id, project_id, status FROM subiekt_reconciliations
+         WHERE root_external_id = ? AND project_id IN (${placeholders([...fromProjectIds, targetId])})
+         ORDER BY opened_at, id`,
+        [rootExternalId, ...fromProjectIds, targetId]
+    );
+    if (!rows.some((r) => fromProjectIds.includes(r.project_id))) return false;
+    const rank = (r: { project_id: string; status: string }) =>
+        (r.status === 'AUTO_CLOSED' ? 2 : 0) + (fromProjectIds.includes(r.project_id) ? 0 : 1);
+    // Sortowanie stabilne: przy równej randze zostaje kolejność opened_at z zapytania.
+    const keep = [...rows].sort((a, b) => rank(a) - rank(b))[0];
+    for (const row of rows) {
+        if (row.id !== keep.id) await query('DELETE FROM subiekt_reconciliations WHERE id = ?', [row.id]);
+    }
+    if (keep.project_id !== targetId) await query('UPDATE subiekt_reconciliations SET project_id = ? WHERE id = ?', [targetId, keep.id]);
+    return rows.length > 1;
 }
 
 /**
@@ -164,6 +193,9 @@ async function reassignChain(selected: DocRow, target: ProjectRow, actor: ItemAc
     if (selected.type === 'KFS' && !(await kfsMatchesProject(selected.id, target.id))) {
         throw new Error('Korekta nie pasuje do pozycji faktur tego projektu.');
     }
+
+    // Uzgodnienie faktur łańcucha (Loop 5b) idzie razem z dokumentami; syncChainItems niżej przelicza je w nowym projekcie.
+    if (wholeChain && oldProjectIds.length > 0) await moveReconciliationRows(rootExternalId as number, oldProjectIds, target.id);
 
     for (const item of overridden) await addOverriddenItem(target.id, item, item.type, actor);
     await syncChainItems(selected.id, actor);
@@ -331,6 +363,17 @@ export async function mergeProjectsOp(targetProjectId: string, sourceProjectIds:
             )
             : [];
 
+        // Uzgodnienia faktur (Loop 5b): wiersze źródeł przechodzą do celu; ten sam łańcuch w kilku projektach
+        // (rzadkie) zostaje jednym wierszem i jest przeliczany po połączeniu.
+        const reconciliationRoots = await query<{ root_external_id: number }>(
+            `SELECT DISTINCT root_external_id FROM subiekt_reconciliations WHERE project_id IN (${marks})`,
+            sources
+        );
+        const conflictingRoots: number[] = [];
+        for (const { root_external_id } of reconciliationRoots) {
+            if (await moveReconciliationRows(Number(root_external_id), sources, target.id)) conflictingRoots.push(Number(root_external_id));
+        }
+
         for (const table of ['subiekt_documents', 'project_items', 'commissions', 'project_files']) {
             await query(`UPDATE ${table} SET project_id = ? WHERE project_id IN (${marks})`, [target.id, ...sources]);
         }
@@ -339,6 +382,15 @@ export async function mergeProjectsOp(targetProjectId: string, sourceProjectIds:
 
         const actor: ItemActor = { actorId, note: `Połączenie projektów → ${target.name}` };
         for (const item of needPending) await updateItemAmountCore(item.id, Number(item.amount_net), actor);
+
+        for (const root of conflictingRoots) {
+            const [lead] = await query<{ id: string }>(
+                `SELECT id FROM subiekt_documents WHERE project_id = ? AND root_external_id = ? AND assignment_status IN ('AUTO', 'MANUAL')
+                 AND type IN ('ZK', 'FS') ORDER BY type DESC, issued_at, external_id LIMIT 1`,
+                [target.id, root]
+            );
+            if (lead) await syncChainItems(lead.id, actor);
+        }
 
         await query(`DELETE FROM projects WHERE id IN (${marks})`, sources);
         await query('UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [target.id]);
@@ -435,4 +487,146 @@ export function nextStatusSteps(current: string, target: SuggestedStatus): strin
     if (to > from) return STATUS_FLOW.slice(from + 1, to + 1);
     if (current === 'W_REALIZACJI' && target === 'PRZYJĘTY') return ['PRZYJĘTY'];
     throw new Error(`Niedozwolona zmiana statusu: ${current} → ${target}.`);
+}
+
+// --- Uzgodnienie faktur z zamówieniem (Loop 5b) ---
+
+export interface ResolveReconciliationInput {
+    projectId: string;
+    rootExternalId: number;
+    /** Odcisk faktur, który widział admin (getProjectReconciliations → karta); inny niż bieżący = formularz nieaktualny. */
+    fingerprint: string;
+    /** Kwoty netto dla WSZYSTKICH pozycji Subiekta z ZK łańcucha (≥ 0, do grosza; 0 = pozycja znika). */
+    amounts: Array<{ itemId: string; amount_net: number }>;
+    note?: string | null;
+}
+
+interface ChainItemRow {
+    id: string;
+    description: string | null;
+    type: string;
+    amount_net: number;
+    subiekt_position_id: number | null;
+}
+
+/** Komunikat dla nieaktualnego formularza uzgodnienia (brzmienie z planu, Loop 5b). */
+export const STALE_RECONCILIATION_ERROR = 'Dokumenty zmieniły się, odśwież stronę';
+
+/** Walidacja kształtu wejścia (bez bazy): kwoty liczbowe ≥ 0 z dokładnością do grosza, bez powtórzeń, notatka ≤ 500. */
+function parseResolveInput(input: ResolveReconciliationInput): { amounts: Map<string, number>; note: string | null } {
+    const note = typeof input?.note === 'string' ? input.note.trim() : '';
+    if (note.length > MAX_NOTE_LENGTH) throw new Error(`Notatka może mieć najwyżej ${MAX_NOTE_LENGTH} znaków.`);
+    if (!Array.isArray(input?.amounts) || input.amounts.length === 0) throw new Error('Podaj kwoty pozycji zamówienia.');
+    const amounts = new Map<string, number>();
+    for (const entry of input.amounts) {
+        const itemId = typeof entry?.itemId === 'string' ? entry.itemId : '';
+        const value = Number(entry?.amount_net);
+        if (!itemId) throw new Error('Nieprawidłowa pozycja.');
+        if (!Number.isFinite(value) || value < 0) throw new Error('Kwoty muszą być liczbami nie mniejszymi niż 0.');
+        if (Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) throw new Error('Kwoty podaj z dokładnością do grosza.');
+        if (amounts.has(itemId)) throw new Error('Pozycja podana dwa razy.');
+        amounts.set(itemId, round2(value));
+    }
+    return { amounts, note: note || null };
+}
+
+/**
+ * Admin rozkłada kwotę faktur łańcucha (FS + KFS) na pozycje ZK: jedna transakcja. Wymagania: uzgodnienie OPEN,
+ * odcisk z formularza = odcisk wiersza = bieżący stan dokumentów (inaczej „Dokumenty zmieniły się, odśwież stronę”), kwoty dla wszystkich
+ * pozycji SUBIEKT z ZK łańcucha w projekcie, suma = kwota faktur (± AMOUNT_EPSILON). Skutek: zmiany kwot przez
+ * rdzeń (updateItemAmountCore; 0 → removeSubiektItem → deleteItemCore), decyzja w amounts_json (ob_Id pozycji ZK →
+ * kwota; kolejne synchronizacje stosują ją, dopóki odcisk się nie zmieni), RESOLVED, wpis SUBIEKT_RECONCILIATION_RESOLVED.
+ */
+export async function resolveReconciliationOp(input: ResolveReconciliationInput, actorId: string): Promise<AdminOpResult> {
+    const { amounts, note } = parseResolveInput(input);
+    const rootExternalId = Number(input.rootExternalId);
+
+    return withTransaction(async () => {
+        const [row] = await query<{ id: string; status: string; fingerprint: string; zk_net: number | string }>(
+            // PIERWSZE zapytanie transakcji: blokada wiersza do końca transakcji (MySQL) — migawka REPEATABLE READ
+            // powstaje dopiero po niej, więc projekt i dokumenty czytamy w stanie po ostatniej synchronizacji łańcucha.
+            'SELECT id, status, fingerprint, zk_net FROM subiekt_reconciliations WHERE project_id = ? AND root_external_id = ? FOR UPDATE',
+            [String(input.projectId), rootExternalId]
+        );
+        const project = await loadProject(String(input.projectId));
+        if (project.status === 'NIEZREALIZOWANY') throw new Error('Projekt jest niezrealizowany — faktur nie uzgadnia się.');
+        if (!row) throw new Error('Brak uzgodnienia dla tego zamówienia — odśwież stronę.');
+        if (row.status !== 'OPEN') throw new Error('Uzgodnienie nie jest otwarte — odśwież stronę.');
+
+        // Formularz pokazany dla innego zestawu faktur (np. ta sama suma, inne FS) albo dokumenty zmieniły się od
+        // ostatniej synchronizacji — decyzja dotyczyłaby innych faktur. Odcisk obejmuje tylko FS/KFS, więc zmianę
+        // samego ZK wykrywa porównanie zk_net wiersza z bieżącą sumą ZK.
+        const state = await loadChainState(project.id, rootExternalId);
+        if (
+            input.fingerprint !== row.fingerprint || state.mode !== 'RECONCILE' || state.fingerprint !== row.fingerprint ||
+            Math.abs(round2(row.zk_net) - state.zkNet) >= AMOUNT_EPSILON
+        ) {
+            throw new Error(STALE_RECONCILIATION_ERROR);
+        }
+
+        const orderIds = state.orders.map((d) => d.id);
+        const items = orderIds.length === 0 ? [] : await query<ChainItemRow>(
+            `SELECT id, description, type, amount_net, subiekt_position_id FROM project_items
+             WHERE project_id = ? AND source = 'SUBIEKT' AND subiekt_position_id IS NOT NULL
+               AND subiekt_document_id IN (${placeholders(orderIds)})
+             ORDER BY subiekt_position_id, id`,
+            [project.id, ...orderIds]
+        );
+        for (const itemId of amounts.keys()) {
+            if (!items.some((i) => i.id === itemId)) throw new Error('Pozycja nie należy do tego zamówienia — odśwież stronę.');
+        }
+        if (items.some((i) => !amounts.has(i.id))) throw new Error('Podaj kwoty dla wszystkich pozycji zamówienia.');
+
+        // Faktury po korektach ≤ 0 (korekta większa niż faktura): pozycje nie mogą być ujemne, więc celem jest 0 —
+        // admin zamyka uzgodnienie zerami, pozycje znikają przez rdzeń.
+        const target = Math.max(0, state.invoicedNet);
+        const total = round2([...amounts.values()].reduce((sum, value) => sum + value, 0));
+        if (Math.abs(total - target) >= AMOUNT_EPSILON) {
+            throw new Error(`Suma kwot (${formatPLNFixed(total)} zł) musi być równa kwocie faktur (${formatPLNFixed(target)} zł).`);
+        }
+
+        const zk = state.orders[0];
+        const actor: ItemActor = { actorId, note: `Subiekt: uzgodnienie faktur ${zk.number}` };
+        const changes = items.map((item) => ({
+            itemId: item.id,
+            positionId: Number(item.subiekt_position_id),
+            description: item.description,
+            before: round2(item.amount_net),
+            after: amounts.get(item.id) as number,
+        }));
+        for (const change of changes) {
+            if (change.after <= 0) await removeSubiektItem({ id: change.itemId, amount_net: change.before }, project.status, actor);
+            else if (Math.abs(change.after - change.before) >= AMOUNT_EPSILON) await updateItemAmountCore(change.itemId, change.after, actor);
+        }
+
+        // Decyzja na wszystkie pozycje ZK > 0 (pozycja bez wiersza = wcześniej wyzerowana → 0), żeby sync widział pełne pokrycie.
+        const byPosition = new Map(changes.map((c) => [c.positionId, c.after]));
+        const decision: Record<string, number> = {};
+        for (const order of state.orders) {
+            for (const pos of positionsOf(order)) {
+                if (Number(pos.net_total) > 0) decision[String(pos.external_id)] = byPosition.get(Number(pos.external_id)) ?? 0;
+            }
+        }
+        // Zapis warunkowy: wiersz musi być nadal OPEN z tym samym odciskiem (np. silnik bez blokady albo zmiana w trakcie
+        // operacji). 0 zmienionych wierszy = wyjątek, więc cała transakcja (kwoty, prowizje) się wycofuje.
+        const updated = await query<{ affectedRows?: number }>(
+            `UPDATE subiekt_reconciliations SET status = 'RESOLVED', amounts_json = ?, note = ?, zk_net = ?, invoiced_net = ?,
+                resolved_at = CURRENT_TIMESTAMP, resolved_by = ? WHERE id = ? AND status = 'OPEN' AND fingerprint = ? AND zk_net = ?`,
+            [JSON.stringify(decision), note, state.zkNet, state.invoicedNet, actorId, row.id, row.fingerprint, row.zk_net]
+        );
+        const affectedRows = Number((updated as { affectedRows?: number }).affectedRows ?? updated?.[0]?.affectedRows ?? 0);
+        if (affectedRows !== 1) throw new Error(STALE_RECONCILIATION_ERROR);
+
+        await logActivity(actorId, 'SUBIEKT_RECONCILIATION_RESOLVED', formatReconciliationResolved(zk.number, changes, total, note), {
+            projectId: project.id,
+            rootExternalId,
+            zkNumber: zk.number,
+            zk_net: state.zkNet,
+            invoiced_net: state.invoicedNet,
+            before: changes.map((c) => ({ itemId: c.itemId, positionId: c.positionId, description: c.description, amount_net: c.before })),
+            after: changes.map((c) => ({ itemId: c.itemId, positionId: c.positionId, description: c.description, amount_net: c.after })),
+            note,
+        }, zk.id);
+        return { affectedProjectIds: [project.id] };
+    });
 }

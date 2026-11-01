@@ -22,6 +22,9 @@ import { validatePasswordStrength } from "@/lib/passwordPolicy";
 import { addItemCore, deleteItemCore, getArchitectCommissionRate, updateItemAmountCore } from "@/lib/projectItems";
 import { nextSubiektCode, withSubiektCodeRetry } from "@/lib/subiekt/codes";
 import { INTERNAL_MODE_WELCOME_SKIPPED, isSkippedByInternalMode } from "@/lib/internalMode";
+import { RECONCILE_OPEN_STATUS_ERROR, hasOpenReconciliation } from "@/lib/subiekt/status";
+import { closeReconciliationsOfCancelledProject } from "@/lib/subiekt/reconciliationDb";
+import { resyncProjectInvoices } from "@/lib/subiekt/mappingDb";
 
 function generateTempPassword(): string {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -115,7 +118,10 @@ export async function createProject(data: {
     return { success: true, projectId };
 }
 
-export async function updateProjectStatus(projectId: string, status: string, completionNote?: string) {
+/** Wynik zmiany statusu: sukces (także bez zmiany) albo błąd domenowy do pokazania (otwarte uzgodnienie faktur). */
+export type ProjectStatusResult = { success: true; unchanged?: true } | { success: false; error: string };
+
+export async function updateProjectStatus(projectId: string, status: string, completionNote?: string): Promise<ProjectStatusResult> {
     const session = await getServerSession(authOptions);
     if (!session || !canManageOperationalProjects(session.user.role)) {
         throw new Error("Unauthorized");
@@ -133,11 +139,17 @@ export async function updateProjectStatus(projectId: string, status: string, com
     const previousStatus: string = currentStatusRes[0].status;
 
     if (previousStatus === status) {
-        return { success: true, unchanged: true };
+        return { success: true, unchanged: true as const };
     }
 
     if (!(ALLOWED_TRANSITIONS[previousStatus] ?? []).includes(status)) {
         throw new Error(`Niedozwolona zmiana statusu: ${previousStatus} → ${status}.`);
+    }
+
+    // Loop 5b: projekt z otwartym uzgodnieniem faktur Subiekta nie może zostać zakończony (prowizja liczyłaby się
+    // z nieuzgodnionych kwot). Błąd domenowy wraca w wyniku, nie jako wyjątek (produkcyjny Next.js ukrywa treść).
+    if (status === 'ZAKOŃCZONY' && await hasOpenReconciliation(projectId)) {
+        return { success: false, error: RECONCILE_OPEN_STATUS_ERROR };
     }
 
     // ZAKOŃCZONY: finalize commissions using progressive bracket system, credit wallet cashback
@@ -193,51 +205,64 @@ export async function updateProjectStatus(projectId: string, status: string, com
             }
 
             // --- Write phase (all in one transaction) ---
-            await withTransaction(async (queryFn) => {
-                await queryFn(
-                    "UPDATE projects SET status = ?, completed_by = ?, completed_at = CURRENT_TIMESTAMP, completion_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    [status, session.user.id, completionNote?.trim() || null, projectId]
-                );
+            try {
+                await withTransaction(async (queryFn) => {
+                    await queryFn(
+                        "UPDATE projects SET status = ?, completed_by = ?, completed_at = CURRENT_TIMESTAMP, completion_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        [status, session.user.id, completionNote?.trim() || null, projectId]
+                    );
 
-                const existingTrans = await queryFn<any>(
-                    "SELECT id FROM wallet_transactions WHERE related_item_id IN (SELECT id FROM project_items WHERE project_id = ?) LIMIT 1",
-                    [projectId]
-                );
+                    // Loop 5b: ponowne sprawdzenie w tej samej transakcji co zmiana statusu — synchronizacja mogła otworzyć
+                    // uzgodnienie po sprawdzeniu wyżej. Wyjątek wycofuje zmianę statusu; zamieniamy go niżej na wynik.
+                    const openReconciliations = await queryFn<{ count: number }>(
+                        "SELECT COUNT(*) AS count FROM subiekt_reconciliations WHERE project_id = ? AND status = 'OPEN' FOR UPDATE",
+                        [projectId]
+                    );
+                    if (Number(openReconciliations[0]?.count ?? 0) > 0) throw new Error(RECONCILE_OPEN_STATUS_ERROR);
 
-                // Guard ponownej finalizacji: pomijamy naliczenia także gdy projekt ma już rozliczoną prowizję
-                // (np. import historyczny tworzy od razu PAID bez cashbacku). Status projektu i tak jest zaktualizowany.
-                const existingSettledComm = await queryFn<any>(
-                    "SELECT id FROM commissions WHERE project_id = ? AND status IN ('EARNED', 'IN_PAYMENT', 'PAID') LIMIT 1",
-                    [projectId]
-                );
+                    const existingTrans = await queryFn<any>(
+                        "SELECT id FROM wallet_transactions WHERE related_item_id IN (SELECT id FROM project_items WHERE project_id = ?) LIMIT 1",
+                        [projectId]
+                    );
 
-                if (existingTrans.length > 0 || existingSettledComm.length > 0) {
-                    console.log(`Project ${projectId} already processed for commissions/cashback. Skipping.`);
-                    return;
-                }
+                    // Guard ponownej finalizacji: pomijamy naliczenia także gdy projekt ma już rozliczoną prowizję
+                    // (np. import historyczny tworzy od razu PAID bez cashbacku). Status projektu i tak jest zaktualizowany.
+                    const existingSettledComm = await queryFn<any>(
+                        "SELECT id FROM commissions WHERE project_id = ? AND status IN ('EARNED', 'IN_PAYMENT', 'PAID') LIMIT 1",
+                        [projectId]
+                    );
 
-                for (const { item, commAmount, cashbackAmount } of itemOps) {
-                    if (pendingCommMap[item.id]) {
-                        await queryFn(
-                            "UPDATE commissions SET status = 'EARNED', amount_net = ?, rate = ? WHERE project_item_id = ? AND status = 'PENDING'",
-                            [commAmount, commissionRate, item.id]
-                        );
-                    } else if (commAmount > 0) {
-                        await queryFn(
-                            "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate) VALUES (?, ?, ?, ?, ?, 'EARNED', ?)",
-                            [`c_${item.id}_earned`, projectId, item.id, owner_id, commAmount, commissionRate]
-                        );
+                    if (existingTrans.length > 0 || existingSettledComm.length > 0) {
+                        console.log(`Project ${projectId} already processed for commissions/cashback. Skipping.`);
+                        return;
                     }
 
-                    if (cashbackAmount > 0) {
-                        const expiresAt = cashbackExpiresAt();
-                        await queryFn(
-                            "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-                            [`t_${item.id}_cashback`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
-                        );
+                    for (const { item, commAmount, cashbackAmount } of itemOps) {
+                        if (pendingCommMap[item.id]) {
+                            await queryFn(
+                                "UPDATE commissions SET status = 'EARNED', amount_net = ?, rate = ? WHERE project_item_id = ? AND status = 'PENDING'",
+                                [commAmount, commissionRate, item.id]
+                            );
+                        } else if (commAmount > 0) {
+                            await queryFn(
+                                "INSERT INTO commissions (id, project_id, project_item_id, architect_id, amount_net, status, rate) VALUES (?, ?, ?, ?, ?, 'EARNED', ?)",
+                                [`c_${item.id}_earned`, projectId, item.id, owner_id, commAmount, commissionRate]
+                            );
+                        }
+
+                        if (cashbackAmount > 0) {
+                            const expiresAt = cashbackExpiresAt();
+                            await queryFn(
+                                "INSERT INTO wallet_transactions (id, user_id, type, amount, related_item_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+                                [`t_${item.id}_cashback`, owner_id, 'EARN', cashbackAmount, item.id, formatSqlDateTime(expiresAt)]
+                            );
+                        }
                     }
-                }
-            });
+                });
+            } catch (error) {
+                if (error instanceof Error && error.message === RECONCILE_OPEN_STATUS_ERROR) return { success: false, error: RECONCILE_OPEN_STATUS_ERROR };
+                throw error;
+            }
         }
 
         await logActivity(session.user.id, 'PROJECT_STATUS_CHANGE', `Zmieniono status projektu ${projectId} na ${status}`, { projectId, status });
@@ -250,10 +275,22 @@ export async function updateProjectStatus(projectId: string, status: string, com
         return { success: true };
     }
 
-    await query(
-        "UPDATE projects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        [status, projectId]
-    );
+    // Zmiana statusu i skutki dla uzgodnień faktur (Loop 5b) w jednej transakcji.
+    await withTransaction(async () => {
+        await query(
+            "UPDATE projects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            [status, projectId]
+        );
+
+        // Projekt niezrealizowany nie czeka na uzgodnienie faktur — otwarte uzgodnienia zamykają się (wpis w historii).
+        if (status === 'NIEZREALIZOWANY') await closeReconciliationsOfCancelledProject(projectId);
+
+        // Reaktywacja (NIEZREALIZOWANY → ZGŁOSZONY): sync pomijał projekt niezrealizowany, a uzgodnienia zamknęły się przy
+        // odrzuceniu — przeliczamy łańcuchy, więc niezgodne faktury znów otwierają uzgodnienie i blokują zakończenie.
+        if (previousStatus === 'NIEZREALIZOWANY') {
+            await resyncProjectInvoices(projectId, { actorId: session.user.id, note: 'Reaktywacja projektu' });
+        }
+    });
 
     // Log the change
     await logActivity(session.user.id, 'PROJECT_STATUS_CHANGE', `Zmieniono status projektu ${projectId} na ${status}`, { projectId, status });

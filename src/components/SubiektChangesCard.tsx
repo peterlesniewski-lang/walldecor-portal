@@ -5,7 +5,8 @@ import type { ProjectZkChange } from '@/lib/subiekt/queries';
 const SUBIEKT_AUTHOR_LABEL = 'Subiekt (synchronizacja)';
 
 /**
- * „Zmiany dokumentów (Subiekt)” (zmiany ZK/FP i korekty KFS) na stronie projektu — admin i architekt. Dane z getProjectZkChanges.
+ * „Zmiany dokumentów (Subiekt)” (zmiany ZK/FP, korekty KFS i uzgodnienia faktur) na stronie projektu — admin i architekt.
+ * Dane z getProjectZkChanges (architekt: audience 'ARCHITECT', bez kwot faktur). Kotwica #zmiany-subiekt.
  * Bez wpisów nie renderuje nic (żadnego pustego nagłówka). Bez hooków, więc działa w komponencie
  * serwerowym i klienckim.
  */
@@ -13,7 +14,7 @@ export default function SubiektChangesCard({ changes }: { changes: ProjectZkChan
     if (changes.length === 0) return null;
 
     return (
-        <Card as="section">
+        <Card as="section" id="zmiany-subiekt" className="scroll-mt-6">
             <CardHeader title="Zmiany dokumentów (Subiekt)" />
             <CardBody flush>
                 <ol className="divide-y divide-border">
@@ -22,7 +23,7 @@ export default function SubiektChangesCard({ changes }: { changes: ProjectZkChan
                             <p className="flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
                                 <time className="tnum" dateTime={change.created_at}>{formatDateTime(change.created_at)}</time>
                                 <span aria-hidden="true">·</span>
-                                <span>{SUBIEKT_AUTHOR_LABEL}</span>
+                                <span>{change.author ?? SUBIEKT_AUTHOR_LABEL}</span>
                             </p>
                             <p className="mt-1 text-sm text-ink">{change.description}</p>
                         </li>

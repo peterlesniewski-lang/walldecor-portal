@@ -5,7 +5,7 @@ import { query } from "@/lib/db";
 import Sidebar from "@/components/Sidebar";
 import ShellHeader from "@/components/ShellHeader";
 import { canManageOperationalProjects } from "@/lib/rbac";
-import { getUnassignedCount } from "@/lib/subiekt/queries";
+import { getOpenReconciliationCount, getUnassignedCount } from "@/lib/subiekt/queries";
 import { isInternalMode } from "@/lib/internalMode";
 import { StatusPill } from "@/components/ui";
 
@@ -31,12 +31,19 @@ export default async function DashboardLayout({
     }
 
     // Licznik skrzynki Subiekt w sidebarze (ADMIN/STAFF). Badge nie może zablokować panelu, więc błąd → 0.
+    // Loop 5b: do plakietki doliczane są otwarte uzgodnienia faktur (osobna etykieta w Sidebar).
     let subiektUnassignedCount = 0;
+    let subiektReconciliationCount = 0;
     if (canManageOperationalProjects(session.user.role)) {
         try {
             subiektUnassignedCount = await getUnassignedCount();
         } catch (error) {
             console.error("[subiekt] Nie udało się policzyć nieprzypisanych dokumentów", error);
+        }
+        try {
+            subiektReconciliationCount = await getOpenReconciliationCount();
+        } catch (error) {
+            console.error("[subiekt] Nie udało się policzyć otwartych uzgodnień", error);
         }
     }
 
@@ -46,7 +53,7 @@ export default async function DashboardLayout({
     return (
         <div className="flex min-h-screen flex-col bg-bg lg:flex-row">
             {/* Sidebar (desktop) i pasek górny z szufladą (mobile) */}
-            <Sidebar user={session.user} subiektUnassignedCount={subiektUnassignedCount} />
+            <Sidebar user={session.user} subiektUnassignedCount={subiektUnassignedCount} subiektReconciliationCount={subiektReconciliationCount} />
 
             {/* Treść: padding 24 px (16 px na mobile), maksymalnie 1280 px */}
             <main className="min-w-0 flex-1">

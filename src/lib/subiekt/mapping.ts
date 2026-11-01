@@ -6,13 +6,16 @@ import { formatSubiektCode } from './codeFormat';
 
 /** Tolerancja porównań kwot (DECIMAL(12,2)) w mapowaniu, pozycjach i podpowiedzi statusu. */
 export const AMOUNT_EPSILON = 0.005;
+/** Kwota do 2 miejsc — jak DECIMAL(12,2) w MySQL, żeby porównania nie zależały od silnika (przyjmuje też tekst z MySQL). */
+export const round2 = (n: number | string) => Math.round(Number(n) * 100) / 100;
 /** assignment_note dokumentu pochodnego, który dziedziczy IGNORED po zignorowanym korzeniu łańcucha. */
 export const ROOT_IGNORED = 'ROOT_IGNORED';
 
-const REMARKS_MARKER = /#A[-_]?([A-Za-z0-9]{1,16})/i;
+// Jak agent (agent-subiekt/src/chain.ts): tylko „#A” + 1–6 cyfr, po których nie ma litery ani cyfry — „#Adam” to nie kod.
+const REMARKS_MARKER = /#A[-_]?(\d{1,6})(?![A-Za-z0-9])/i;
 const MAX_CHAIN_STEPS = 32;
 
-/** Kod architekta: pole własne ma pierwszeństwo; w polu własnym bierzemy token przed pierwszą spacją ("A-001 Nowak" → "A-001"), trim + uppercase. Gdy brak, znacznik z uwag: /#A[-_]?([A-Za-z0-9]{1,16})/i → "A-" + grupa uppercase ("#A-001" i "#a001" → "A-001"); sufiks czysto liczbowy idzie przez formatSubiektCode, jak kody nadawane w portalu ("#A-1", "#A-01" → "A-001", "#A-1200" → "A-1200"). Brak → null. */
+/** Kod architekta: pole własne ma pierwszeństwo; w polu własnym bierzemy token przed pierwszą spacją ("A-001 Nowak" → "A-001"), trim + uppercase. Gdy brak, pierwszy znacznik z uwag /#A[-_]?(\d{1,6})(?![A-Za-z0-9])/i przez formatSubiektCode, jak kody nadawane w portalu ("#A-001", "#a001", "#A-1" → "A-001", "#A-1200" → "A-1200"; "#Adam", "#A-12X" → brak). Brak → null. */
 export function resolveArchitectCode(doc: Pick<SubiektDocumentPayload, 'architect_code' | 'remarks'>): string | null {
     const own = (doc.architect_code ?? '').trim();
     if (own) {
@@ -21,8 +24,7 @@ export function resolveArchitectCode(doc: Pick<SubiektDocumentPayload, 'architec
     }
     const match = REMARKS_MARKER.exec(doc.remarks ?? '');
     if (match) {
-        const suffix = match[1].toUpperCase();
-        return /^\d+$/.test(suffix) ? formatSubiektCode(Number(suffix)) : `A-${suffix}`;
+        return formatSubiektCode(Number(match[1]));
     }
     return null;
 }

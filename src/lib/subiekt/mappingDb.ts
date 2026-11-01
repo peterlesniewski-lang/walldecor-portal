@@ -11,9 +11,10 @@ import { query } from '@/lib/db';
 import { logActivity } from '@/lib/services';
 import { addItemCore, updateItemAmountCore, type ItemActor } from '@/lib/projectItems';
 import { clearDocumentItems, removeSubiektItem } from './chainOps';
-import { findDocumentById, findDocumentByExternalId, findProject, type ProjectRow, type SubiektDocumentRow } from './repo';
-import { AMOUNT_EPSILON as EPSILON, ROOT_IGNORED, buildItemInput, leadingDocType, positionToItemType, resolveArchitectCode, resolveRoot } from './mapping';
-import type { SubiektDocumentPayload, SubiektPositionPayload } from './types';
+import { findDocumentById, findDocumentByExternalId, findProject, positionsOf, type ProjectRow, type SubiektDocumentRow } from './repo';
+import { AMOUNT_EPSILON as EPSILON, ROOT_IGNORED, buildItemInput, positionToItemType, resolveArchitectCode, resolveRoot, round2 } from './mapping';
+import { closeReconciliation, describeChain, loadChainDocuments, settleReconciliation, type ReconciliationRow } from './reconciliationDb';
+import type { SubiektDocumentPayload } from './types';
 import { toDateOnly } from './dates';
 
 export type UpsertOutcome = 'INSERTED' | 'UNCHANGED' | 'CHANGED';
@@ -40,8 +41,6 @@ const MAX_CHAIN_STEPS = 32;
 const MAX_LABEL_LENGTH = 200; // jak walidacja nazwy / klienta w createProject
 const ASSIGNED_STATUSES = "('AUTO', 'MANUAL')";
 
-/** Kwoty z payloadu do 2 miejsc — jak DECIMAL(12,2) w MySQL, żeby porównania nie zależały od silnika. */
-const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
 
 const toResult = (status: string): AssignmentResult =>
     status === 'AUTO' || status === 'MANUAL' ? 'ASSIGNED' : status === 'IGNORED' ? 'IGNORED' : 'UNASSIGNED';
@@ -66,7 +65,6 @@ async function loadProject(projectId: string, documentNumber: string): Promise<P
     return project;
 }
 
-const positionsOf = (row: Pick<StoredDoc, 'positions_json'>) => JSON.parse(row.positions_json) as SubiektPositionPayload[];
 
 /** Wiersz z bazy → payload (dla buildItemInput i resolveArchitectCode). */
 function rowToPayload(row: StoredDoc): SubiektDocumentPayload {
@@ -215,20 +213,27 @@ async function loadCorrections(projectId: string): Promise<Map<number, number>> 
     return corrections;
 }
 
+/** Numery faktur i zapłata pozycji ZK, gdy pozycje z ZK niosą dane faktur łańcucha (ORDER_BREAKDOWN / RECONCILE). */
+interface InvoiceMeta { invoiceNumber: string | null; isPaid: boolean }
+
 /**
  * Upsert pozycji jednego dokumentu wiodącego po kluczu (subiekt_document_id, subiekt_position_id), kwota =
- * po korekcie KFS (jeśli jest) albo z pozycji: nowa → addItemCore, zmieniona kwota → updateItemAmountCore,
- * kwota ≤ 0 lub pozycja zniknęła z dokumentu → removeSubiektItem → deleteItemCore (w ZAKOŃCZONY: korekta do 0).
- * Pola bez wpływu na prowizję (opis, numery, zapłata) odświeżamy bezpośrednim UPDATE. Typ istniejącej
- * pozycji się nie zmienia (type_overridden = decyzja admina; zmiana typu wymagałaby przeliczenia prowizji).
+ * z `amounts` (korekta KFS dla FS, kwota z uzgodnienia admina dla ZK), jeśli jest, albo z pozycji: nowa →
+ * addItemCore, zmieniona kwota → updateItemAmountCore, kwota ≤ 0 lub pozycja zniknęła z dokumentu →
+ * removeSubiektItem → deleteItemCore (w ZAKOŃCZONY: korekta do 0). Pola bez wpływu na prowizję (opis, numery,
+ * zapłata; `meta` nadpisuje numer faktury i zapłatę) odświeżamy bezpośrednim UPDATE. Typ istniejącej pozycji
+ * się nie zmienia (type_overridden = decyzja admina; zmiana typu wymagałaby przeliczenia prowizji).
  */
 async function syncDocumentItems(
     source: StoredDoc,
     project: ProjectRef,
     rootZkNumber: string | null,
-    corrections: Map<number, number>,
+    amounts: Map<number, number>,
     actor: ItemActor,
+    meta?: InvoiceMeta,
 ) {
+    const withMeta = (input: ReturnType<typeof buildItemInput>) =>
+        meta ? { ...input, invoice_number: meta.invoiceNumber, is_paid: meta.isPaid } : input;
     const payload = rowToPayload(source);
     const existing = await loadItemsOfDocument(source.id, project.id);
     const byPosition = new Map<number, StoredItem>();
@@ -244,14 +249,14 @@ async function syncDocumentItems(
         if (seenPositions.has(pos.external_id)) continue;
         seenPositions.add(pos.external_id);
 
-        const amount = corrections.get(pos.external_id) ?? round2(pos.net_total);
+        const amount = amounts.get(pos.external_id) ?? round2(pos.net_total);
         const item = byPosition.get(pos.external_id);
         if (!item) {
             // Pozycje z kwotą ≤ 0 (gratisy, korekta do zera) nie są tworzone — addItemCore i tak by je odrzucił.
             if (amount > 0) {
-                await addItemCore(project.id, buildItemInput(payload, { ...pos, net_total: amount }, {
+                await addItemCore(project.id, withMeta(buildItemInput(payload, { ...pos, net_total: amount }, {
                     subiektDocumentId: source.id, rootZkNumber,
-                }), actor);
+                })), actor);
             }
             continue;
         }
@@ -270,9 +275,9 @@ async function syncDocumentItems(
             });
         }
 
-        const desired = buildItemInput(payload, { ...pos, net_total: amount }, {
+        const desired = withMeta(buildItemInput(payload, { ...pos, net_total: amount }, {
             subiektDocumentId: source.id, rootZkNumber, forcedType: item.type,
-        });
+        }));
         const isPaid = desired.is_paid ? 1 : 0;
         if (
             (item.description ?? null) !== (desired.description ?? null) ||
@@ -311,11 +316,19 @@ async function correctionMatches(kfs: Pick<StoredDoc, 'positions_json'>, project
         targets.has(pos.corrects_position_external_id));
 }
 
+// --- e) uzgodnienie faktur z zamówieniem (loop 5b) — stan i wiersze uzgodnień w reconciliationDb.ts ---
+
+const MAX_INVOICE_NUMBER_LENGTH = 255;
+
 /**
  * Odtwarza pozycje łańcucha dokumentu. Łańcuch = dokumenty tego samego korzenia w tym projekcie, przypisane
- * (AUTO/MANUAL) + sam dokument. Jest FS → pozycje ZK łańcucha znikają, a każda FS synchronizuje swoje
- * pozycje (z korektami KFS); brak FS → pozycje z ZK. KFS → resync łańcuchów wszystkich FS projektu.
- * Brak projektu lub projekt NIEZREALIZOWANY → nic.
+ * (AUTO/MANUAL) + sam dokument. Tryb (reconcile.ts → chainMode):
+ * - ORDER_ONLY: pozycje z ZK;
+ * - INVOICE_ONLY, MIRROR: pozycje ZK łańcucha znikają, każda FS synchronizuje swoje pozycje (z korektami KFS);
+ * - ORDER_BREAKDOWN, RECONCILE: pozycje FS znikają, pozycje z ZK z numerami FS łańcucha i zapłatą „wszystkie FS
+ *   zapłacone”; kwoty z ZK albo z decyzji admina (subiekt_reconciliations, settleReconciliation).
+ * Poza ORDER_BREAKDOWN / RECONCILE otwarte uzgodnienie zamyka się samo. KFS → resync łańcuchów wszystkich FS
+ * projektu. Brak projektu lub projekt NIEZREALIZOWANY → nic.
  */
 async function syncChainOf(doc: StoredDoc, actor: ItemActor): Promise<void> {
     if (!doc.project_id) return;
@@ -324,34 +337,67 @@ async function syncChainOf(doc: StoredDoc, actor: ItemActor): Promise<void> {
 
     // KFS → resync WSZYSTKICH faktur projektu, nie tylko obecnych celów: korekta, która zmieniła cel albo
     // wypadła z mapy, musi zdjąć starą kwotę z pozycji FS, którą korygowała wcześniej (idempotentne).
-    if (doc.type === 'KFS') return resyncInvoicesOf(project.id, actor);
+    if (doc.type === 'KFS') {
+        await resyncInvoicesOf(project.id, actor);
+        return;
+    }
 
-    const chain = doc.root_external_id === null || doc.root_external_id === undefined
-        ? [doc]
-        : await query<StoredDoc>(
-            `SELECT * FROM subiekt_documents
-             WHERE root_external_id = ? AND project_id = ? AND (assignment_status IN ${ASSIGNED_STATUSES} OR id = ?)
-             ORDER BY issued_at, external_id`,
-            [doc.root_external_id, project.id, doc.id]
-        );
-    const root = doc.root_external_id === null || doc.root_external_id === undefined
+    const rootKey = doc.root_external_id === null || doc.root_external_id === undefined ? null : Number(doc.root_external_id);
+    const chain = rootKey === null ? [doc] : await loadChainDocuments(rootKey, project.id, doc.id);
+    const root = rootKey === null
         ? undefined
-        : chain.find((d) => Number(d.external_id) === Number(doc.root_external_id)) ?? await loadDocByExternalId(Number(doc.root_external_id));
+        : chain.find((d) => Number(d.external_id) === rootKey) ?? await loadDocByExternalId(rootKey);
     const rootZkNumber = root?.type === 'ZK' ? root.number : null;
     const corrections = await loadCorrections(project.id);
+    const state = describeChain(chain);
 
-    if (leadingDocType(chain.map((d) => d.type)) === 'FS') {
-        for (const zk of chain.filter((d) => d.type === 'ZK')) {
-            for (const item of await loadItemsOfDocument(zk.id, project.id)) await removeItem(item, project.status, actor);
+    const removeItemsOf = async (docs: StoredDoc[]) => {
+        for (const d of docs) {
+            for (const item of await loadItemsOfDocument(d.id, project.id)) await removeItem(item, project.status, actor);
         }
-        for (const fs of chain.filter((d) => d.type === 'FS')) await syncDocumentItems(fs, project, rootZkNumber, corrections, actor);
+    };
+
+    if (state.mode === 'ORDER_BREAKDOWN' || state.mode === 'RECONCILE') {
+        await removeItemsOf(state.invoices);
+        const amounts = rootKey === null ? null : await settleReconciliation(project.id, rootKey, state);
+        const meta: InvoiceMeta = {
+            invoiceNumber: truncate(state.invoices.map((d) => d.number).join(', '), MAX_INVOICE_NUMBER_LENGTH),
+            isPaid: state.invoices.every((d) => Number(d.is_paid) === 1),
+        };
+        for (const zk of state.orders) await syncDocumentItems(zk, project, rootZkNumber, amounts ?? new Map(), actor, meta);
+        return;
+    }
+
+    if (state.mode === 'ORDER_ONLY') {
+        for (const zk of state.orders) await syncDocumentItems(zk, project, rootZkNumber, new Map(), actor);
     } else {
-        for (const zk of chain.filter((d) => d.type === 'ZK')) await syncDocumentItems(zk, project, rootZkNumber, corrections, actor);
+        await removeItemsOf(state.orders);
+        for (const fs of state.invoices) await syncDocumentItems(fs, project, rootZkNumber, corrections, actor);
+    }
+    if (rootKey !== null) await closeReconciliation(project.id, rootKey, state);
+}
+
+/**
+ * Uzgodnienia projektu, które nie mają już łańcucha w tym projekcie (zignorowany / przeniesiony korzeń), są
+ * zamykane; pozostałe OPEN / RESOLVED przechodzą przez syncChainOf (idempotentne). Wołane po operacjach admina.
+ */
+async function refreshReconciliationsOf(projectId: string, actor: ItemActor, alreadySynced: Set<number> = new Set()): Promise<void> {
+    const rows = await query<ReconciliationRow>(
+        "SELECT * FROM subiekt_reconciliations WHERE project_id = ? AND status IN ('OPEN', 'RESOLVED') ORDER BY root_external_id",
+        [projectId]
+    );
+    for (const row of rows) {
+        // Łańcuch przeliczony przed chwilą (resyncInvoicesOf) — drugi przebieg niczego by nie zmienił.
+        if (alreadySynced.has(Number(row.root_external_id))) continue;
+        const chain = await loadChainDocuments(Number(row.root_external_id), projectId);
+        const lead = chain.find((d) => d.type === 'ZK') ?? chain.find((d) => d.type === 'FS');
+        if (lead) await syncChainOf(lead, actor);
+        else await closeReconciliation(projectId, Number(row.root_external_id), describeChain(chain));
     }
 }
 
-/** Resync łańcuchów wszystkich przypisanych FS projektu (raz na korzeń), z bieżącą mapą korekt KFS. */
-async function resyncInvoicesOf(projectId: string, actor: ItemActor): Promise<void> {
+/** Resync łańcuchów wszystkich przypisanych FS projektu (raz na korzeń), z bieżącą mapą korekt KFS. Zwraca przeliczone korzenie. */
+async function resyncInvoicesOf(projectId: string, actor: ItemActor): Promise<Set<number>> {
     const invoices = await query<StoredDoc>(
         `SELECT * FROM subiekt_documents WHERE type = 'FS' AND project_id = ? AND assignment_status IN ${ASSIGNED_STATUSES}
          ORDER BY issued_at, external_id`,
@@ -364,6 +410,7 @@ async function resyncInvoicesOf(projectId: string, actor: ItemActor): Promise<vo
         done.add(chainKey);
         await syncChainOf(fs, actor);
     }
+    return new Set([...done].filter((key) => key.startsWith('root:')).map((key) => Number(key.slice('root:'.length))));
 }
 
 // --- zapis wyniku ---
@@ -392,6 +439,16 @@ async function saveAssignment(
 async function refreshPaidFlag(doc: StoredDoc) {
     // Zapłata nie wchodzi do hasha; is_paid pozycji nie wpływa na prowizję. Tylko pozycje w projekcie dokumentu.
     if (!doc.project_id) return;
+    // ZK z fakturami w łańcuchu: jego pozycje (ORDER_BREAKDOWN / RECONCILE) mają zapłatę z FS, nie z ZK — nie nadpisujemy
+    // (w MIRROR ZK i tak nie ma pozycji). Jedno zapytanie zamiast pełnego resyncu łańcucha.
+    if (doc.type === 'ZK' && doc.root_external_id !== null && doc.root_external_id !== undefined) {
+        const [invoices] = await query<{ count: number }>(
+            `SELECT COUNT(*) AS count FROM subiekt_documents
+             WHERE type = 'FS' AND root_external_id = ? AND project_id = ? AND assignment_status IN ${ASSIGNED_STATUSES}`,
+            [doc.root_external_id, doc.project_id]
+        );
+        if (Number(invoices?.count ?? 0) > 0) return;
+    }
     await query(
         "UPDATE project_items SET is_paid = ? WHERE subiekt_document_id = ? AND project_id = ? AND source = 'SUBIEKT' AND is_paid <> ?",
         [Number(doc.is_paid), doc.id, doc.project_id, Number(doc.is_paid)]
@@ -493,12 +550,14 @@ export async function syncChainItems(subiektDocumentId: string, actor?: ItemActo
 
 /**
  * Resync pozycji wszystkich przypisanych FS projektu z bieżącą mapą korekt KFS — po tym, jak KFS wypadła
- * z mapy (zignorowana, przeniesiona). No-op dla projektu NIEZREALIZOWANY. Wołać w transakcji.
+ * z mapy (zignorowana, przeniesiona) — i uzgodnień projektu (łańcuch bez dokumentów w projekcie → AUTO_CLOSED).
+ * No-op dla projektu NIEZREALIZOWANY. Wołać w transakcji.
  */
 export async function resyncProjectInvoices(projectId: string, actor: ItemActor): Promise<void> {
     const project = await loadProject(projectId, projectId);
     if (project.status === 'NIEZREALIZOWANY') return;
-    await resyncInvoicesOf(projectId, actor);
+    const synced = await resyncInvoicesOf(projectId, actor);
+    await refreshReconciliationsOf(projectId, actor, synced);
 }
 
 /** Czy KFS (wszystkie jej pozycje) wskazuje pozycje przypisanych FS projektu — warunek wejścia do mapy korekt. */
@@ -514,15 +573,20 @@ export async function remapDocument(subiektDocumentId: string): Promise<Assignme
 /**
  * Wejście synchronizacji (processDocument) po upsercie dokumentu:
  * - IGNORED → nic; MANUAL → bez zmiany przypisania, ale treść (pozycje) z Subiekta przy INSERTED/CHANGED;
- * - AUTO bez zmian → tylko znacznik zapłaty pozycji;
+ * - AUTO bez zmian → znacznik zapłaty pozycji (FS: także resync łańcucha — zapłata pozycji z ZK);
  * - pozostałe (nowy, zmieniony, nieprzypisany — także bez zmian, bo rodzic lub kod mogły dojść później) → remap.
  */
 export async function mapDocument(documentId: string, outcome: UpsertOutcome): Promise<AssignmentResult> {
     const current = await loadDocById(documentId);
     if (current.assignment_status === 'IGNORED') return 'IGNORED';
     if (current.assignment_status === 'MANUAL' || (current.assignment_status === 'AUTO' && outcome === 'UNCHANGED')) {
-        if (outcome === 'UNCHANGED') await refreshPaidFlag(current);
-        else await syncChainOf(current, actorFor(current));
+        if (outcome === 'UNCHANGED') {
+            await refreshPaidFlag(current);
+            // Zapłata FS przy pozycjach z ZK (ORDER_BREAKDOWN / RECONCILE): is_paid pozycji ZK = wszystkie FS zapłacone.
+            if (current.type === 'FS') await syncChainOf(current, actorFor(current));
+        } else {
+            await syncChainOf(current, actorFor(current));
+        }
         return 'ASSIGNED';
     }
     return remapStored(current);

@@ -2,7 +2,7 @@
 // Wiersze są normalizowane: liczby jako number, issued_at jako 'YYYY-MM-DD' na obu silnikach.
 import { query } from '@/lib/db';
 import { toDateOnly } from './dates';
-import type { SubiektDocType } from './types';
+import type { SubiektDocType, SubiektPositionPayload } from './types';
 
 export interface SubiektDocumentRow {
     id: string;
@@ -26,6 +26,9 @@ export interface SubiektDocumentRow {
     assignment_status: string;
     assignment_note: string | null;
 }
+
+/** Pozycje zapisanego dokumentu (positions_json). Uszkodzony JSON rzuca — wołający w transakcji wycofuje zmiany. */
+export const positionsOf = (row: Pick<SubiektDocumentRow, 'positions_json'>) => JSON.parse(row.positions_json) as SubiektPositionPayload[];
 
 export interface ProjectRow { id: string; name: string; status: string; owner_id: string }
 

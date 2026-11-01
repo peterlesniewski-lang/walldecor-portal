@@ -42,9 +42,13 @@ export default function ProjectStatusCard({ project, canChangeStatus, allowPrima
         setLoading(true);
         setError('');
         try {
-            await updateProjectStatus(project.id, next);
+            const result = await updateProjectStatus(project.id, next);
             setConfirming(null);
             setLoading(false);
+            if (!result.success) {
+                setError(result.error);
+                return;
+            }
             router.refresh();
         } catch (e: any) {
             setError(e.message || 'Błąd zmiany statusu.');

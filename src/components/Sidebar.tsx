@@ -11,6 +11,7 @@ import {
     Plug
 } from 'lucide-react';
 import MobileNav from './MobileNav';
+import { subiektBadgeLabel } from '@/lib/subiekt/labels';
 import { Logo } from './ui/Logo';
 import { NavGroupList, SignOutButton, UserBlock, type NavGroup } from './ui/ShellNav';
 
@@ -23,10 +24,12 @@ interface SidebarUser {
  * Jasny sidebar (lg+), 240 px: logo, grupy linków, użytkownik z rolą po polsku i wylogowanie.
  * Na węższych ekranach zamiast niego działa MobileNav (ten sam układ grup).
  */
-export default function Sidebar({ user, subiektUnassignedCount = 0 }: {
+export default function Sidebar({ user, subiektUnassignedCount = 0, subiektReconciliationCount = 0 }: {
     user: SidebarUser;
     /** Dokumenty w skrzynce „Nieprzypisane” (liczone w layoucie tylko dla ADMIN/STAFF). */
     subiektUnassignedCount?: number;
+    /** Otwarte uzgodnienia faktur z zamówieniem (Loop 5b) — doliczane do plakietki. */
+    subiektReconciliationCount?: number;
 }) {
     const groups: NavGroup[] = user.role === 'ADMIN' || user.role === 'STAFF'
         ? [
@@ -40,7 +43,10 @@ export default function Sidebar({ user, subiektUnassignedCount = 0 }: {
                         name: 'Subiekt',
                         href: '/dashboard/admin/integrations/subiekt',
                         icon: Plug,
-                        badge: { count: subiektUnassignedCount, label: `Nieprzypisane dokumenty Subiekt: ${subiektUnassignedCount}` },
+                        badge: {
+                            count: subiektUnassignedCount + subiektReconciliationCount,
+                            label: subiektBadgeLabel(subiektUnassignedCount, subiektReconciliationCount),
+                        },
                     },
                 ],
             },

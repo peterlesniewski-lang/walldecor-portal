@@ -6,8 +6,8 @@ import { ProjectFile } from "@/components/ProjectFilesSection";
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { Banner, Card, KpiTile, StatusPill, formatDate, formatNumber } from '@/components/ui';
-import { getMergeCandidates, getProjectSubiektDocuments, getProjectZkChanges } from '@/lib/subiekt/queries';
-import { computeSuggestedStatus, getProjectSubiektSummary } from '@/lib/subiekt/status';
+import { getMergeCandidates, getProjectReconciliations, getProjectSubiektDocuments, getProjectZkChanges } from '@/lib/subiekt/queries';
+import { getProjectSubiektSummary, getSuggestedStatus } from '@/lib/subiekt/status';
 import { nextStatusSteps } from '@/lib/subiekt/adminOps';
 import { canManageFinancialOperations, canManageOperationalProjects } from '@/lib/rbac';
 import AdminProjectDetailClient from './AdminProjectDetailClient';
@@ -101,13 +101,16 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
     const zkChanges = await getProjectZkChanges(id);
 
     // 6. Dokumenty Subiekt, sugerowany status, kandydaci do połączenia / przeniesienia
-    const [subiektChains, subiektSummary, suggested, mergeCandidates] = await Promise.all([
+    const [subiektChains, subiektSummary, suggestion, mergeCandidates, reconciliations] = await Promise.all([
         getProjectSubiektDocuments(id),
         getProjectSubiektSummary(id),
-        computeSuggestedStatus(id),
+        getSuggestedStatus(id),
         getMergeCandidates(id),
+        getProjectReconciliations(id),
     ]);
+    const suggested = suggestion.status;
     // Baner tylko wtedy, gdy „Zastosuj” może się udać (to samo sprawdzenie przejść co applySuggestedStatus).
+    // Otwarte uzgodnienie faktur (Loop 5b): baner z powodem także wtedy, gdy podpowiedź = bieżący status.
     let suggestedStatus: string | null = null;
     if (suggested && suggested !== project.status) {
         try {
@@ -153,10 +156,11 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
                 Powrót do panelu admin
             </Link>
 
-            {suggestedStatus && (
+            {(suggestedStatus || (suggestion.reason && project.status !== 'ZAKOŃCZONY' && project.status !== 'NIEZREALIZOWANY')) && (
                 <SuggestedStatusBanner
                     projectId={project.id}
                     suggested={suggestedStatus}
+                    reason={suggestion.reason}
                     canApply={canManageOperationalProjects(session.user.role)}
                 />
             )}
@@ -213,7 +217,7 @@ export default async function AdminProjectDetailPage({ params }: { params: Promi
                 canChangeStatus={canChangeStatus}
                 initialFiles={files}
                 zkChanges={zkChanges}
-                subiekt={{ chains: subiektChains, summary: subiektSummary, mergeCandidates }}
+                subiekt={{ chains: subiektChains, summary: subiektSummary, mergeCandidates, reconciliations }}
                 canManageFinancial={canManageFinancialOperations(session.user.role)}
             />
         </div>
