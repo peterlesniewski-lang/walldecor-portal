@@ -111,3 +111,18 @@ test('fingerprint: longer than the column (2000) → stable sha256 digest', () =
     assert.match(value, /^sha256:[0-9a-f]{64}$/);
     assert.equal(value, fingerprint([...many].reverse()));
 });
+
+test('MySQL DECIMAL strings (review M9): fingerprint and totals treat "900.00" like 900', () => {
+    // mysql2 zwraca DECIMAL jako tekst — wiersze bez normalizacji nie mogą zmienić odcisku ani sum (konkatenacja).
+    const asDb = (externalId: string, net: string) => ({ external_id: externalId as unknown as number, net_total: net as unknown as number });
+    assert.equal(fingerprint([asDb('1710', '900.00'), asDb('4', '-100.50')]), '4:-100.50;1710:900.00');
+    assert.equal(fingerprint([asDb('1710', '900.00')]), fingerprint([{ external_id: 1710, net_total: 900 }]));
+    const input = {
+        orders: [{ net_total: '836.59' as unknown as number, positions: [product(), service()] }],
+        invoices: [{ net_total: '836.59' as unknown as number, positions: [service({ name: 'Usługa', net_total: 836.59 })] }],
+        corrections: [{ net_total: '0.00' as unknown as number }],
+    };
+    assert.deepEqual(chainTotals(input), { zkNet: 836.59, invoicedNet: 836.59 });
+    assert.equal(chainMode(input), 'ORDER_BREAKDOWN');
+});
+

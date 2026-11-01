@@ -14,6 +14,7 @@ type StatusModule = typeof import('../src/lib/subiekt/status');
 type ProjectsModule = typeof import('../src/app/actions/projects');
 type SubiektActionsModule = typeof import('../src/app/actions/subiekt');
 type QueriesModule = typeof import('../src/lib/subiekt/queries');
+type ReconciliationDbModule = typeof import('../src/lib/subiekt/reconciliationDb');
 
 await import(new URL('./helpers/srcResolveHooks.ts', import.meta.url).href);
 const { setTestSession }: StubsModule = await import(new URL('./helpers/nextServerStubs.ts', import.meta.url).href);
@@ -25,6 +26,8 @@ const status: StatusModule = await import(new URL('../src/lib/subiekt/status.ts'
 const projectActions: ProjectsModule = await import(new URL('../src/app/actions/projects.ts', import.meta.url).href);
 const subiektActions: SubiektActionsModule = await import(new URL('../src/app/actions/subiekt.ts', import.meta.url).href);
 const queries: QueriesModule = await import(new URL('../src/lib/subiekt/queries.ts', import.meta.url).href);
+const reconciliationDb: ReconciliationDbModule = await import(new URL('../src/lib/subiekt/reconciliationDb.ts', import.meta.url).href);
+const { withTransaction } = await import(new URL('../src/lib/db.ts', import.meta.url).href);
 const db = testDb.db;
 
 test.after(() => testDb.cleanup());
@@ -496,6 +499,23 @@ test('invoices ≤ 0 after corrections (review M5): resolve to 0 on every item, 
     assert.deepEqual(amountsOf(projectId), [], 'kolejny sync nie przywraca pozycji');
     const card = await readFile(new URL('../src/app/dashboard/admin/projects/[id]/ReconciliationCard.tsx', import.meta.url), 'utf8');
     assert.match(card, /Math\.max\(0, reconciliation\.invoicedNet\)/, 'karta liczy do max(0, faktury)');
+});
+
+test('ORDER_BREAKDOWN with a saved RESOLVED decision of the same fingerprint uses the admin amounts (review M9)', async () => {
+    await sync([zk(2500)]);
+    await sync([fs(2510, 2500, [collective(25101, 900)])]);
+    const projectId = projectOf(2500);
+    await resolve(projectId, 2500, [650, 250]);
+    // ZK poprawione do 900 (= faktury): sumy równe, odcisk faktur ten sam → ORDER_BREAKDOWN z decyzją admina.
+    await sync([doc(2500, 'ZK', [product(25001, { net_total: 600, unit_price_net: 600 }), service(25002)])]);
+    const state = await withTransaction(() => reconciliationDb.loadChainState(projectId, 2500));
+    assert.equal(state.mode, 'ORDER_BREAKDOWN');
+    assert.equal(state.fingerprint, '2510:900.00');
+    const row = reconciliation(projectId, 2500);
+    assert.equal(row.status, 'RESOLVED');
+    approx(row.zk_net, 900, 'sumy wiersza odświeżone');
+    assert.deepEqual(amountsOf(projectId), [650, 250], 'kwoty z decyzji, nie z ZK (600 / 300)');
+    assert.equal(logs('SUBIEKT_RECONCILIATION_CLOSED', docRow(2500).id).length, 0);
 });
 
 // --- KFS na łańcuchu z rozbiciem ZK (poprawka po przeglądzie: mirror przed korektą) ---
