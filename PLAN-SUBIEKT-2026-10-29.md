@@ -17,7 +17,7 @@
 3. **Jedna logika prowizji.** Endpoint synchronizacji i panel admina wywołują te same funkcje serwisowe. Zakaz drugiej implementacji `INSERT INTO commissions` poza `src/lib/projectItems.ts` (wyjątek: istniejący import historyczny w `src/app/actions/import.ts`, który zostaje bez zmian).
 4. **Subiekt jest źródłem pozycji z synchronizacji.** Pozycje `source = 'SUBIEKT'` nie dają się edytować ani usuwać ręcznie. Pozycje `source = 'MANUAL'` zachowują dotychczasowe zachowanie.
 5. **Idempotencja.** Ten sam dokument wysłany N razy daje jeden rekord i jeden zestaw pozycji. Każda operacja zapisu dokumentu działa w `withTransaction`.
-6. **Bramka loopa:** `npm test && npx tsc --noEmit && npm run build` zielone (tsc: dopuszczalne wyłącznie 14 istniejących błędów TS5097 w testach), walidator loopa wykonany z wynikiem, scenariusz ręczny z DoD przeklikany. Limit 5 iteracji naprawczych; po przekroczeniu zatrzymać się i opisać problem, nie oznaczać loopa jako ukończony.
+6. **Bramka loopa:** `npm test && npx tsc --noEmit && npm run build` zielone (tsc: dopuszczalne wyłącznie 18 istniejących błędów TS5097 w testach — stan od Loopu 4b; wcześniej 14), walidator loopa wykonany z wynikiem, scenariusz ręczny z DoD przeklikany. Limit 5 iteracji naprawczych; po przekroczeniu zatrzymać się i opisać problem, nie oznaczać loopa jako ukończony.
 7. **Dowód, nie deklaracja.** Raport loopa zawiera uruchomione komendy z wynikiem, odpowiedź `curl` z endpointu, rekordy z bazy (`sqlite3` lub zapytanie), zrzut ekranu panelu. Loop bez sekcji DOWÓD nie jest ukończony.
 8. **Nic nie dotyka produkcji** do momentu loopa 7. Dev na SQLite (`DB_TYPE=sqlite`, `DB_PATH=dev.sqlite`).
 
@@ -752,7 +752,7 @@ npm run build               → exit 0 (Compiled successfully, 23/23 stron)
 - [x] Łączenie / przenoszenie / ignorowanie z wierszami uzgodnień; `REMARKS_MARKER` zawężony (§6 pkt 18)
 - [x] Migracja 021 + `ensure-production-schema.mjs` + seed; testy z listy; e2e; checklist §5
 
-**DOWÓD (2026-10-30):** `docs/subiekt/LOOP5B-DOWOD-2026-10-30.md` — bramka 395/395, `test:agent` 56/56, tsc 18× TS5097, build OK; e2e na `next start` (4 fazy, wszystkie 4 punkty DoD potwierdzone; 2 asercje skryptu poprawione — opis w dowodzie). Poprawki po przeglądzie 2026-10-31 (`93ab273`, §6 pkt 19 i 22): bramka 399/399, e2e faza 5 14/14. Otwarte do decyzji: §6 pkt 20–21.
+**DOWÓD (2026-10-30):** `docs/subiekt/LOOP5B-DOWOD-2026-10-30.md` — bramka 395/395, `test:agent` 56/56, tsc 18× TS5097, build OK; e2e na `next start` (4 fazy, wszystkie 4 punkty DoD potwierdzone; 2 asercje skryptu poprawione — opis w dowodzie). Poprawki po przeglądzie 2026-10-31 (`93ab273`, §6 pkt 19 i 22): bramka 399/399, e2e faza 5 14/14. Poprawki po przeglądzie jakości 2026-11-01 (I1–I3, M1–M10, do `c0f6c36`): bramka 411/411, e2e faza 6 12/12. Otwarte do decyzji: §6 pkt 20–21, 23.
 
 ---
 
@@ -834,3 +834,4 @@ Wykonać w całości przez UI i `curl`/agenta, bez edycji bazy ręcznie. Każdy 
 20. **(Loop 5b) Faktura częściowa** otwiera uzgodnienie, które zamyka się samo przy kolejnej FS (wpisy OPENED + CLOSED w historii). Do decyzji, czy np. wstrzymywać otwarcie, dopóki FS < ZK i nie wszystkie zapłacone.
 21. **(Loop 5b) Kwoty faktur u architekta.** Wpisy uzgodnienia ich nie pokazują, ale istniejący wpis `SUBIEKT_CORRECTION` (Loop 6, D1) pokazuje architektowi numer FS i ceny przed/po korekcie KFS.
 22. **[Rozstrzygnięte 2026-10-31 — `93ab273`.]** (Loop 5b) Pozycja uzgodniona na 0 znikała (projekt w toku) i po ponownym otwarciu uzgodnienia nie wracała do formularza. Teraz przy ponownym otwarciu RESOLVED kwoty 0 są zdejmowane z decyzji, pozycja wraca z kwotą z ZK.
+23. **(Przegląd jakości Loop 5b, 2026-11-01; istniało wcześniej) Łączenie projektów nie przelicza łańcuchów.** `mergeProjectsOp` przenosi dokumenty, pozycje i prowizje bez `syncChainItems` — wyjątek od Loop 5b: łańcuch, który miał wiersze uzgodnienia w kilku łączonych projektach. Jeśli dokumenty jednego łańcucha leżały w dwóch projektach (np. ZK w celu, FS ręcznie przypisana do źródła), tryb łańcucha i uzgodnienie zaktualizują się dopiero przy kolejnej synchronizacji lub operacji admina na tym łańcuchu. Do decyzji: przeliczać po połączeniu każdy łańcuch obecny w więcej niż jednym projekcie.

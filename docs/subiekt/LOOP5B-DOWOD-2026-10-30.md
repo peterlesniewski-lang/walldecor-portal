@@ -2,7 +2,9 @@
 
 Plan: `PLAN-SUBIEKT-2026-10-29.md`, sekcja „Loop 5b”. Gałąź `subiekt/loop-5b-reconcile` (od `c741ca8`).
 
-**Wynik:** zakres z planu zrobiony. Bramka zielona, e2e: 4 fazy, 49 sprawdzeń. Dwie asercje skryptu e2e były źle napisane (F11, J1, opis niżej) — produkt działał poprawnie, skrypt poprawiony. DoD spełniony; uwagi w sekcji „Konsekwencje i otwarte kwestie”.
+**Stan końcowy (2026-11-01, `c0f6c36`):** `npm test` 411/411, `npm run test:agent` 56/56, `npx tsc --noEmit` 18 × TS5097 i 0 innych, `npm run build` OK; e2e na `next start`: fazy 1–4 (49 sprawdzeń, 2 asercje skryptu poprawione), faza 5 14/14 (po przeglądzie spec), faza 6 12/12 (po przeglądzie jakości). Szczegóły kolejnych rund niżej.
+
+**Wynik pierwszej rundy:** zakres z planu zrobiony. Bramka zielona, e2e: 4 fazy, 49 sprawdzeń. Dwie asercje skryptu e2e były źle napisane (F11, J1, opis niżej) — produkt działał poprawnie, skrypt poprawiony. DoD spełniony; uwagi w sekcji „Konsekwencje i otwarte kwestie”.
 
 ## Bramka
 
@@ -156,4 +158,52 @@ Stan końcowy: `p_77c8e59e 7401 RESOLVED 836.59 850.0 '7402:900.00;7403:-50.00' 
 Zrzuty: `…/scratchpad/e2e/shots2/11-loop6-step8-admin.png`, `12-loop6-step8-architect.png`, `13-resolved-900-0.png`, `14-reopened-both-positions.png`, `15-resolved-550-300.png`; wyniki: `…/e2e/evidence2/{sends-1,phase5,state-final}.txt`, skrypt `phase5.mjs`.
 
 Faz 2–4 nie powtarzano: scenariusz łańcucha zbiorczego (ORDER_BREAKDOWN / RECONCILE / RESOLVED / KFS → OPEN) nie zmienił zachowania (łańcuch bez odzwierciedlenia — reguła sum jak wcześniej), co potwierdzają niezmienione testy i T1–T6.
+
+## Poprawki po przeglądzie jakości (2026-11-01, commity `67cfbf3`…`c0f6c36`)
+
+| Punkt | Commit | Zmiana | Test |
+|---|---|---|---|
+| M8 | `67cfbf3` | `reconciliationDb.ts`: stan łańcucha i wiersze uzgodnień wydzielone z `mappingDb.ts` (czyste przeniesienie; `syncChainOf` / `refreshReconciliationsOf` zostają) | cały zestaw bez zmian (399/399) |
+| I1 | `84b9904` | Niezmieniony ZK z FS w łańcuchu nie nadpisuje `is_paid` pozycji z ZK (zapłata pochodzi z FS); ORDER_ONLY nadal bierze znacznik ZK | ZK po zapłaconej FS → `[1,1]`; ORDER_ONLY |
+| I2 | `1a0e6df` | `ProjectReconciliation.fingerprint`; karta wysyła odcisk, `resolveReconciliationOp` odrzuca inny „Dokumenty zmieniły się, odśwież stronę” (bez kropki); klucz karty `root:odcisk:pozycje`, pola zawsze kontrolowane, kwoty przez `parseAmountInput` | scenariusz recenzenta (FS 900 → FS 400 + FS 500, stary odcisk → odrzucone, po odświeżeniu zapis OK) |
+| I3 | `832defd` | `SELECT … FOR UPDATE` w `findReconciliation` i w `resolveReconciliationOp`; zapis RESOLVED `WHERE id AND status = 'OPEN' AND fingerprint = ?`, 0 wierszy → wyjątek i wycofanie | wyzwalacz SQLite zmienia wiersz w trakcie transakcji → odrzucone, kwoty / prowizje / wiersz wycofane; test źródła na `FOR UPDATE` |
+| M1 | `73c8442` | `updateProjectStatus`: ponowne sprawdzenie OPEN (`FOR UPDATE`) w transakcji zapisu ZAKOŃCZONY | wyzwalacz wstawia OPEN po sprawdzeniu wstępnym → `{ success: false }`, status i prowizje wycofane |
+| M2, M3 | `826105e` | Odrzucenie projektu (NIEZREALIZOWANY) zamyka jego uzgodnienia (`reason: PROJECT_CANCELLED`), uzgodnienie projektu niezrealizowanego odrzucane, karta ukryta; zamknięcie RESOLVED → wpis CLOSED z `previous_status` / `previous_amounts` i dopiskiem „Ręczne uzgodnienie przestało obowiązywać.” | oba scenariusze |
+| M4 | `d1e9426` | Konflikt wierszy przy łączeniu/przenoszeniu: żywy (OPEN / RESOLVED) przed AUTO_CLOSED, potem źródło, potem najwcześniej otwarty | RESOLVED w celu + stary AUTO_CLOSED w źródle → decyzja zostaje, bez ponownego otwarcia |
+| M5 | `5af5e3e` | Faktury po korektach ≤ 0: cel uzgodnienia = max(0, faktury) — admin zapisuje same zera, pozycje znikają przez rdzeń; karta pokazuje podpowiedź | KFS −350 do FS 300 → [1, 0] odrzucone, [0, 0] OK, kolejny sync nie przywraca pozycji |
+| M6 | `ea3a7d1` | `resyncProjectInvoices` nie przelicza łańcucha drugi raz (`refreshReconciliationsOf` pomija korzenie z `resyncInvoicesOf`) | zestaw bez zmian |
+| M7 | `2b549c2` | Jeden `round2` (`mapping.ts`), jeden `positionsOf` (`repo.ts`); bez ręcznego `JSON.parse` w `adminOps` / `queries` | zestaw bez zmian |
+| M9 | `c0f6c36` | Testy: odcisk i sumy z tekstami DECIMAL („900.00”), ORDER_BREAKDOWN z zapisaną decyzją RESOLVED tego samego odcisku | 2 nowe (zielone od razu — pokrycie istniejących ścieżek) |
+| M10 | (ten commit) | `CLAUDE.md` (otwarte §6: 9–17, 20–21, 23), `progress.md` (411), plan §0 pkt 6 (18 × TS5097), nagłówek dowodu ze stanem końcowym; nowy §6 pkt 23 (łączenie bez przeliczenia łańcuchów — istniało wcześniej) | — |
+
+### Bramka po poprawkach (`c0f6c36`)
+
+```
+npm test              → ℹ tests 411 · pass 411 · fail 0
+npm run test:agent    → ℹ tests 56 · pass 56 · fail 0
+npx tsc --noEmit      → 18 × error TS5097, 0 innych
+npm run build         → exit 0 (✓ Compiled successfully)
+npx eslint src/lib/subiekt/{mappingDb,reconciliationDb,adminOps,repo,mapping}.ts → exit 0
+```
+
+### E2E faza 6 (czysta baza `e2e3.sqlite`, `next start` z buildu `c0f6c36`) — 12/12 PASS
+
+Paczki: ZK 111/10 (`7501`) + FS 112/10 (`7502`, „Usługa” 900); ZK 121/10 (`7601`) + FS 122/10 (`7602`, 900). Kod `A-001` nadany w UI.
+
+| # | Sprawdzenie | Wynik |
+|---|---|---|
+| V1 | Karta otwarta, admin wpisuje 600 (suma 900 zgodna, przycisk aktywny) | PASS |
+| V2 | W tym czasie paczka: FS 112/10 → 400, nowa FS 113/10 → 500 (`accepted 2`); w bazie `OPEN 7502:400.00;7503:500.00 900.0` — ta sama suma, inny odcisk | PASS |
+| V3 | „Zapisz uzgodnienie” na nieodświeżonej stronie → komunikat „Dokumenty zmieniły się, odśwież stronę” | PASS |
+| V4 | Nic nie zapisane: OPEN, pozycje 536,59 / 300 | PASS |
+| V5 | Po odświeżeniu karta pokazuje FS 112/10 (400) i FS 113/10 (500) | PASS |
+| V6 | Pola wróciły do kwot z karty `536,59 / 300,00` (nowy klucz karty — bez wpisanego wcześniej 600) | PASS |
+| V7 | Zapis 600 + 300 po odświeżeniu → RESOLVED, pozycje 600 / 300 | PASS |
+| W1–W3 | Projekt z OPEN: „Odrzuć” → NIEZREALIZOWANY, karty nie ma, wiersz AUTO_CLOSED, wpis „uzgodnienie zamknięte automatycznie — projekt niezrealizowany.” | PASS |
+| W4 | Strona integracji bez sekcji „Do uzgodnienia” | PASS |
+| X | Konsola przeglądarki bez błędów | PASS |
+
+Zrzuty: `…/scratchpad/e2e/shots3/16-stale-form-rejected.png`, `17-refreshed-card.png`, `18-cancelled-project.png`; wyniki `…/e2e/evidence3/{sends-1,phase6}.txt`, skrypt `phase6.mjs`.
+
+Pominięte zgodnie z decyzją koordynatora: zachowanie przy fakturze częściowej (§6 pkt 20, decyzja właściciela), wyrównanie RBAC, wydajność resyncu niezmienionej FS; luka przeliczenia przy łączeniu zapisana jako §6 pkt 23.
 
