@@ -578,4 +578,4 @@ migrations/
 - `docs/subiekt/sql-checks-A-F/`: `INSTRUKCJA.md` (ścieżka 1: `uruchom-A-F.ps1` + sqlcmd, ścieżka 2: SSMS; sekcja dla agenta Codex z computer use — wolno/nie wolno/stop/kryterium ukończenia), `sql/` (00, A, A2 rozkład wartości znaczników, A3 tabele KSeF, B–E, F-szablon), `RAPORT-A-F-szablon.md`.
 - Skrypt czyta hasło z `.env` agenta albo pyta, hasło tylko w `SQLCMDPASSWORD` procesu; wyniki do `C:\PortalArchi\sql-wyniki\A-F-RRRR-MM-DD\`; bez nazw klientów w wynikach.
 - Składnia wszystkich zapytań i obu wariantów F sprawdzona na Azure SQL Edge (Docker) z syntetyczną bazą `WD_sp` i loginem `portal_reader` z DENY (UPDATE odrzucony). Skrypt PowerShell bez testu wykonania (brak pwsh na Macu) — pierwsze uruchomienie w biurze to test.
-- Niezacommitowane (gałąź `docs/plan-walldecor-bridge`); do PR na polecenie.
+- PR #17 (gałąź `docs/sql-checks-A-F`); zip pakietu na Dysku Google użytkownika: `sql-checks-A-F-2026-11-01.zip` (obok instrukcji z 30.10).
