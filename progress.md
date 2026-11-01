@@ -564,3 +564,11 @@ migrations/
 - Bramka (stan końcowy `9cfa90d`, po ponownym przeglądzie: blokada pierwsza, strażnik `zk_net`, reaktywacja przelicza łańcuchy): `npm test` 416/416, `test:agent` 56/56, tsc 18× TS5097, build OK; e2e `next start` fazy 1–6 (DoD 1–4, restart, idempotencja, izolacja, STAFF, KFS na MIRROR, nieaktualny formularz, projekt odrzucony).
 - Przegląd jakości: zapłata pozycji z ZK nie ginie przy niezmienionym ZK; karta wysyła odcisk (nieaktualny formularz odrzucany); `FOR UPDATE` + zapis warunkowy przy uzgodnieniu; ponowne sprawdzenie w transakcji ZAKOŃCZONY; odrzucony projekt zamyka uzgodnienia; zamknięcie RESOLVED w historii; faktury ≤ 0 → same zera; `reconciliationDb.ts` wydzielony.
 
+
+## 2026-11-01 — Plan walldecor-bridge (mostek MCP do Subiekta GT)
+
+- Napisany `PLAN-WALLDECOR-BRIDGE-2026-11-01.md` wg skilla `plany-bez-atrap`: loopy 0–7, kontrakt 8 narzędzi MCP + REST, zasady (zero dowolnego SQL, tylko `portal_reader`, limity, log wywołań), checklist audytu atrap, §6 pytania otwarte.
+- Zakres potwierdzony przez użytkownika: mostek MCP do bazy Subiekta; odbiorcy WallDecor-App (serwer, REST) i czaty AI (MCP). Portal Archi nie jest odbiorcą w v1.
+- Ustalenia: Codex w workerze WallDecor-App ma MCP wyłączone → aplikacja czyta mostek serwerowo; przychody w aplikacji brutto per `JAG`/`PUL` × `SALON`/`MONTAZ`/`ECOMMERCE`.
+- Decyzje użytkownika 2026-11-01: `MAG` = Jagiellońska, `PUŁ` = Puławska; e-commerce zgrupowane z Puławską (przyszły magazyn `INT`); faktury do paragonu — sprawdzić w SSMS znacznik fiskalizacji (zapytania w §6 pkt 3), potem filtr; przyszłe narzędzie `unfiscalized_invoices` (kontrola fiskalizacji FS dla osób prywatnych; FS wysłana do KSeF wypada z listy, FS w KSeF z paragonem = anomalia).
+- Kod mostka pójdzie do nowego repo `walldecor-bridge`, zasianego z `agent-subiekt/src/`; start dopiero po Loopie 7 portalu, na polecenie.

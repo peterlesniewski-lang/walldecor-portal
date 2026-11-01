@@ -7,6 +7,7 @@
 - Loop 5b (uzgodnienie faktur z ZK: tryby łańcucha w `reconcile.ts`/`syncChainOf`, `subiekt_reconciliations`, blokada ZAKOŃCZONY, `ReconciliationCard`) na gałęzi `subiekt/loop-5b-reconcile`; dowód `docs/subiekt/LOOP5B-DOWOD-2026-10-30.md`, po przeglądach (spec + jakość + ponowny) do `9cfa90d`, bramka 416/416; blokady MySQL do sprawdzenia w Loopie 7
 - Każdy loop w osobnym PR; nie zaczynać kolejnego bez zielonej bramki i sekcji DOWÓD
 - Prowizje wyłącznie przez `src/lib/projectItems.ts`; pozycje `source = 'SUBIEKT'` bez edycji ręcznej; akcje admina Subiekta zwracają `{ ok, error }` zamiast rzucać błędy domenowe
+- Następny projekt (po Loopie 7): **walldecor-bridge** — mostek MCP/REST do bazy Subiekta GT, plan `PLAN-WALLDECOR-BRIDGE-2026-11-01.md` (nie zaczynać bez polecenia)
 - Otwarte kwestie do decyzji użytkownika: plan §6 — otwarte: 9–17, 20–21, 23 (18, 19, 22 rozstrzygnięte w Loop 5b)
 
 
