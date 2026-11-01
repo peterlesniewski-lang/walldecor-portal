@@ -3,6 +3,8 @@ import { cache } from 'react';
 import { query } from '@/lib/db';
 import { toDateOnly, toIsoString } from './dates';
 import { formatReconciliationForArchitect } from './diff';
+import { round2 } from './mapping';
+import { positionsOf } from './repo';
 
 /** Wiersz subiekt_sync_runs po normalizacji: daty ISO 8601 (UTC), liczniki jako number. */
 export interface SubiektSyncRunRow {
@@ -116,7 +118,6 @@ export async function getProjectZkChanges(projectId: string, audience: ZkChanges
 
 // --- Uzgodnienie faktur z zamówieniem (Loop 5b) -------------------------------------------------
 
-const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
 
 /** Wiersz sekcji „Do uzgodnienia” na stronie integracji. */
 export interface OpenReconciliationRow {
@@ -219,7 +220,7 @@ export async function getProjectReconciliations(projectId: string): Promise<Proj
         const zkAmounts = new Map<number, number>();
         for (const order of orders) {
             try {
-                for (const pos of JSON.parse(String(order.positions_json)) as Array<{ external_id: number; net_total: number }>) {
+                for (const pos of positionsOf({ positions_json: String(order.positions_json) })) {
                     zkAmounts.set(Number(pos.external_id), round2(pos.net_total));
                 }
             } catch {

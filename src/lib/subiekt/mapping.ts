@@ -6,6 +6,8 @@ import { formatSubiektCode } from './codeFormat';
 
 /** Tolerancja porównań kwot (DECIMAL(12,2)) w mapowaniu, pozycjach i podpowiedzi statusu. */
 export const AMOUNT_EPSILON = 0.005;
+/** Kwota do 2 miejsc — jak DECIMAL(12,2) w MySQL, żeby porównania nie zależały od silnika (przyjmuje też tekst z MySQL). */
+export const round2 = (n: number | string) => Math.round(Number(n) * 100) / 100;
 /** assignment_note dokumentu pochodnego, który dziedziczy IGNORED po zignorowanym korzeniu łańcucha. */
 export const ROOT_IGNORED = 'ROOT_IGNORED';
 

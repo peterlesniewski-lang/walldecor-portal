@@ -11,10 +11,10 @@ import { query } from '@/lib/db';
 import { logActivity } from '@/lib/services';
 import { addItemCore, updateItemAmountCore, type ItemActor } from '@/lib/projectItems';
 import { clearDocumentItems, removeSubiektItem } from './chainOps';
-import { findDocumentById, findDocumentByExternalId, findProject, type ProjectRow, type SubiektDocumentRow } from './repo';
-import { AMOUNT_EPSILON as EPSILON, ROOT_IGNORED, buildItemInput, positionToItemType, resolveArchitectCode, resolveRoot } from './mapping';
+import { findDocumentById, findDocumentByExternalId, findProject, positionsOf, type ProjectRow, type SubiektDocumentRow } from './repo';
+import { AMOUNT_EPSILON as EPSILON, ROOT_IGNORED, buildItemInput, positionToItemType, resolveArchitectCode, resolveRoot, round2 } from './mapping';
 import { closeReconciliation, describeChain, loadChainDocuments, settleReconciliation, type ReconciliationRow } from './reconciliationDb';
-import type { SubiektDocumentPayload, SubiektPositionPayload } from './types';
+import type { SubiektDocumentPayload } from './types';
 import { toDateOnly } from './dates';
 
 export type UpsertOutcome = 'INSERTED' | 'UNCHANGED' | 'CHANGED';
@@ -41,8 +41,6 @@ const MAX_CHAIN_STEPS = 32;
 const MAX_LABEL_LENGTH = 200; // jak walidacja nazwy / klienta w createProject
 const ASSIGNED_STATUSES = "('AUTO', 'MANUAL')";
 
-/** Kwoty z payloadu do 2 miejsc — jak DECIMAL(12,2) w MySQL, żeby porównania nie zależały od silnika. */
-const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
 
 const toResult = (status: string): AssignmentResult =>
     status === 'AUTO' || status === 'MANUAL' ? 'ASSIGNED' : status === 'IGNORED' ? 'IGNORED' : 'UNASSIGNED';
@@ -67,7 +65,6 @@ async function loadProject(projectId: string, documentNumber: string): Promise<P
     return project;
 }
 
-const positionsOf = (row: Pick<StoredDoc, 'positions_json'>) => JSON.parse(row.positions_json) as SubiektPositionPayload[];
 
 /** Wiersz z bazy → payload (dla buildItemInput i resolveArchitectCode). */
 function rowToPayload(row: StoredDoc): SubiektDocumentPayload {

@@ -11,12 +11,12 @@ import { logActivity } from '@/lib/services';
 import { addItemCore, deleteItemCore, updateItemAmountCore, type ItemActor } from '@/lib/projectItems';
 import type { FileDirMove } from '@/lib/projectFilesStorage';
 import { formatPLNFixed } from '@/lib/utils';
-import { AMOUNT_EPSILON, ROOT_IGNORED, sortDocumentsForProcessing, subiektCategory } from './mapping';
+import { AMOUNT_EPSILON, ROOT_IGNORED, round2, sortDocumentsForProcessing, subiektCategory } from './mapping';
 import { insertProjectForDocument, kfsMatchesProject, remapDocument, resyncProjectInvoices, syncChainItems } from './mappingDb';
 import { loadChainState } from './reconciliationDb';
 import { clearChainItems, clearDocumentItems, removeSubiektItem } from './chainOps';
 import { formatReconciliationResolved } from './diff';
-import { findChainDocuments, findDocumentByExternalId, findDocumentById, findProject, normalizeDocument, type ProjectRow, type SubiektDocumentRow } from './repo';
+import { findChainDocuments, findDocumentByExternalId, findDocumentById, findProject, normalizeDocument, positionsOf, type ProjectRow, type SubiektDocumentRow } from './repo';
 import type { SuggestedStatus } from './status';
 import type { SubiektDocType } from './types';
 
@@ -509,8 +509,6 @@ interface ChainItemRow {
     subiekt_position_id: number | null;
 }
 
-const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
-
 /** Komunikat dla nieaktualnego formularza uzgodnienia (brzmienie z planu, Loop 5b). */
 export const STALE_RECONCILIATION_ERROR = 'Dokumenty zmieniły się, odśwież stronę';
 
@@ -600,7 +598,7 @@ export async function resolveReconciliationOp(input: ResolveReconciliationInput,
         const byPosition = new Map(changes.map((c) => [c.positionId, c.after]));
         const decision: Record<string, number> = {};
         for (const order of state.orders) {
-            for (const pos of JSON.parse(order.positions_json) as Array<{ external_id: number; net_total: number }>) {
+            for (const pos of positionsOf(order)) {
                 if (Number(pos.net_total) > 0) decision[String(pos.external_id)] = byPosition.get(Number(pos.external_id)) ?? 0;
             }
         }

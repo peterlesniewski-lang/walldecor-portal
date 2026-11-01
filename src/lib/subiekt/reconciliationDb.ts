@@ -5,17 +5,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '@/lib/db';
 import { logActivity } from '@/lib/services';
-import { AMOUNT_EPSILON as EPSILON } from './mapping';
+import { AMOUNT_EPSILON as EPSILON, round2 } from './mapping';
 import { chainMode, chainTotals, fingerprint, type ChainMode } from './reconcile';
 import { formatReconciliationClosed, formatReconciliationOpened } from './diff';
-import { findDocumentByExternalId, normalizeDocument, type SubiektDocumentRow } from './repo';
-import type { SubiektPositionPayload } from './types';
+import { findDocumentByExternalId, normalizeDocument, positionsOf, type SubiektDocumentRow } from './repo';
 
 type StoredDoc = SubiektDocumentRow;
 
 const ASSIGNED_STATUSES = "('AUTO', 'MANUAL')";
-const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
-const positionsOf = (row: Pick<StoredDoc, 'positions_json'>) => JSON.parse(row.positions_json) as SubiektPositionPayload[];
 const loadDocByExternalId = findDocumentByExternalId;
 
 /** Stan łańcucha w projekcie: dokumenty według typu, tryb (reconcile.ts), sumy i odcisk faktur. */

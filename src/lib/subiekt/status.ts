@@ -1,7 +1,7 @@
 // Podpowiedź statusu projektu z dokumentów Subiekta (PLAN-SUBIEKT-2026-10-29.md, 2.4 pkt 6).
 // Tylko odczyt: wynik nie jest zapisywany w projects.status — admin stosuje go ręcznie (loop 4).
 import { query } from '@/lib/db';
-import { AMOUNT_EPSILON as EPSILON } from './mapping';
+import { AMOUNT_EPSILON as EPSILON, round2 } from './mapping';
 
 export type SuggestedStatus = 'PRZYJĘTY' | 'W_REALIZACJI' | 'ZAKOŃCZONY';
 /** Dlaczego podpowiedź jest „zablokowana”: RECONCILE_OPEN = projekt ma otwarte uzgodnienie faktur z zamówieniem (Loop 5b). */
@@ -23,7 +23,6 @@ async function loadAssignedDocuments(projectId: string): Promise<ProjectDocRow[]
 const sumOf = (rows: ProjectDocRow[], type: string) =>
     rows.filter((r) => r.type === type).reduce((sum, r) => sum + Number(r.net_total), 0);
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Czy projekt ma otwarte uzgodnienie faktur z zamówieniem (subiekt_reconciliations.status = 'OPEN'). */
 export async function hasOpenReconciliation(projectId: string): Promise<boolean> {

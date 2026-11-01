@@ -3,7 +3,7 @@
 // i przypisane WZ/FS/KFS tego samego root_external_id w projekcie; mappingDb.ts → syncChainOf wybiera według
 // trybu, z którego dokumentu powstają pozycje projektu.
 import { createHash } from 'node:crypto';
-import { AMOUNT_EPSILON } from './mapping';
+import { AMOUNT_EPSILON, round2 } from './mapping';
 import type { SubiektPositionPayload } from './types';
 
 export type ChainMode = 'ORDER_ONLY' | 'INVOICE_ONLY' | 'MIRROR' | 'ORDER_BREAKDOWN' | 'RECONCILE';
@@ -23,7 +23,6 @@ export interface ChainInput {
 /** Długość kolumny subiekt_reconciliations.fingerprint. */
 export const FINGERPRINT_MAX_LENGTH = 2000;
 
-const round2 = (n: number) => Math.round(Number(n) * 100) / 100;
 const sum = (rows: Array<{ net_total: number }>) => rows.reduce((total, row) => total + Number(row.net_total), 0);
 const normalizeName = (name: string | null | undefined) => (name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const hasProduct = (p: BreakdownPosition) => p.product_id !== null && p.product_id !== undefined;
