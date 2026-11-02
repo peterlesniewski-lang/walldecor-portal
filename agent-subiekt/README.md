@@ -77,8 +77,13 @@ Agent buduje paczkę, ale **nic nie wysyła**. Powstają dwa pliki:
 Sprawdź w pliku `.txt`, w sekcji „KORZENIE ŁAŃCUCHÓW”:
 
 - jest **ZK 115/PUŁ/10/2026** (31280),
-- jest **ZK 142/PUŁ/10/2026** (31482), a pod nią **FS 234/PUŁ/10/2026** (31483),
+- każdy korzeń ma kategorię „Architekt” albo znacznik `#A-…` w uwagach,
 - **nie ma** żadnego dokumentu zwykłej sprzedaży (każdy korzeń to zamówienie architekta).
+
+Uwaga: wcześniejsza wersja kazała szukać także ZK 142/PUŁ/10/2026 i FS 234/PUŁ/10/2026. To były dokumenty
+testowe, usunięte z Subiekta 2026-11; pod tymi numerami są dziś inne, niezwiązane dokumenty. Ich brak w dry-run
+jest poprawny. Sonda może pokazać więcej korzeni niż dry-run: sonda liczy luźnym filtrem SQL (`LIKE '%#A%'`),
+dry-run stosuje dokładny wzorzec znacznika.
 
 Odeślij plik `.txt`. Plik `.json` wysyłaj tylko na prośbę i bezpiecznym kanałem (zawiera dane klientów).
 
