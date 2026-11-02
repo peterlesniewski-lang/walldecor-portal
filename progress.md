@@ -572,7 +572,7 @@ migrations/
 - Decyzja 7a: kontrola fiskalizacji = FS podtyp ≠ 1, pusty `adrh_NIP`, `dok_StatusFiskal <> 1`, brutto > 0; kryterium KSeF odrzucone (59 FS bez NIP w KSeF, 35 FS z fiskalizacją i KSeF naraz); `kh_Osoba` i `rf_Pozycja` nieprzydatne; `ksef_with_receipt` skreślona
 - Magazyn `INT` istnieje bez dokumentów → domyślna mapa `PUŁ:PUL,MAG:JAG,INT:PUL:ECOMMERCE`; `sales_summary` dostaje `date_basis` (`issued`|`completed`)
 - Pakiet: `uruchom-A-F.ps1` po uwagach biura (`-b`, kod wyjścia 2/3/4, `finally` czyści hasło, tylko `portal_reader`, bez przełączania instancji, `*.stderr.txt`), `G.sql` licznik kandydatów, `I.sql` numer z `ksef_NumerKSeF`, `L.sql` = reguła ostateczna; INSTRUKCJA sekcja 3b; 14 plików SQL zielone na SQL Edge
-- Użytkownik rozstrzygnął: data przychodu = wystawienia (decyzja 6c, bez `date_basis`); przychód po wartościach faktur (zaliczka 1000 w 09 → 1000 w 09, końcowa 200 w 10 → 200 w 10); końcowe 0,00 nie są fiskalizowane, fiskalizacja na zaliczkowej → zaliczkowe w kontroli 7a. Otwarte: znaczenie `dok_StatusFiskal = 2`; zmiany niezacommitowane (gałąź `docs/sql-checks-A-F`, PR #17)
+- Użytkownik rozstrzygnął: data przychodu = wystawienia (decyzja 6c, bez `date_basis`); przychód po wartościach faktur (zaliczka 1000 w 09 → 1000 w 09, końcowa 200 w 10 → 200 w 10); końcowe 0,00 nie są fiskalizowane, fiskalizacja na zaliczkowej → zaliczkowe w kontroli 7a. Otwarte: znaczenie `dok_StatusFiskal = 2`; PR #17 zmergowany do `main` 2026-11-02 (`b04ac0f`)
 
 ## 2026-11-02 — wyniki rundy 1 A–E z biura, runda 2 G–L (gałąź `docs/sql-checks-A-F`, PR #17)
 
