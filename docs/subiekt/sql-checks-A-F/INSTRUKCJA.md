@@ -64,6 +64,32 @@ Używaj tylko, gdy `sqlcmd` nie da się uruchomić.
 4. Zapytanie F: jak w ścieżce 1 pkt 6 (uzupełnij szablon, wykonaj, zapisz `F.txt`).
 5. Skopiuj `RAPORT-A-F-szablon.md` do katalogu wyników jako `RAPORT-A-F.md`, wpisz datę, serwer, bazę i komputer w nagłówku, uzupełnij sekcje 1–8.
 
+## 3a. Runda 2 (dodana 2026-11-02 po wynikach rundy 1): zapytania G–L
+
+Runda 1 (A–E) z 02.11.2026 pokazała, że w bazie są kolumny `dok_StatusFiskal`, `dok_FiskalizacjaNumer`, `dok_StatusKSeF`,
+`dok_NumerKSeFId` i tabele `rf_Pozycja` (raporty fiskalne), `ksef_NumerKSeF`, `ksef_FakturyHandel`, a tabela adresów nazywa się
+`adr_Historia`. Runda 2 krzyżuje te informacje, żeby rozstrzygnąć filtry mostka. Pliki `sql\G.sql` … `sql\L.sql` są już w pakiecie
+(zaktualizowany zip / repo), skrypt `uruchom-A-F.ps1` wykonuje je po A–E i tworzy `RAPORT-RUNDA2.md` z szablonu.
+
+1. Zastąp katalog `C:\PortalArchi\sql-checks-A-F\` nową wersją pakietu (albo dołóż pliki `G.sql`–`L.sql`, nowy `uruchom-A-F.ps1`,
+   `RAPORT-RUNDA2-szablon.md` i poprawiony `E.sql`).
+2. Uruchom skrypt jak w sekcji 2 pkt 2. Powstanie nowy katalog wyników z pełnym zestawem `00`–`L` (A–E policzą się ponownie — to w porządku).
+   Wyniki są teraz zapisywane w UTF-8 (`-f 65001`), więc `PUŁ` ma się wyświetlać poprawnie.
+3. Zapytanie F nadal pomiń — zastępuje je `I.sql` (nie wymaga uzupełniania nazw).
+4. Uzupełnij `RAPORT-RUNDA2.md` (sekcje G–L) faktami z plików. `RAPORT-A-F.md` z rundy 1 nie trzeba wypełniać ponownie.
+5. Odeślij cały nowy katalog wyników jak w sekcji 4.
+
+Dla agenta (sekcja 5) obowiązują te same zasady; kryterium ukończenia rozszerza się o pliki `G.txt`–`L.txt` z `OK` w `WYNIK.txt`
+i wypełniony `RAPORT-RUNDA2.md`. Błąd w pojedynczym zapytaniu (np. brak kolumny `dok_MagId` w J) nie przerywa pozostałych —
+treść błędu wpisz do raportu.
+
+## 3b. Stan po rundzie 2 (2026-11-02)
+
+Obie rundy wykonane w biurze, wyniki na Dysku (`A-F-2026-11-02-130927-635`, `A-F-2026-11-02-145853-999`), wnioski w `PLAN-WALLDECOR-BRIDGE-2026-11-01.md` §6 pkt 3–5 i decyzjach 7/7a.
+Pakiet zostaje jako wzorzec zapytań dla mostka (`L.sql` = reguła kontroli fiskalizacji). Poprawki po uwagach biura: `sqlcmd -b`, kod wyjścia skryptu ≠ 0 przy błędzie
+zapytania lub braku pliku (`3`), braku połączenia (`2`), hasło czyszczone w `finally`, wyłącznie login `portal_reader`, bez przełączania instancji, ewentualny stderr w `NAZWA.stderr.txt`.
+Kolejne uruchomienie nie jest potrzebne, chyba że pojawi się nowe pytanie — wtedy dodaj plik `sql/M.sql` itd. i dopisz nazwę do `$order` w skrypcie.
+
 ## 4. Co odesłać
 
 Cały katalog `C:\PortalArchi\sql-wyniki\A-F-RRRR-MM-DD\` (pliki `.txt`, `WYNIK.txt`, `RAPORT-A-F.md`) — na Dysk Google użytkownika

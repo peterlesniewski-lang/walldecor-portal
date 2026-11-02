@@ -13,7 +13,7 @@ SELECT COUNT(*) AS fs_w_ksef,
        SUM(CASE WHEN a.adrh_NIP IS NULL OR LTRIM(RTRIM(a.adrh_NIP)) = '' THEN 1 ELSE 0 END) AS bez_nip,
        SUM(CASE WHEN p.dok_Typ = 21 THEN 1 ELSE 0 END) AS z_paragonem
 FROM dbo.dok__Dokument d
-JOIN dbo.adrh__Historia a ON a.adrh_Id = d.dok_PlatnikAdreshId
+JOIN dbo.adr_Historia a ON a.adrh_Id = d.dok_PlatnikAdreshId
 LEFT JOIN dbo.dok__Dokument p ON p.dok_Id = d.dok_DoDokId
 WHERE d.dok_Typ = 2 AND d.dok_DataWyst >= DATEADD(month, -3, GETDATE())
   AND d.<<KOLUMNA_KSEF>> = <<WARTOSC_WYSLANA>>;          -- 1a: konkretna wartość statusu
@@ -24,7 +24,7 @@ SELECT COUNT(*) AS fs_w_ksef,
        SUM(CASE WHEN a.adrh_NIP IS NULL OR LTRIM(RTRIM(a.adrh_NIP)) = '' THEN 1 ELSE 0 END) AS bez_nip,
        SUM(CASE WHEN p.dok_Typ = 21 THEN 1 ELSE 0 END) AS z_paragonem
 FROM dbo.dok__Dokument d
-JOIN dbo.adrh__Historia a ON a.adrh_Id = d.dok_PlatnikAdreshId
+JOIN dbo.adr_Historia a ON a.adrh_Id = d.dok_PlatnikAdreshId
 LEFT JOIN dbo.dok__Dokument p ON p.dok_Id = d.dok_DoDokId
 JOIN dbo.<<TABELA_KSEF>> k ON k.<<KOLUMNA_DOK_ID>> = d.dok_Id
 WHERE d.dok_Typ = 2 AND d.dok_DataWyst >= DATEADD(month, -3, GETDATE())

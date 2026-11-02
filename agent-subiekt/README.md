@@ -197,7 +197,7 @@ używane przez agenta są w `src/queries.ts` (`REQUIRED_COLUMNS`) i sprawdza je 
   doczytywani bez limitu daty; heurystyka FS '+' liczy się na całej historii płatnika.
 - `dok_Pozycja`: `ob_DokHanId` → `dok_Id`, `ob_TowId` → `tw__Towar.tw_Id` (NULL = pozycja jednorazowa),
   `ob_TowRodzaj` 1 towar / 2 usługa, `ob_Opis` (wielowierszowy), `ob_DokHanLp`, `ob_DoId`, `ob_Znak`.
-- Kontrahent: `adrh__Historia` po `dok_PlatnikAdreshId`, zapasowo `adr__Ewid` (`adr_IdObiektu = dok_PlatnikId`,
+- Kontrahent: `adr_Historia` po `dok_PlatnikAdreshId`, zapasowo `adr__Ewid` (`adr_IdObiektu = dok_PlatnikId`,
   `adr_TypAdresu = 1`), na końcu `kh__Kontrahent.kh_Symbol` — nazwy kolumn adresów potwierdza sonda.
 - Zapłata: `nz__Finanse` z `nzf_IdDokumentAuto = dok_Id`, należność `nzf_Typ = 39`, `nzf_Wartosc` = pozostało do
   zapłaty (`dok_Rozliczony` jest niewiarygodne).

@@ -60,14 +60,17 @@ if (-not $password) {
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
 }
 if (-not $password) { Write-Host 'Brak hasła — przerwano.'; exit 1 }
+if ($User -ne 'portal_reader') { Write-Host "Dozwolony jest wyłącznie login portal_reader (podano: $User) — przerwano."; exit 1 }
 $env:SQLCMDPASSWORD = $password
+$exitCode = 0
+try {
 
-# --- 3. połączenie: instancja nazwana, potem TCP 1433 -----------------------------------------
+# --- 3. połączenie: tylko podana instancja (-Server) --------------------------------------------
 function Test-Connection-Sql([string]$srv) {
     & $sqlcmd -S $srv -U $User -d $Database -Q 'SET NOCOUNT ON; SELECT 1 AS ok;' -b -l 15 *> $null
     return ($LASTEXITCODE -eq 0)
 }
-$servers = @($Server, 'tcp:localhost,1433', 'tcp:127.0.0.1,1433')
+$servers = @($Server)   # bez automatycznego przełączania na inną instancję — zmień -Server jawnie
 $srv = $null
 foreach ($s in $servers) {
     Write-Host "Próba połączenia: $s ..."
@@ -75,32 +78,34 @@ foreach ($s in $servers) {
 }
 if (-not $srv) {
     Write-Host "NIE UDAŁO SIĘ połączyć jako '$User' z bazą '$Database' (próby: $($servers -join ', ')). Sprawdź hasło, nazwę instancji, czy usługa SQL działa."
-    exit 2
+    $exitCode = 2
+    throw 'brak połączenia'
 }
 Write-Host "Połączono: $srv / $Database jako $User"
 
 # --- 4. zapytania ------------------------------------------------------------------------------
-$order = @('00-srodowisko', 'A', 'A2', 'A3', 'B', 'C', 'D', 'E', 'F')
+$order = @('00-srodowisko', 'A', 'A2', 'A3', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L')
 $summary = @()
 foreach ($name in $order) {
     $file = Join-Path $sqlDir "$name.sql"
     if (-not (Test-Path $file)) {
         if ($name -eq 'F') { $summary += "F: pominięte (brak sql\F.sql — uzupełnij F-szablon.sql po wynikach A/A2/A3 albo wpisz w raporcie 'brak KSeF w bazie')" }
-        else { $summary += "${name}: BRAK PLIKU $file" }
+        else { $summary += "${name}: BRAK PLIKU $file"; $exitCode = 3 }
         continue
     }
     $outFile = Join-Path $out "$name.txt"
     Write-Host "Zapytanie $name -> $outFile"
-    & $sqlcmd -S $srv -U $User -d $Database -i $file -o $outFile -W -w 4000 -s '|' -I -l 30 -t 120
+    & $sqlcmd -S $srv -U $User -d $Database -i $file -o $outFile -W -w 4000 -s '|' -I -l 30 -t 120 -f 65001 -b 2>&1 | Out-File -FilePath (Join-Path $out "$name.stderr.txt") -Encoding UTF8
     $code = $LASTEXITCODE
+    $errFile = Join-Path $out "$name.stderr.txt"
+    if ((Test-Path $errFile) -and (Get-Item $errFile).Length -eq 0) { Remove-Item $errFile }
     $lines = 0
     if (Test-Path $outFile) { $lines = (Get-Content $outFile | Measure-Object -Line).Lines }
-    $status = if ($code -eq 0) { 'OK' } else { "BŁĄD (kod $code — treść błędu jest w pliku)" }
+    $status = if ($code -eq 0) { 'OK' } else { $exitCode = 3; "BŁĄD (kod $code — treść błędu jest w pliku .txt / .stderr.txt)" }
     $summary += "${name}: $status, linii: $lines"
 }
 
 # --- 5. podsumowanie i szablon raportu --------------------------------------------------------
-$env:SQLCMDPASSWORD = $null
 $info = @(
     "Data: $stamp",
     "Serwer: $srv",
@@ -111,11 +116,10 @@ $info = @(
     ''
 ) + $summary
 $info | Set-Content -Path (Join-Path $out 'WYNIK.txt') -Encoding UTF8
-$template = Join-Path $here 'RAPORT-A-F-szablon.md'
-if (Test-Path $template) {
-    $report = Join-Path $out 'RAPORT-A-F.md'
+foreach ($template in Get-ChildItem -Path $here -Filter 'RAPORT-*-szablon.md') {
+    $report = Join-Path $out ($template.Name -replace '-szablon', '')
     if (-not (Test-Path $report)) {
-        (Get-Content $template -Raw) -replace '<<DATA>>', $stamp -replace '<<SERWER>>', $srv -replace '<<BAZA>>', $Database -replace '<<KOMPUTER>>', $env:COMPUTERNAME |
+        (Get-Content $template.FullName -Raw) -replace '<<DATA>>', $stamp -replace '<<SERWER>>', $srv -replace '<<BAZA>>', $Database -replace '<<KOMPUTER>>', $env:COMPUTERNAME |
             Set-Content -Path $report -Encoding UTF8
     }
 }
@@ -125,3 +129,12 @@ $summary | ForEach-Object { Write-Host $_ }
 Write-Host ''
 Write-Host "Wyniki: $out"
 Write-Host 'Do odesłania: cały katalog powyżej (bez hasła; pliki zawierają numery i kwoty dokumentów, nie zawierają nazw klientów).'
+}
+catch {
+    if ($_.Exception.Message -ne 'brak połączenia') { Write-Host "Błąd skryptu: $($_.Exception.Message)"; if ($exitCode -eq 0) { $exitCode = 4 } }
+}
+finally {
+    $env:SQLCMDPASSWORD = $null
+    $password = $null
+}
+exit $exitCode

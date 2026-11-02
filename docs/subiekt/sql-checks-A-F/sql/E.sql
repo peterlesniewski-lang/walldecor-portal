@@ -6,7 +6,7 @@ SELECT COUNT(*) AS fs_bez_nip,
        SUM(CASE WHEN p.dok_Typ = 21 THEN 1 ELSE 0 END) AS z_paragonem,
        SUM(CASE WHEN p.dok_Typ = 21 THEN 0 ELSE 1 END) AS bez_paragonu
 FROM dbo.dok__Dokument d
-JOIN dbo.adrh__Historia a ON a.adrh_Id = d.dok_PlatnikAdreshId
+JOIN dbo.adr_Historia a ON a.adrh_Id = d.dok_PlatnikAdreshId
 LEFT JOIN dbo.dok__Dokument p ON p.dok_Id = d.dok_DoDokId
 WHERE d.dok_Typ = 2 AND d.dok_DataWyst >= DATEADD(month, -3, GETDATE())
   AND (a.adrh_NIP IS NULL OR LTRIM(RTRIM(a.adrh_NIP)) = '');
@@ -15,7 +15,7 @@ WHERE d.dok_Typ = 2 AND d.dok_DataWyst >= DATEADD(month, -3, GETDATE())
 SELECT TOP (10) d.dok_Id, d.dok_NrPelny AS fs, d.dok_Podtyp, CONVERT(char(10), d.dok_DataWyst, 23) AS data_fs,
        d.dok_WartBrutto AS brutto, d.dok_DoDokNrPelny AS z_dokumentu
 FROM dbo.dok__Dokument d
-JOIN dbo.adrh__Historia a ON a.adrh_Id = d.dok_PlatnikAdreshId
+JOIN dbo.adr_Historia a ON a.adrh_Id = d.dok_PlatnikAdreshId
 LEFT JOIN dbo.dok__Dokument p ON p.dok_Id = d.dok_DoDokId
 WHERE d.dok_Typ = 2 AND d.dok_DataWyst >= DATEADD(month, -3, GETDATE())
   AND (a.adrh_NIP IS NULL OR LTRIM(RTRIM(a.adrh_NIP)) = '')

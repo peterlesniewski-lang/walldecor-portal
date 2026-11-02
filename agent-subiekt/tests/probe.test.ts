@@ -11,10 +11,10 @@ test('wszystkie wymagane kolumny obecne → brak braków', () => {
 });
 
 test('brakująca kolumna → zgłoszona z podpowiedzią najbliższych nazw; brakująca tabela → zgłoszona', () => {
-    const required = { adrh__Historia: ['adrh_Id', 'adrh_NazwaPelna', 'adrh_NIP'], nz__Finanse: ['nzf_Typ'] };
-    const missing = findMissingColumns(required, present('adrh__Historia', ['adrh_Id', 'adrh_PelnaNazwa', 'adrh_Nip', 'adrh_Nazwa']));
+    const required = { adr_Historia: ['adrh_Id', 'adrh_NazwaPelna', 'adrh_NIP'], nz__Finanse: ['nzf_Typ'] };
+    const missing = findMissingColumns(required, present('adr_Historia', ['adrh_Id', 'adrh_PelnaNazwa', 'adrh_Nip', 'adrh_Nazwa']));
     assert.deepEqual(missing.map((m) => [m.table, m.column]), [
-        ['adrh__Historia', 'adrh_NazwaPelna'],
+        ['adr_Historia', 'adrh_NazwaPelna'],
         ['nz__Finanse', null],
     ]);
     assert.ok(missing[0].suggestions.includes('adrh_Nazwa'), missing[0].suggestions.join());

@@ -565,6 +565,24 @@ migrations/
 - Przegląd jakości: zapłata pozycji z ZK nie ginie przy niezmienionym ZK; karta wysyła odcisk (nieaktualny formularz odrzucany); `FOR UPDATE` + zapis warunkowy przy uzgodnieniu; ponowne sprawdzenie w transakcji ZAKOŃCZONY; odrzucony projekt zamyka uzgodnienia; zamknięcie RESOLVED w historii; faktury ≤ 0 → same zera; `reconciliationDb.ts` wydzielony.
 
 
+## 2026-11-02 (po południu) — runda 2 G–L odczytana, decyzje 7/7a rozstrzygnięte
+
+- Wyniki rundy 2 z biura (Dysk `A-F-2026-11-02-145853-999/`, I z ponowienia `…-154905-468`) wpisane do `PLAN-WALLDECOR-BRIDGE-2026-11-01.md` §6 pkt 3 („Wyniki rundy 2”), pkt 4 rozstrzygnięty, pkt 5 zawężony (brak `dok_DataSprzedazy`, kandydat `dok_DataZakonczenia`)
+- Decyzja 7: `sales_summary` = FS podtypów 0/3/4/5 + KFS + PA − ZW (typ 14, kwoty dodatnie w bazie); FS podtyp 1 = faktura do paragonu — wykluczana (jedyny dubel); podtyp 4 = zaliczkowa (`ZAL`), 5 = końcowa (`ROZ`, reszta)
+- Decyzja 7a: kontrola fiskalizacji = FS podtyp ≠ 1, pusty `adrh_NIP`, `dok_StatusFiskal <> 1`, brutto > 0; kryterium KSeF odrzucone (59 FS bez NIP w KSeF, 35 FS z fiskalizacją i KSeF naraz); `kh_Osoba` i `rf_Pozycja` nieprzydatne; `ksef_with_receipt` skreślona
+- Magazyn `INT` istnieje bez dokumentów → domyślna mapa `PUŁ:PUL,MAG:JAG,INT:PUL:ECOMMERCE`; `sales_summary` dostaje `date_basis` (`issued`|`completed`)
+- Pakiet: `uruchom-A-F.ps1` po uwagach biura (`-b`, kod wyjścia 2/3/4, `finally` czyści hasło, tylko `portal_reader`, bez przełączania instancji, `*.stderr.txt`), `G.sql` licznik kandydatów, `I.sql` numer z `ksef_NumerKSeF`, `L.sql` = reguła ostateczna; INSTRUKCJA sekcja 3b; 14 plików SQL zielone na SQL Edge
+- Użytkownik rozstrzygnął: data przychodu = wystawienia (decyzja 6c, bez `date_basis`); przychód po wartościach faktur (zaliczka 1000 w 09 → 1000 w 09, końcowa 200 w 10 → 200 w 10); końcowe 0,00 nie są fiskalizowane, fiskalizacja na zaliczkowej → zaliczkowe w kontroli 7a. Otwarte: znaczenie `dok_StatusFiskal = 2`; zmiany niezacommitowane (gałąź `docs/sql-checks-A-F`, PR #17)
+
+## 2026-11-02 — wyniki rundy 1 A–E z biura, runda 2 G–L (gałąź `docs/sql-checks-A-F`, PR #17)
+
+- Biuro uruchomiło pakiet na `SERWER` (`localhost\INSERTGT`, `WD_sp`, portal_reader); wyniki na Dysku Google `A-F-2026-11-02-130927-635/`, wnioski wpisane do `PLAN-WALLDECOR-BRIDGE-2026-11-01.md` §6 pkt 3
+- Kluczowe fakty: tabela adresów to `adr_Historia` (nie `adrh__Historia`); FS nigdy nie wskazuje PA przez `dok_DoDokId`; fiskalizacja w `dok_StatusFiskal`/`dok_FiskalizacjaNumer` + `rf_Pozycja`; KSeF w użyciu (`dok_StatusKSeF` 5 → 625 FS, numer w `ksef_NumerKSeF` przez `dok_NumerKSeFId`); podtypy FS 4 (1052) i 5 (964) — hipoteza zaliczkowa/końcowa; magazyn `INT` już istnieje; ZW (typ 14) do uwzględnienia
+- Poprawka `adrh__Historia` → `adr_Historia` w agencie (`queries.ts`, `main.ts`, `payload.ts`, `probe.test.ts`, README), planie Subiekta, planie mostka, `E.sql`, `F-szablon.sql`; `npm run test:agent` 56/56, typecheck OK
+- Runda 2: `sql/G.sql`–`L.sql` (podtyp × fiskalizacja × NIP × `kh_Osoba`; podtypy 1/3 i PA → dokument; KSeF × numer; magazyny i daty; ZW/RS; wstępna lista kontroli fiskalizacji), `RAPORT-RUNDA2-szablon.md`, sekcja 3a w `INSTRUKCJA.md`; `uruchom-A-F.ps1` wykonuje 00–L, `-f 65001`, tworzy raporty z każdego `RAPORT-*-szablon.md`
+- Wszystkie 14 plików SQL przechodzą na Azure SQL Edge jako login read-only (0 błędów, zapis odrzucony); zip `sql-checks-A-F-2026-11-02.zip` wgrany na Dysk (id 1GYZKti8_bpHdGIMF587uZpa4mWZ1ta10)
+- Zmiany niezacommitowane do czasu polecenia; po rundzie 2 decyzja o filtrach `sales_summary` / `unfiscalized_invoices` i start Loopu 0 mostka tylko na polecenie
+
 ## 2026-11-01 — Plan walldecor-bridge (mostek MCP do Subiekta GT)
 
 - Napisany `PLAN-WALLDECOR-BRIDGE-2026-11-01.md` wg skilla `plany-bez-atrap`: loopy 0–7, kontrakt 8 narzędzi MCP + REST, zasady (zero dowolnego SQL, tylko `portal_reader`, limity, log wywołań), checklist audytu atrap, §6 pytania otwarte.
