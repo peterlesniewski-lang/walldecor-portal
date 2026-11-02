@@ -104,7 +104,7 @@ function correctedPosition(row: PositionRow, built: SubiektPositionPayload, pare
 }
 
 function contractorFields(docId: number, row: ContractorRow | undefined): { name: string; nip: string | null } {
-    if (!row) throw new PayloadError(docId, 'brak danych kontrahenta (adrh__Historia / adr__Ewid / kh__Kontrahent)');
+    if (!row) throw new PayloadError(docId, 'brak danych kontrahenta (adr_Historia / adr__Ewid / kh__Kontrahent)');
     const name = [row.adrh_NazwaPelna, row.adrh_Nazwa, row.adr_NazwaPelna, row.adr_Nazwa, row.kh_Symbol]
         .map(clean).find(Boolean);
     if (!name) throw new PayloadError(docId, 'brak nazwy kontrahenta');

@@ -1,5 +1,5 @@
 // Całe SQL agenta i lista tabel/kolumn sprawdzanych przez sondę (--probe). Schemat bazy GT zweryfikowany
-// w biurze 30.10.2026 (PLAN-SUBIEKT-2026-10-29.md, Loop 5); adrh__Historia i adr__Ewid potwierdza sonda.
+// w biurze 30.10.2026 (PLAN-SUBIEKT-2026-10-29.md, Loop 5); adr_Historia (nie adrh__Historia — potwierdzone zapytaniem A 02.11.2026) i adr__Ewid potwierdza sonda.
 // Agent wyłącznie czyta (login portal_reader: db_datareader + DENY INSERT/UPDATE/DELETE/EXECUTE).
 
 /** Każda kolumna użyta w zapytaniach poniżej. Sonda kończy się kodem ≠ 0, gdy którejś brakuje. */
@@ -14,7 +14,7 @@ export const REQUIRED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
     ],
     tw__Towar: ['tw_Id', 'tw_Nazwa'],
     kh__Kontrahent: ['kh_Id', 'kh_Symbol'],
-    adrh__Historia: ['adrh_Id', 'adrh_Nazwa', 'adrh_NazwaPelna', 'adrh_NIP'],
+    adr_Historia: ['adrh_Id', 'adrh_Nazwa', 'adrh_NazwaPelna', 'adrh_NIP'],
     adr__Ewid: ['adr_Id', 'adr_IdObiektu', 'adr_TypAdresu', 'adr_Nazwa', 'adr_NazwaPelna', 'adr_NIP'],
     nz__Finanse: ['nzf_Id', 'nzf_IdDokumentAuto', 'nzf_Typ', 'nzf_Wartosc', 'nzf_WartoscPierwotna'],
     sl_Kategoria: ['kat_Id', 'kat_Nazwa'],
@@ -70,7 +70,7 @@ export const sqlContractors = (inList: string) => `
 SELECT d.dok_Id, ah.adrh_Nazwa, ah.adrh_NazwaPelna, ah.adrh_NIP,
        ae.adr_Nazwa, ae.adr_NazwaPelna, ae.adr_NIP, kh.kh_Symbol
 FROM dbo.dok__Dokument d
-LEFT JOIN dbo.adrh__Historia ah ON ah.adrh_Id = d.dok_PlatnikAdreshId
+LEFT JOIN dbo.adr_Historia ah ON ah.adrh_Id = d.dok_PlatnikAdreshId
 LEFT JOIN dbo.kh__Kontrahent kh ON kh.kh_Id = d.dok_PlatnikId
 OUTER APPLY (
     SELECT TOP 1 a.adr_Nazwa, a.adr_NazwaPelna, a.adr_NIP
@@ -113,7 +113,7 @@ ORDER BY d.dok_Typ, d.dok_Podtyp`;
 
 export const SQL_CATEGORY = `SELECT k.kat_Id, k.kat_Nazwa FROM dbo.sl_Kategoria k WHERE k.kat_Id = @categoryId`;
 
-export const SQL_ADDRESS_HISTORY_SAMPLE = `SELECT TOP 1 * FROM dbo.adrh__Historia`;
+export const SQL_ADDRESS_HISTORY_SAMPLE = `SELECT TOP 1 * FROM dbo.adr_Historia`;
 
 /** Kolacja bazy — czy LIKE '%#A%' w sqlArchitectZkOfPayers jest bez rozróżniania wielkości liter. */
 export const SQL_COLLATION = `SELECT CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS nvarchar(128)) AS kolacja`;

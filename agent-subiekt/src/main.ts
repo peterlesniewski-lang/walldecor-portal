@@ -233,7 +233,7 @@ async function probe(pool: Pool, config: AgentConfig, since: string, logger: Log
         for (const row of rows) print(`  ${Object.entries(row).map(([k, v]) => `${k}=${describeValue(v)}`).join(' ')}`);
     });
 
-    await section('adrh__Historia — SELECT TOP 1 *', async () => {
+    await section('adr_Historia — SELECT TOP 1 *', async () => {
         const [row] = await queryRows<Record<string, unknown>>(pool, SQL_ADDRESS_HISTORY_SAMPLE);
         if (!row) { print('Tabela pusta.'); return; }
         for (const [key, value] of Object.entries(row)) print(`  ${key} = ${describeValue(value)}`);
