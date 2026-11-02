@@ -606,3 +606,9 @@ migrations/
 - Instrukcja dla Codexa (tylko SERWER: instalacja mostka, sonda, tokeny, Harmonogram, Tailscale, porównania SSMS; plus sonda/dry-run agenta) na Dysku: `CODEX-INSTRUKCJA-SERWER-mostek-i-agent-2026-11-02-v3.md`. Wersje v1/v2 (z Loopem 2+3) w koszu.
 - Z drugiej sesji: `kind` w `sales_summary` może być `INNE` (ob_TowRodzaj ≠ 1/2), aplikacja traktuje jako nieprzypisane; deploy portalu `df41578` zakończony, endpoint sync Subiekta odpowiada „Integracja Subiekt nie jest skonfigurowana” (brak sekretów `SUBIEKT_SYNC_*` w Coolify do Loopu 7, celowo).
 - PR #37 zmergowany na polecenie użytkownika (merge `763b1e8`, 2026-11-02 wieczór); worktree `~/projekty/walldecor-app-subiekt-bridge` usunięty. Integracja w aplikacji nieaktywna do czasu ustawienia `SUBIEKT_BRIDGE_URL/TOKEN` w Coolify (tylko na polecenie, po uruchomieniu mostka na SERWER).
+
+## 2026-11-02 — Raport Codexa z SERWER (plik `RAPORT.md` na Dysku)
+
+- Mostek Loop 0+1 działa na SERWER jako zadanie Harmonogramu (127.0.0.1:8787, sonda kod 0, 51 kolumn; `tw_Stan` jest, `pd__Personel` brak). Tokeny utworzone, zaszyfrowane DPAPI lokalnie. Październik: SQL = REST co do grosza (MAG 109 649,99; PUŁ 361 420,60). Trzy pary zaliczka+końcowa = wartość ZK.
+- Nie zrobione: Tailscale (użytkownik nie chce użyć prywatnego tailnetu — potrzebna decyzja o połączeniu SERWER–VPS), test po restarcie, testy z innych komputerów.
+- Agent portalu: sonda i dry-run kod 0, paczka nie wysłana. Brak ZK 142/FS 234 z README wyjaśniony przez użytkownika: dokumenty testowe usunięte z GT, numery przydzielone innym dokumentom. README agenta poprawione (PR `docs/agent-readme-dry-run-2026-11-02`).
