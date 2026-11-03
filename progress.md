@@ -606,3 +606,9 @@ migrations/
 - Instrukcja dla Codexa (tylko SERWER: instalacja mostka, sonda, tokeny, Harmonogram, Tailscale, porównania SSMS; plus sonda/dry-run agenta) na Dysku: `CODEX-INSTRUKCJA-SERWER-mostek-i-agent-2026-11-02-v3.md`. Wersje v1/v2 (z Loopem 2+3) w koszu.
 - Z drugiej sesji: `kind` w `sales_summary` może być `INNE` (ob_TowRodzaj ≠ 1/2), aplikacja traktuje jako nieprzypisane; deploy portalu `df41578` zakończony, endpoint sync Subiekta odpowiada „Integracja Subiekt nie jest skonfigurowana” (brak sekretów `SUBIEKT_SYNC_*` w Coolify do Loopu 7, celowo).
 - PR #37 zmergowany na polecenie użytkownika (merge `763b1e8`, 2026-11-02 wieczór); worktree `~/projekty/walldecor-app-subiekt-bridge` usunięty. Integracja w aplikacji nieaktywna do czasu ustawienia `SUBIEKT_BRIDGE_URL/TOKEN` w Coolify (tylko na polecenie, po uruchomieniu mostka na SERWER).
+
+## 2026-11-03 — Decyzja 3b (Cloudflare Tunnel + Access) i plan wdrożenia dla Codexa
+
+- Użytkownik wybrał Cloudflare Tunnel zamiast Tailscale (nie chce mieszać prywatnego tailnetu). Plan: decyzja 3b, §2.3 przepisane, §6 pkt 8 rozstrzygnięty. Ograniczenie: DNS `walldecor.pl` u IAI → host mostka w osobnej domenie w Cloudflare (decyzja użytkownika).
+- WallDecor-App PR #38: klient mostka wysyła `CF-Access-Client-Id/Secret` z `SUBIEKT_BRIDGE_CF_ACCESS_CLIENT_ID/SECRET` (obie albo żadna). Testy Subiekta 58/58, typecheck OK. Worktree `~/projekty/walldecor-app-cf-access`.
+- `docs/subiekt/PLAN-CODEX-WDROZENIE-MOSTKA-2026-11-03.md` (kopia na Dysku): kroki 1–7 (domena, tunel, Access, aplikacja + Coolify + pierwszy odczyt, nowa wersja mostka po PR #2, klient MCP, scenariusz końcowy), zasady, STOP-y, raport. Codex prowadzi całość; Claude tylko przy STOP.
