@@ -2,6 +2,29 @@
 
 Data: 2026-11-03. Zleceniodawca: Piotr Leśniewski. Cel: w ciągu 1–2 dni WallDecor-App na produkcji czyta sprzedaż z Subiekta GT przez mostek, a użytkownik ma działający klient MCP. Claude ma mało tokenów w tym tygodniu, więc **Codex prowadzi całość**; Claude wkracza tylko przy „STOP” z sekcji 9.
 
+## 00. Dostępy i lektura startowa (świeży Codex bez historii)
+
+**Repozytoria GitHub (organizacja/konto `peterlesniewski-lang`, wszystkie prywatne):**
+
+| Repo | Uprawnienie | Po co |
+|---|---|---|
+| `walldecor-bridge` | write (push, PR, merge) | kod mostka; krok 5 (nowa wersja na SERWER), krok 6 (README „Klienci”), krok 7 (dowód Loop 5–7) |
+| `walldecor-app` | write (push, PR, merge) | krok 4: przegląd i merge PR #38, bramka, ewentualne poprawki po deployu |
+| `walldecor-portal` | read (write tylko do `docs/` i `*.md`) | plan źródłowy, decyzje, zapytania SQL z biura, README agenta; merge do `main` = deploy produkcyjny portalu |
+
+**Poza GitHubem (daje użytkownik):** konto Cloudflare z domeną (krok 1) i Zero Trust; dostęp do komputera `SERWER` w biurze (computer use, konto z uprawnieniami administratora do instalacji usługi `cloudflared`); panel Coolify `http://51.83.197.9:8000` (login użytkownika albo token API; token API ma Claude w pamięci i użytkownik); konto ADMIN w `https://app.walldecor.pl` do testów; folder na Dysku Google na raport. Hasło `portal_reader` jest już w `.env` mostka na SERWER — nie jest potrzebne poza tym komputerem.
+
+**Przeczytać przed startem, w tej kolejności (łącznie ~40 min):**
+
+1. `walldecor-portal/PLAN-WALLDECOR-BRIDGE-2026-11-01.md` — §0 zasady, §1 decyzje (zwłaszcza 3b, 6c, 7, 7a), §2 kontrakt narzędzi i `.env`, §4 Loopy 5–7, §5 checklist audytu atrap.
+2. `walldecor-bridge/README.md` i `walldecor-bridge/docs/LOOP0-1-DOWOD-2026-11-02.md` — jak mostek działa, jak go uruchamiać, co już udowodniono. Sekcja „Sieć (Tailscale)” w README jest historyczna — obowiązuje Cloudflare (ten plan).
+3. `walldecor-bridge` PR #2 (opis + `docs/LOOP2-3-DOWOD-*.md`) — co wnosi Loop 2+3.
+4. `walldecor-app/docs/evidence/2026-11-02-subiekt-revenue-loop4.md` — dowód Loopu 4 i lista „do wykonania przez użytkownika”; kod: `src/lib/finance/subiekt-bridge-client.ts`, `subiekt-revenue.ts`, `subiekt-auto-sync.ts`, `src/components/shared/subiekt-revenue-panel.tsx`.
+5. Na Dysku: `RAPORT.md` z 2026-11-02 (co poprzedni Codex zrobił na SERWER) oraz `CODEX-INSTRUKCJA-SERWER-mostek-i-agent-2026-11-02-v3.md` (poprzednia instrukcja; jej część tailscale'owa jest nieaktualna).
+6. `walldecor-portal/docs/subiekt/sql-checks-A-F/` — tylko gdy trzeba sprawdzić coś w SQL (wzorce zapytań potwierdzone na bazie produkcyjnej).
+
+**Czego nie ma w żadnym repo i nie wolno tam wpisać:** tokeny mostka, service tokeny Cloudflare, token tunelu, hasło `portal_reader`, token API Coolify.
+
 ## 0. Stan wyjściowy (fakty, nie zakładaj innych)
 
 | Element | Stan |
